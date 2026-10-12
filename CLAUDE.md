@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A single-page Vue 3 app that renders the 永鑫 WMS (warehouse management system) functional breakdown as a layered, left-to-right mind map. The graph is not authored by hand in LogicFlow terms — the hierarchy in `src/data/wms.ts` is auto-laid-out into a printable org-chart style drawing, and LogicFlow acts as the renderer plus pan/zoom/drag surface.
 
+It has **two modes**, switched from the buttons at the top of the page: 思维导图 (the read-only mind map described here) and 流程图 (a swimlane flowchart editor). The two share no code — the editor has its own document model and lives in `src/editor/`, described in its own section below.
+
 ## Commands
 
 Package manager is **pnpm** (`pnpm-lock.yaml`, `pnpm-workspace.yaml`).
@@ -15,11 +17,17 @@ pnpm install
 pnpm dev       # Vite dev server with HMR
 pnpm build     # vue-tsc -b && vite build  (type-check runs first, and gates the build)
 pnpm preview   # serve the production build
+pnpm test      # vitest run — unit tests for the flowchart editor's pure logic
+pnpm test:watch
 ```
 
-There is no test runner, linter, or formatter configured. `pnpm build` is the only verification step available — it type-checks via `vue-tsc -b` before bundling. It cannot see anything visual: layout, connector, and export changes are only observable by running `pnpm dev` and looking at the canvas (or exporting a PNG), so a green build is not evidence the drawing is correct.
+**Verification is two commands, and they catch different things.** `pnpm test` covers the flowchart editor's pure logic (text wrapping, grid geometry, document validation, cell snapping and the conservation rules, seed integrity, render-data shape). `pnpm build` is the type gate: `vue-tsc -b` type-checks `src/**` including the `*.spec.ts` files. Vitest strips types with esbuild without checking them, so a green `pnpm test` says nothing about types — run both.
 
-This directory is not a git repository — there is no `.git`, no history, and no diff safety net for edits.
+Neither can see anything visual. Layout, connector, and export changes are only observable by running `pnpm dev` and looking at the canvas (or exporting a PNG). Some of what used to need eyeballing is now machine-checked instead — see the layout-sanity tests in `src/editor/render.spec.ts` (no two node rects intersect, every node stays inside its lane, no node is taller than its row band).
+
+There is still no linter or formatter configured.
+
+This directory *is* now a git repository (it was not until the flowchart editor work began): history starts at the commit `chore: 记录流程图编辑器开发前的基线`.
 
 ## Architecture
 
@@ -51,6 +59,54 @@ The 导出图片 button calls `lf.getSnapshot(name, options)`. Two things are ea
 The plugin copies the page's stylesheets into a clone of the canvas SVG before rasterising (`getClassRules`, `useGlobalRules = true`). That is what preserves the CJK `font-family` from `src/style.css` and the per-node font sizes — if the exported text ever comes out in the wrong font, check that this stylesheet is still loaded rather than looking at the SVG.
 
 The plugin's real options type, `ToImageOptions`, is exported from the same deep path (`@logicflow/extension/es/tools/snapshot`) and already covers `fileType` / `backgroundColor` / `padding` / `partial`. The component hand-rolls an equivalent `SnapshotOptions` interface; prefer the exported type when touching this.
+
+## 流程图编辑器（第二个模式）
+
+`src/views/FlowEditor.vue` + `src/editor/`。用户视角的用法在 `docs/流程图编辑器使用说明.md`，设计取舍在 `docs/superpowers/specs/2026-10-12-flow-editor-design.md`；本节写的是**为什么这么组织**。
+
+### 核心机制：网格锚定
+
+`src/editor/types.ts` 的 `FlowDoc` 是唯一事实源，而且**不存坐标**：节点只记 `{laneId, step}`。像素位置全部由 `src/editor/geometry.ts` 的三条规则推导：
+
+- 节点宽 = 泳道宽 − 两侧内边距（或节点自己声明的 `width`），横向居中于泳道 → 同一列节点宽度天然相等；
+- 节点纵向中心 = 行带中线 → 同一行节点对齐；
+- 节点高度 = 文本按上述宽度折行后的高度 → 行数多的节点自然更高。
+
+`src/editor/text.ts` 是折行的**单一事实源**：算高度与画图共用它，所以不会出现「量高用一套、渲染用另一套」的错位。
+
+于是**增删泳道/步骤会自动重排**，不存在「重排后节点错位」。要改图，改的是文档数据，不是坐标。
+
+**同一格可以放多个节点**（参考图的 A13/A14 是并排的），靠节点可选的 `width` + `offsetX` 表达。`validateDoc` 因此不禁止同格，只禁止**横向重叠**——重叠才是画错。
+
+### 文件职责
+
+- `types.ts` / `theme.ts` —— 文档类型与配色（改配色只动 `theme.ts`）。
+- `text.ts` / `geometry.ts` —— 折行与几何推导，纯函数。
+- `doc.ts` —— `validateDoc()`，导入与加载的门卫，**一次报出所有错误**（改 JSON 的人希望一次看全）。
+- `nodes.ts` / `edges.ts` —— 自定义 LogicFlow 元素；`edges.ts` 自带可单测的肘形路由。
+- `render.ts` —— `buildRenderData()`：文档 → 渲染配置。纯函数，是几何/配色/背景压制的测试着力点；`isBackgroundType()` 是背景白名单的依据。
+- `ops.ts` —— **所有编辑操作都是「文档进、文档出」的纯函数**，UI 只把事件翻译成这些调用，所以守恒规则可以单测。
+- `storage.ts` —— 单文档 localStorage + JSON 序列化/校验。`storage` 作为**参数**传入（默认才是 `window.localStorage`），便于测试替身。
+- `seed/harvestInbound.ts` —— 示例图（参考图转录）。节点表来自设计文档 §9；连线表是读图结果，有歧义的在注释里标了 `⚠待核对`。
+
+### 画布与文档的关系（最容易搞错的一点）
+
+**文档是唯一事实源，LogicFlow 的画布模型不是。** 每次编辑都是「算新文档 → 重渲染 → 恢复视口」，而不是逐个去改画布上的模型。一条路径，永远一致，不会出现「画布与文档不一致」的补丁式 bug。
+
+由此推出两条硬约束：
+
+- **不要打开 LogicFlow 的 `history`**。它的撤销操作的是画布模型，启用后会与文档脱节（撤销后画布变了、文档没变）。撤销栈是**文档级**的，写在 `FlowEditor.vue` 里。
+- **不要用内置的 `editText`**。自定义节点自己画多行正文（`getText()` 返回 null），与内置 `BaseText` 不能共存。编辑走一个定位在节点上的 HTML `<textarea>` 覆盖层，用 `transformModel.CanvasPointToHtmlPoint` 定位。
+
+### LogicFlow 使用注意（编辑器踩过的坑）
+
+- 事件名是 **`dbclick`**（不是 `dblclick`），拖拽结束是 **`node:drop`**（不是 `node:dragstart` / `dragstop`）。
+- 基类把 `BaseModel.type` 声明成字面量 `''`，与 `'lane-header'` 比较会报 TS2367 → 先收宽成 `string` 再比。`BaseEdgeModel` 的 `x` / `y` 是 `unknown` → 用类型正确的 `pointsList` 算中点。
+- 背景（泳道表头 / 行带）也是 LogicFlow 节点，靠负 `zIndex` 压底、靠 `draggable` / `isHittable` 关掉交互。表头**保留点击**（双击改名），行带**彻底穿透**。背景不会进文档，因为它是 `buildRenderData()` 渲染时才生成的。
+- 新连线要设 `edgeType: 'flow-edge'`，否则会退回内置 `polyline`。
+- `editConfig` 里白拿的能力：`snapline`（对齐吸附）、`multipleSelectKey: 'shift'`（多选）。Delete 删除与锚点拖拽建边是默认行为。
+- **不要用 `@logicflow/extension` 的 `Pool`**：它是横向 BPMN 池语义（`laneConfig.titleSize: 20` 的窄标题条、`getPoolModel()`），做不出参考图这种纵向角色列 + 彩色表头。
+- 接入 Snapshot 插件走深层路径后 bundle 只涨 ~2.6 kB（483.94 → 486.55 kB）；走包桶会把全部扩展打进来（~960 kB）。
 
 ## Gotchas
 
