@@ -3,20 +3,26 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import LogicFlow from '@logicflow/core'
 import '@logicflow/core/lib/style/index.css'
+// 深层导入：@logicflow/extension 没声明 sideEffects，走包桶会把全部扩展打进包里
+import Snapshot from '@logicflow/extension/es/tools/snapshot'
 
 import { docSize } from '../editor/geometry'
 import { NODE_TYPE, buildRenderData, registerEditorNodes } from '../editor/render'
 import {
   addEdge,
+  addLane,
   addNode,
   moveNode,
   pointToCell,
+  removeLane,
   removeNodes,
   setEdgeLabel,
   setLaneName,
   setNodeText,
+  setStepCount,
 } from '../editor/ops'
-import { loadDoc, saveDoc } from '../editor/storage'
+import { harvestInboundDoc } from '../editor/seed/harvestInbound'
+import { clearDoc, loadDoc, parseDoc, saveDoc, serializeDoc } from '../editor/storage'
 import type { FlowDoc } from '../editor/types'
 
 const doc = ref<FlowDoc>(loadDoc())
@@ -221,6 +227,90 @@ function handleResize() {
   lf?.resize()
 }
 
+// ---------------------------------------------------------- 工具栏
+
+function onAddLane() {
+  commit(addLane(doc.value))
+}
+
+function onRemoveLastLane() {
+  const last = doc.value.lanes[doc.value.lanes.length - 1]
+  if (!last) return
+  const result = removeLane(doc.value, last.id)
+  if (!result.ok) {
+    report(new Error(result.error))
+    return
+  }
+  commit(result.doc)
+}
+
+function onStepDelta(delta: number) {
+  try {
+    commit(setStepCount(doc.value, doc.value.stepCount + delta))
+  } catch (error) {
+    // 格子不够时 setStepCount 会拒绝，这里是它唯一的出口
+    report(error)
+  }
+}
+
+function onExportJson() {
+  const blob = new Blob([serializeDoc(doc.value)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${doc.value.name || '流程图'}.json`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+async function onImportJson(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // 允许重复导入同一个文件
+  if (!file) return
+  const result = parseDoc(await file.text())
+  if (!result.ok) {
+    report(new Error(result.errors.join('；')))
+    return
+  }
+  commit(result.doc)
+}
+
+function onReset() {
+  if (!window.confirm('重置为示例会丢掉当前未导出的改动，确定吗？')) return
+  clearDoc()
+  past.value = []
+  future.value = []
+  doc.value = harvestInboundDoc
+  rerender()
+}
+
+/**
+ * getSnapshot 由 Snapshot 插件在运行时挂到实例上，不在核心的 LogicFlow 类型里，
+ * 所以这里要交出一个交叉类型 —— 与导图视图里同样的处理。
+ */
+interface SnapshotOptions {
+  fileType?: string
+  backgroundColor?: string
+  padding?: number
+  /** false 导出全部元素；true 只导出视口内的（这张图比窗口高，必须 false） */
+  partial?: boolean
+}
+
+type ExportableLogicFlow = LogicFlow & {
+  getSnapshot(fileName?: string, options?: SnapshotOptions): Promise<void>
+}
+
+async function onExportPng() {
+  if (!lf) return
+  await (lf as ExportableLogicFlow).getSnapshot(doc.value.name || '流程图', {
+    fileType: 'png',
+    backgroundColor: '#ffffff',
+    padding: 40,
+    partial: false,
+  })
+}
+
 onMounted(() => {
   lf = new LogicFlow({
     container: canvas.value!,
@@ -234,6 +324,7 @@ onMounted(() => {
     // 这两个是纯配置就能白拿的能力
     snapline: true,
     multipleSelectKey: 'shift',
+    plugins: [Snapshot],
   })
 
   registerEditorNodes(lf)
@@ -286,6 +377,22 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flow-root">
+    <div class="toolbar">
+      <button type="button" @click="onAddLane">添加泳道</button>
+      <button type="button" @click="onRemoveLastLane">删除末条泳道</button>
+      <button type="button" @click="onStepDelta(1)">步骤 +</button>
+      <button type="button" @click="onStepDelta(-1)">步骤 −</button>
+      <span class="divider"></span>
+      <button type="button" @click="onExportJson">导出 JSON</button>
+      <label class="file-button">
+        导入 JSON
+        <input type="file" accept="application/json" @change="onImportJson" />
+      </label>
+      <button type="button" @click="onExportPng">导出 PNG</button>
+      <span class="divider"></span>
+      <button type="button" @click="onReset">重置为示例</button>
+    </div>
+
     <aside
       class="palette"
       draggable="true"
@@ -344,6 +451,46 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   cursor: grab;
   user-select: none;
+}
+
+.toolbar {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  background: #ffffff;
+  border: 1px solid #e4e9f0;
+  border-radius: 6px;
+}
+
+.toolbar button,
+.file-button {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #4b5563;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.toolbar button:hover,
+.file-button:hover {
+  background: #f2f7ff;
+}
+
+.file-button input {
+  display: none;
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background: #e4e9f0;
 }
 
 .message {
