@@ -95,16 +95,17 @@ The plugin's real options type, `ToImageOptions`, is exported from the same deep
 
 由此推出两条硬约束：
 
-- **不要打开 LogicFlow 的 `history`**。它的撤销操作的是画布模型，启用后会与文档脱节（撤销后画布变了、文档没变）。撤销栈是**文档级**的，写在 `FlowEditor.vue` 里。
+- **`history` 必须显式设为 `false`** —— 它是**默认开启**的，不是默认关闭。内置撤销操作的是画布模型，会与文档脱节；内置 `ctrl+z` / `ctrl+y` 会改画布而不改文档。关掉后它们因历史栈为空（`lf.undo()` 先查 `undoAble()`）而成为无害的空操作。撤销栈是**文档级**的，写在 `FlowEditor.vue` 里。
 - **不要用内置的 `editText`**。自定义节点自己画多行正文（`getText()` 返回 null），与内置 `BaseText` 不能共存。编辑走一个定位在节点上的 HTML `<textarea>` 覆盖层，用 `transformModel.CanvasPointToHtmlPoint` 定位。
 
 ### LogicFlow 使用注意（编辑器踩过的坑）
 
 - 事件名是 **`dbclick`**（不是 `dblclick`），拖拽结束是 **`node:drop`**（不是 `node:dragstart` / `dragstop`）。
 - 基类把 `BaseModel.type` 声明成字面量 `''`，与 `'lane-header'` 比较会报 TS2367 → 先收宽成 `string` 再比。`BaseEdgeModel` 的 `x` / `y` 是 `unknown` → 用类型正确的 `pointsList` 算中点。
+- **`transformModel.translate(x, y)` 是相对量**（内部执行 `TRANSLATE_X += x`），只有 `resetTranslate()` 能归零。还原视口必须**先归零、再设绝对值**：`src/editor/viewport.ts` 就是干这件事的，回归测试在 `viewport.spec.ts`。曾经漏掉归零、把捕获到的绝对偏移当增量再传一次，后果是**每编辑一次视口漂移一倍**（340 → 680 → 1360…）。`lf.render()` 本身不重置变换，所以「重渲染后视口还在」是预期行为。
 - 背景（泳道表头 / 行带）也是 LogicFlow 节点，靠负 `zIndex` 压底、靠 `draggable` / `isHittable` 关掉交互。表头**保留点击**（双击改名），行带**彻底穿透**。背景不会进文档，因为它是 `buildRenderData()` 渲染时才生成的。
 - 新连线要设 `edgeType: 'flow-edge'`，否则会退回内置 `polyline`。
-- `editConfig` 里白拿的能力：`snapline`（对齐吸附）、`multipleSelectKey: 'shift'`（多选）。Delete 删除与锚点拖拽建边是默认行为。
+- `editConfig` 里白拿的能力：`snapline`（对齐吸附）、`multipleSelectKey: 'shift'`（多选）。锚点拖拽建边是默认行为；**但删除键只绑了 `backspace`，没有 `del`** —— `Delete` 是我们在 `onKeydown` 里自己补的（并带输入框守卫，否则就地编辑文字时按 `Ctrl+Z` 会撤掉整张图而不是那段文字）。
 - **不要用 `@logicflow/extension` 的 `Pool`**：它是横向 BPMN 池语义（`laneConfig.titleSize: 20` 的窄标题条、`getPoolModel()`），做不出参考图这种纵向角色列 + 彩色表头。
 - 接入 Snapshot 插件走深层路径后 bundle 只涨 ~2.6 kB（483.94 → 486.55 kB）；走包桶会把全部扩展打进来（~960 kB）。
 
