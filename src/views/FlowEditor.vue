@@ -23,6 +23,7 @@ import {
 } from '../editor/ops'
 import { harvestInboundDoc } from '../editor/seed/harvestInbound'
 import { clearDoc, loadDoc, parseDoc, saveDoc, serializeDoc } from '../editor/storage'
+import { captureViewport, restoreViewport } from '../editor/viewport'
 import type { FlowDoc } from '../editor/types'
 
 const doc = ref<FlowDoc>(loadDoc())
@@ -61,11 +62,11 @@ function frameGraph() {
 /** 重渲染并恢复视口 —— 每次编辑都走这一条路径，保证画布与文档一致 */
 function rerender() {
   if (!lf) return
-  const transform = lf.graphModel.transformModel
-  const view = { scale: transform.SCALE_X, x: transform.TRANSLATE_X, y: transform.TRANSLATE_Y }
+  const snapshot = captureViewport(lf.graphModel.transformModel)
   lf.render(buildRenderData(doc.value))
-  lf.zoom(view.scale)
-  lf.translate(view.x, view.y)
+  // lf.render 本身不重置变换，但这里仍然显式还原：代价只有两次赋值，
+  // 换来的是「视口与编辑无关」这件事不依赖第三方对 render 的实现细节。
+  restoreViewport(lf, snapshot)
 }
 
 function persist() {
@@ -216,11 +217,28 @@ function commitEditor() {
 // ---------------------------------------------------------- 键盘与事件
 
 function onKeydown(event: KeyboardEvent) {
+  // 正在就地编辑文字时，键盘属于那个输入框：Ctrl+Z 应该撤文字，不该撤整张图
+  const target = event.target as HTMLElement | null
+  if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return
+
   const withModifier = event.ctrlKey || event.metaKey
-  if (!withModifier || event.key.toLowerCase() !== 'z') return
+  if (withModifier && event.key.toLowerCase() === 'z') {
+    event.preventDefault()
+    if (event.shiftKey) redo()
+    else undo()
+    return
+  }
+
+  // LogicFlow 内置快捷键只绑了 Backspace，没绑 Delete；这里补上。
+  // 直接算新文档再 commit，而不是去操作画布模型——文档是唯一事实源。
+  if (event.key !== 'Delete' || !lf) return
+  const selected = lf.getSelectElements()
+  const nodeIds = selected.nodes.map((node) => node.id)
+  const edgeIds = new Set(selected.edges.map((edge) => edge.id))
+  if (nodeIds.length === 0 && edgeIds.size === 0) return
   event.preventDefault()
-  if (event.shiftKey) redo()
-  else undo()
+  const afterNodes = removeNodes(doc.value, nodeIds)
+  commit({ ...afterNodes, edges: afterNodes.edges.filter((edge) => !edgeIds.has(edge.id)) })
 }
 
 function handleResize() {
@@ -324,6 +342,10 @@ onMounted(() => {
     // 这两个是纯配置就能白拿的能力
     snapline: true,
     multipleSelectKey: 'shift',
+    // 必须显式关掉：默认是开启的，而它的撤销作用于**画布模型**，
+    // 会与文档级撤销打架（内置 ctrl+z / ctrl+y 会改画布而不改文档，
+    // 造成画布与文档不一致）。关掉后那些内置快捷键因历史栈为空而无害。
+    history: false,
     plugins: [Snapshot],
   })
 
@@ -344,8 +366,13 @@ onMounted(() => {
   })
   lf.on('edge:dbclick', (args: EventArgs) => openEditorFor('edge', args.data.id))
   lf.on('node:delete', (args: EventArgs) => {
-    if (!doc.value.nodes.some((node) => node.id === args.data.id)) return
-    commit(removeNodes(doc.value, [args.data.id]))
+    if (doc.value.nodes.some((node) => node.id === args.data.id)) {
+      commit(removeNodes(doc.value, [args.data.id]))
+      return
+    }
+    // 删的不是文档里的节点（泳道表头这类背景节点）：LogicFlow 已经把它从画布上摘掉了，
+    // 必须立刻重渲染把它放回来，否则表头会一直缺到下一次编辑为止。
+    rerender()
   })
   lf.on('edge:delete', (args: EventArgs) => {
     if (!doc.value.edges.some((edge) => edge.id === args.data.id)) return
