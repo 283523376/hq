@@ -51,6 +51,7 @@ export function validateDoc(input: unknown): ValidateResult {
     errors.push('至少要有一条泳道')
   }
   const laneIds = new Set<string>()
+  const laneWidths = new Map<string, number>()
   if (Array.isArray(lanes)) {
     lanes.forEach((lane, index) => {
       if (!isObject(lane)) {
@@ -63,6 +64,7 @@ export function validateDoc(input: unknown): ValidateResult {
         errors.push(`泳道 id 重复：${lane.id}`)
       } else {
         laneIds.add(lane.id)
+        if (isPositiveNumber(lane.width)) laneWidths.set(lane.id, lane.width)
       }
       // name 是必填：缺了它表头会渲染成空白，而类型却在说谎
       if (typeof lane.name !== 'string') {
@@ -89,7 +91,8 @@ export function validateDoc(input: unknown): ValidateResult {
   // --- 节点 ---
   const nodes = input.nodes
   const nodeIds = new Set<string>()
-  const occupied = new Set<string>()
+  /** 每个格子里已放置的节点在「横向偏移 + 宽度」上的占位，用于查重叠 */
+  const occupied = new Map<string, { offset: number; width: number }[]>()
   if (!Array.isArray(nodes)) {
     errors.push('nodes 必须是数组')
   } else {
@@ -111,17 +114,29 @@ export function validateDoc(input: unknown): ValidateResult {
       if (typeof node.laneId !== 'string' || !laneIds.has(node.laneId)) {
         errors.push(`节点 ${String(node.id)} 的 laneId 不存在：${String(node.laneId)}`)
       }
+      if (node.width !== undefined && !isPositiveNumber(node.width)) {
+        errors.push(`节点 ${String(node.id)} 的 width 必须是正数`)
+      }
+      if (node.offsetX !== undefined && typeof node.offsetX !== 'number') {
+        errors.push(`节点 ${String(node.id)} 的 offsetX 必须是数字`)
+      }
       if (typeof node.step !== 'number' || !Number.isInteger(node.step)) {
         errors.push(`节点 ${String(node.id)} 的 step 必须是整数`)
       } else if (maxStep > 0 && (node.step < 1 || node.step > maxStep)) {
         errors.push(`节点 ${String(node.id)} 的 step ${node.step} 超出 1..${maxStep}`)
       } else if (typeof node.laneId === 'string') {
+        // 同一格**允许**放多个节点（参考图的 A13/A14 就是并排的），
+        // 但不许横向重叠 —— 重叠就是画错了，而不是「格子里挤了两个」。
+        const laneWidth = laneWidths.get(node.laneId) ?? 0
+        const width = isPositiveNumber(node.width) ? node.width : laneWidth - lanePadX * 2
+        const offset = typeof node.offsetX === 'number' ? node.offsetX : 0
         const cell = `${node.laneId}#${node.step}`
-        if (occupied.has(cell)) {
-          errors.push(`格子被重复占用（同一泳道同一格放了多个节点）：${cell}`)
-        } else {
-          occupied.add(cell)
+        for (const placed of occupied.get(cell) ?? []) {
+          if (Math.abs(placed.offset - offset) < (placed.width + width) / 2) {
+            errors.push(`格子内节点重叠：${cell}`)
+          }
         }
+        occupied.set(cell, [...(occupied.get(cell) ?? []), { offset, width }])
       }
       if (node.kind !== 'process') {
         errors.push(`节点 ${String(node.id)} 的 kind 非法：${String(node.kind)}`)

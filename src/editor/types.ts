@@ -40,6 +40,13 @@ export interface FlowNode {
   /** 1-based 行号 */
   step: number
   kind: NodeKind
+  /**
+   * 宽度覆盖（像素）。不填则用「泳道宽 − 两侧内边距」。
+   * 同一格里并排两个节点时（参考图的 A13/A14 就是），用它把节点变窄。
+   */
+  width?: number
+  /** 相对泳道中心的横向偏移（像素）。同一格并排时用它把两个节点错开 */
+  offsetX?: number
 }
 
 export type EdgeKind = 'main' | 'exception'

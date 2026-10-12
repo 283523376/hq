@@ -86,14 +86,14 @@ export function stepBandBounds(doc: FlowDoc, step: number): Bounds {
   }
 }
 
-/** 节点的像素几何。宽度由列宽决定，高度由文字折行决定 */
+/** 节点的像素几何。宽度由列宽（或节点自报的 width）决定，高度由文字折行决定 */
 export function nodeGeom(doc: FlowDoc, node: FlowNode): NodeGeom {
   const lane = findLane(doc, node.laneId)
-  const width = lane.width - doc.grid.lanePadX * 2
+  const width = node.width ?? lane.width - doc.grid.lanePadX * 2
   const height =
     wrappedTextHeight(node.text, width - TEXT_PAD_X * 2, FONT_SIZE, LINE_HEIGHT) + TEXT_PAD_Y * 2
   return {
-    x: laneLeft(doc, lane.id) + lane.width / 2,
+    x: laneLeft(doc, lane.id) + lane.width / 2 + (node.offsetX ?? 0),
     y: doc.grid.headerHeight + (node.step - 1) * doc.grid.rowHeight + doc.grid.rowHeight / 2,
     width,
     height,

@@ -32,16 +32,28 @@ describe('示例图 harvestInboundDoc', () => {
     expect(kinds).toContain('exception')
   })
 
-  it('异常连线都带标签（原图红虚线全部有文字说明）', () => {
+  it('异常连线里的文字标签非空（原图三条红虚线带文字说明）', () => {
     const exceptions = harvestInboundDoc.edges.filter((edge) => edge.kind === 'exception')
-    expect(exceptions.length).toBeGreaterThan(0)
-    for (const edge of exceptions) {
-      expect(edge.label).toBeTruthy()
+    const labelled = exceptions.filter((edge) => edge.label)
+    expect(labelled).toHaveLength(3)
+    for (const edge of labelled) {
+      expect(edge.label!.length).toBeGreaterThan(0)
     }
   })
 
-  it('没有节点落在重复格（validateDoc 之外再断言一次，便于定位）', () => {
-    const cells = harvestInboundDoc.nodes.map((node) => `${node.laneId}#${node.step}`)
-    expect(new Set(cells).size).toBe(cells.length)
+  it('A13/A14 是同一格并排的两个节点，且不重叠', () => {
+    const cell = harvestInboundDoc.nodes.filter(
+      (node) => node.laneId === 'lane-prep' && node.step === 6,
+    )
+    expect(cell.map((node) => node.id).sort()).toEqual(['A13', 'A14'])
+    for (const node of cell) {
+      expect(node.width).toBeGreaterThan(0)
+      expect(typeof node.offsetX).toBe('number')
+    }
+    // 两个节点各自收窄又左右错开，横向范围不相交
+    const [a, b] = cell
+    expect(Math.abs((a.offsetX ?? 0) - (b.offsetX ?? 0))).toBeGreaterThan(
+      ((a.width ?? 0) + (b.width ?? 0)) / 2,
+    )
   })
 })

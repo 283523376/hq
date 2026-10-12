@@ -44,8 +44,10 @@ export const harvestInboundDoc: FlowDoc = {
     { id: 'A10', text: '在原材料线边柜\n输入待切头/柄料\n良品/不良品数量', laneId: 'lane-prep', step: 5, kind: 'process' },
     { id: 'A11', text: '检查格子数量', laneId: 'lane-cabinet', step: 5, kind: 'process' },
     { id: 'A12', text: '格子数量不足\n提示是否仅收货', laneId: 'lane-exception', step: 5, kind: 'process' },
-    { id: 'A13', text: '改刀料\n称重·计数\n插盘', laneId: 'lane-prep', step: 6, kind: 'process' },
-    { id: 'A14', text: '上料并关门', laneId: 'lane-prep', step: 6, kind: 'process' },
+    // A13 与 A14 在原图里是**同一格并排**的两个节点（同属「待切头/柄料」第 6 步），
+    // 所以各自收窄到 88px 并左右错开 47px —— 见 types.ts 里 width / offsetX 的说明。
+    { id: 'A13', text: '改刀料\n称重·计数\n插盘', laneId: 'lane-prep', step: 6, kind: 'process', width: 88, offsetX: -47 },
+    { id: 'A14', text: '上料并关门', laneId: 'lane-prep', step: 6, kind: 'process', width: 88, offsetX: 47 },
     { id: 'A15', text: '自动开启柜门\n等待上料', laneId: 'lane-cabinet', step: 6, kind: 'process' },
     { id: 'A16', text: '生成批次号', laneId: 'lane-cabinet', step: 7, kind: 'process' },
     { id: 'A17', text: '上报良品与不良品\n数量/重量', laneId: 'lane-cabinet', step: 8, kind: 'process' },
