@@ -1,0 +1,22 @@
+/*
+ * Global reset only.
+ *
+ * The previous contents were Vite template styles for the scaffold demo page,
+ * including `#app { width: 1126px; ... border-inline: 1px solid }` and a
+ * dark-mode palette. Those box the full-viewport LogicFlow canvas into a narrow
+ * bordered column, so they are replaced by the height chain the canvas needs.
+ */
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #ffffff;
+  /* CJK-capable stack: SVG node labels inherit this font. */
+  font-family: system-ui, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
