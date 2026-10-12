@@ -130,4 +130,57 @@ describe('示例图能转成渲染数据', () => {
     expect(a13.x).not.toBe(a14.x)
     expect(Math.abs(a14.x - a13.x)).toBeGreaterThan(0)
   })
+
+  it('没有任何两个用户节点的矩形相交（把「图看着不乱」变成机器检查）', () => {
+    const { nodes } = buildRenderData(harvestInboundDoc)
+    const userNodes = nodes.filter((node) => node.type === NODE_TYPE)
+    const rects = userNodes.map((node) => {
+      const width = node.properties.width as number
+      const height = node.properties.height as number
+      return {
+        id: node.id,
+        left: node.x - width / 2,
+        right: node.x + width / 2,
+        top: node.y - height / 2,
+        bottom: node.y + height / 2,
+      }
+    })
+    for (let i = 0; i < rects.length; i += 1) {
+      for (let j = i + 1; j < rects.length; j += 1) {
+        const a = rects[i]
+        const b = rects[j]
+        const apart = a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top
+        expect(apart, `${a.id} 与 ${b.id} 的矩形相交了`).toBe(true)
+      }
+    }
+  })
+
+  it('每个节点都完整落在自己泳道的横向范围内', () => {
+    const { nodes } = buildRenderData(harvestInboundDoc)
+    const headers = nodes.filter((node) => node.type === LANE_HEADER_TYPE)
+    const laneSpans = new Map(
+      headers.map((header) => {
+        const width = header.properties.width as number
+        return [header.properties.laneId as string, { left: header.x - width / 2, right: header.x + width / 2 }]
+      }),
+    )
+    for (const node of harvestInboundDoc.nodes) {
+      const rendered = nodes.find((item) => item.id === node.id)!
+      const width = rendered.properties.width as number
+      const span = laneSpans.get(node.laneId)!
+      expect(rendered.x - width / 2, `${node.id} 左边越出泳道`).toBeGreaterThanOrEqual(span.left)
+      expect(rendered.x + width / 2, `${node.id} 右边越出泳道`).toBeLessThanOrEqual(span.right)
+    }
+  })
+
+  it('每个节点都不高于所在行带（否则会压到下一行）', () => {
+    const { nodes } = buildRenderData(harvestInboundDoc)
+    for (const node of harvestInboundDoc.nodes) {
+      const rendered = nodes.find((item) => item.id === node.id)!
+      expect(
+        rendered.properties.height as number,
+        `${node.id} 比行带还高`,
+      ).toBeLessThanOrEqual(harvestInboundDoc.grid.rowHeight)
+    }
+  })
 })
