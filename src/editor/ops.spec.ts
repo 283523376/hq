@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  addEdge,
   addLane,
   addNode,
   findFreeCell,
@@ -242,6 +243,35 @@ describe('removeLane', () => {
 
   it('未知泳道 id 抛错', () => {
     expect(() => removeLane(makeDoc(), 'nope')).toThrow(/未知泳道/)
+  })
+})
+
+describe('addEdge', () => {
+  it('在两个节点之间加一条主流程连线', () => {
+    const doc = addEdge(makeDoc(), 'A02', 'A01')
+    expect(doc.edges).toHaveLength(2)
+    expect(doc.edges[1]).toMatchObject({ source: 'A02', target: 'A01', kind: 'main' })
+  })
+
+  it('相反方向的连线是另一条边，id 不与已有的撞', () => {
+    const once = addEdge(makeDoc(), 'A02', 'A01')
+    const twice = addEdge(once, 'A01', 'A02')
+    expect(new Set(twice.edges.map((edge) => edge.id)).size).toBe(3)
+  })
+
+  it('同一对节点重复连线是幂等的，原样返回不产生重复 id', () => {
+    const once = addEdge(makeDoc(), 'A02', 'A01')
+    const twice = addEdge(once, 'A02', 'A01')
+    expect(twice).toBe(once)
+    expect(twice.edges).toHaveLength(2)
+  })
+
+  it('自环抛错', () => {
+    expect(() => addEdge(makeDoc(), 'A01', 'A01')).toThrow(/自环/)
+  })
+
+  it('端点不存在时抛错', () => {
+    expect(() => addEdge(makeDoc(), 'A01', 'nope')).toThrow(/未知节点/)
   })
 })
 

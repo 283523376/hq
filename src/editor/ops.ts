@@ -203,3 +203,23 @@ export function setStepCount(doc: FlowDoc, stepCount: number): FlowDoc {
   })
   return { ...doc, stepCount: next, nodes }
 }
+
+/**
+ * 新建连线。id 由两端节点串联而来，所以**同一对节点重复连线是幂等的**：
+ * 已存在就原样返回，不追加。
+ *
+ * 这条守卫是必要的而不是锦上添花：画布上从锚点拖出一条重复的连线时，
+ * 若不拦，文档里会出现两条同 id 的边，validateDoc 随后就判它非法 —— 坏数据比
+ * 「没反应」糟糕得多。代价是同一对节点之间画不了两条平行连线（当前需求不需要）。
+ */
+export function addEdge(doc: FlowDoc, source: string, target: string): FlowDoc {
+  findNode(doc, source)
+  findNode(doc, target)
+  if (source === target) throw new Error('不支持自环连线（起点与终点是同一个节点）')
+  const id = `e-${source}-${target}`
+  if (doc.edges.some((edge) => edge.id === id)) return doc
+  return {
+    ...doc,
+    edges: [...doc.edges, { id, source, target, kind: 'main' }],
+  }
+}
