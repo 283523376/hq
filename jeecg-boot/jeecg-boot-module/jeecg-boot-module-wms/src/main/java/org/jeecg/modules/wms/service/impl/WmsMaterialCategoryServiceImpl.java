@@ -1,0 +1,164 @@
+package org.jeecg.modules.wms.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
+import org.jeecg.common.system.vo.SelectTreeModel;
+import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.entity.WmsMaterial;
+import org.jeecg.modules.wms.entity.WmsMaterialCategory;
+import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
+import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
+import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
+import org.jeecg.modules.wms.util.WmsUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * @Description: 物料分类
+ * @Author: 永鑫WMS
+ * @Date: 2026-10-13
+ */
+@Slf4j
+@Service
+public class WmsMaterialCategoryServiceImpl extends ServiceImpl<WmsMaterialCategoryMapper, WmsMaterialCategory>
+        implements IWmsMaterialCategoryService {
+
+    @Autowired
+    private WmsMaterialMapper wmsMaterialMapper;
+
+    @Override
+    public List<SelectTreeModel> queryTreeList() {
+        List<WmsMaterialCategory> all = this.list(new QueryWrapper<WmsMaterialCategory>().orderByAsc("category_code"));
+        Map<String, List<WmsMaterialCategory>> byParent = new HashMap<>();
+        for (WmsMaterialCategory c : all) {
+            String pid = oConvertUtils.isEmpty(c.getParentId()) ? WmsConstants.ROOT_PID_VALUE : c.getParentId();
+            byParent.computeIfAbsent(pid, k -> new ArrayList<>()).add(c);
+        }
+        return buildChildren(WmsConstants.ROOT_PID_VALUE, byParent);
+    }
+
+    /**
+     * 递归把「按父ID分组」的映射转成 SelectTreeModel 树。
+     */
+    private List<SelectTreeModel> buildChildren(String parentId, Map<String, List<WmsMaterialCategory>> byParent) {
+        List<SelectTreeModel> result = new ArrayList<>();
+        List<WmsMaterialCategory> children = byParent.get(parentId);
+        if (children == null) {
+            return result;
+        }
+        for (WmsMaterialCategory c : children) {
+            List<SelectTreeModel> sub = buildChildren(c.getId(), byParent);
+            SelectTreeModel model = new SelectTreeModel();
+            model.setKey(c.getId());
+            model.setValue(c.getId());
+            model.setTitle(c.getCategoryName());
+            model.setParentId(parentId);
+            model.setChildren(sub);
+            model.setLeaf(sub.isEmpty());
+            result.add(model);
+        }
+        return result;
+    }
+
+    @Override
+    public void addCategory(WmsMaterialCategory category) {
+        if (checkCodeExists(category.getCategoryCode(), null)) {
+            throw new RuntimeException("编码已存在，请重新输入");
+        }
+        if (oConvertUtils.isEmpty(category.getParentId())) {
+            category.setParentId(WmsConstants.ROOT_PID_VALUE);
+        }
+        if (oConvertUtils.isEmpty(category.getStatus())) {
+            category.setStatus(WmsConstants.STATUS_ENABLE);
+        }
+        if (oConvertUtils.isEmpty(category.getHasChild())) {
+            category.setHasChild(WmsConstants.NO);
+        }
+        WmsUtils.fillCreate(category);
+        this.save(category);
+        markParentHasChild(category.getParentId());
+    }
+
+    @Override
+    public void editCategory(WmsMaterialCategory category) {
+        if (checkCodeExists(category.getCategoryCode(), category.getId())) {
+            throw new RuntimeException("编码已存在，请重新输入");
+        }
+        WmsUtils.fillUpdate(category);
+        this.updateById(category);
+    }
+
+    @Override
+    public void disableCategory(String id) {
+        WmsMaterialCategory category = new WmsMaterialCategory();
+        category.setId(id);
+        category.setStatus(WmsConstants.STATUS_DISABLE);
+        WmsUtils.fillUpdate(category);
+        this.updateById(category);
+    }
+
+    @Override
+    public void removeCategory(String id) {
+        if (hasMaterial(id)) {
+            throw new RuntimeException("该分类下存在物料，不允许删除");
+        }
+        long childCount = this.count(new QueryWrapper<WmsMaterialCategory>().eq("parent_id", id));
+        if (childCount > 0) {
+            throw new RuntimeException("该分类下存在子分类，不允许删除");
+        }
+        this.removeById(id);
+    }
+
+    @Override
+    public boolean checkCodeExists(String code, String id) {
+        if (oConvertUtils.isEmpty(code)) {
+            return false;
+        }
+        QueryWrapper<WmsMaterialCategory> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("category_code", code);
+        if (oConvertUtils.isNotEmpty(id)) {
+            queryWrapper.ne("id", id);
+        }
+        return this.count(queryWrapper) > 0;
+    }
+
+    @Override
+    public boolean hasMaterial(String categoryId) {
+        if (oConvertUtils.isEmpty(categoryId)) {
+            return false;
+        }
+        return wmsMaterialMapper.selectCount(new QueryWrapper<WmsMaterial>().eq("category_id", categoryId)) > 0;
+    }
+
+    @Override
+    public String queryIdByCode(String categoryCode) {
+        if (oConvertUtils.isEmpty(categoryCode)) {
+            return null;
+        }
+        WmsMaterialCategory category = this.getOne(
+                new QueryWrapper<WmsMaterialCategory>().eq("category_code", categoryCode).last("limit 1"), false);
+        return category == null ? null : category.getId();
+    }
+
+    /**
+     * 回写父节点的 has_child。
+     */
+    private void markParentHasChild(String parentId) {
+        if (oConvertUtils.isEmpty(parentId) || WmsConstants.ROOT_PID_VALUE.equals(parentId)) {
+            return;
+        }
+        WmsMaterialCategory parent = this.getById(parentId);
+        if (parent != null && !WmsConstants.YES.equals(parent.getHasChild())) {
+            parent.setHasChild(WmsConstants.YES);
+            WmsUtils.fillUpdate(parent);
+            this.updateById(parent);
+        }
+    }
+}
