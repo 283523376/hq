@@ -24,7 +24,13 @@
             <artifactId>jeecg-module-demo</artifactId>
             <version>${jeecgboot.version}</version>
         </dependency>
-        
+        <!-- WMS 业务模块 -->
+        <dependency>
+            <groupId>org.jeecgframework.boot3</groupId>
+            <artifactId>jeecg-boot-module-wms</artifactId>
+            <version>${jeecgboot.version}</version>
+        </dependency>
+
         <!-- flyway 数据库自动升级 -->
         <dependency>
             <groupId>org.flywaydb</groupId>

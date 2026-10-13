@@ -144,7 +144,7 @@ spring:
           slow-sql-millis: 5000
       datasource:
         master:
-          url: jdbc:mysql://127.0.0.1:3306/jeecg-boot?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+          url: jdbc:mysql://127.0.0.1:3306/yongxin_wms?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
           username: root
           password: root
           driver-class-name: com.mysql.cj.jdbc.Driver
@@ -398,6 +398,7 @@ logging:
     org.flywaydb: debug
     org.jeecg.modules.system.mapper: info
     org.jeecg.modules.demo.test.mapper: info
+    org.jeecg.modules.wms.mapper: info
 #swagger
 knife4j:
   #开启增强配置

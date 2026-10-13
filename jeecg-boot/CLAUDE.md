@@ -11,11 +11,13 @@ JeecgBoot 3.9.5 — a Java low-code development platform built on **Spring Boot 
 ## Build & Run Commands
 
 ```bash
-# Full build (tests are skipped by default via surefire config)
-mvn clean package
+# Monolith build. ALWAYS pass -P dev: the root pom marks BOTH `dev` and `SpringCloud`
+# as activeByDefault, so a bare `mvn` pulls jeecg-server-cloud into the reactor and
+# leaves @profile.name@ unresolved. `-P dev` activates dev and deactivates the defaults.
+mvn -P dev clean package
 
 # Build with tests
-mvn clean package -DskipTests=false
+mvn -P dev clean package -DskipTests=false
 
 # Run the standalone application (port 8080, context-path: /jeecg-boot)
 cd jeecg-module-system/jeecg-system-start
@@ -49,6 +51,7 @@ jeecg-boot-parent (root pom)
 ├── jeecg-boot-module              # Business feature modules
 │   ├── jeecg-module-demo          # Demo/example code
 │   ├── jeecg-boot-module-airag    # AI/RAG integration
+│   ├── jeecg-boot-module-wms      # 永鑫WMS 业务模块（半成品立体仓 / 成品敏捷仓 / 线边柜）
 │   ├── jeecg-boot-module-easyoa   # Simple OA module
 │   ├── jeecg-boot-module-joa-flowable  # OA + Flowable workflow
 │   ├── jeecg-boot-module-pay      # Payment module
@@ -106,6 +109,8 @@ Optional microservices modules (activated via `-P SpringCloud`):
 
 **Initial setup:** Import `db/jeecgboot-mysql-5.7.sql` for the base schema. Flyway handles incremental migrations (scripts organized by date folders like `202512/`).
 
+**This project (永鑫WMS):** the dev datasource is `yongxin_wms` @ `127.0.0.1:3306` (see `application-dev.yml`). The dump hardcodes `CREATE DATABASE` / `USE jeecg-boot`, so strip those lines before importing. The base schema seeds `flyway_schema_history`, and the incremental Flyway scripts assume it already exists — an empty DB makes them fail. WMS business tables use the `wms_` prefix.
+
 **Flyway note:** In dev mode, `spring.main.lazy-initialization=true` is enabled for startup speed, which can interfere with Flyway auto-config. Flyway auto-config is explicitly excluded and managed separately.
 
 ## Configuration
@@ -126,3 +131,59 @@ MySQL (port 13306), Redis, PostgreSQL+pgvector, MongoDB, and the application con
 Online 模块采用**元数据驱动**架构，通过数据库配置表（`onl_cgform_*`）实现运行时 CRUD，无需生成代码。配置存在数据库中而非文件系统，Claude Code 无法直接读取具体表单配置，需用户提供 JSON 导出或截图。
 
 **完整的配置 Schema、控件类型、默认值语法、增强机制等详见: [online-form-schema.md](online-form-schema.md)**
+
+## 永鑫WMS 业务模块 (jeecg-boot-module-wms)
+
+### 项目概述
+
+永鑫WMS（Yongxin WMS）覆盖三类仓储场景：**半成品立体仓**、**成品敏捷仓**、**线边柜**。
+需求来源为工作区 `wms-blueprint/`（《永鑫WMS软件蓝图》中的 `YX-WMS-*` 流程即本模块要实现的需求集合；
+速查见 `wms-blueprint/WMS蓝图关键信息.md`）。业务代码统一写在 `org.jeecg.modules.wms` 包下。
+
+### 技术栈
+
+JeecgBoot 3.9.5 / Spring Boot 4.1.0 / Java 17 / MyBatis-Plus（`JeecgEntity` + `JeecgService` + `BaseMapper`）/
+Shiro + JWT / Druid 动态数据源 / MySQL / Redis / Knife4j 4.5.0（`@Tag` / `@Operation` / `@Schema`）/ AutoPoi（`@Excel`）。
+
+### 包结构
+
+```
+org.jeecg.modules.wms
+├── constant     # 常量（表前缀等，禁止魔法值）
+├── controller   # 接口，统一返回 Result<T>
+├── service      # 服务接口（extends JeecgService<T>）
+│   └── impl     # 服务实现（extends ServiceImpl<Mapper, Entity>）
+├── mapper       # 数据访问（extends BaseMapper<T>，无需 @Mapper 注解）
+│   └── xml      # Mapper XML，必须放这里（src/main/java 下，不是 resources）
+├── entity       # 实体（继承 JeecgEntity），表名 wms_ 前缀
+├── dto          # 入参对象
+└── vo           # 出参对象
+```
+
+### 约定
+
+- **业务表统一以 `wms_` 为前缀**（常量 `WmsConstants.TABLE_PREFIX`）。
+- **所有接口统一返回 `Result<T>`**（`org.jeecg.common.api.vo.Result`，用 `Result.OK(...)` / `Result.error(...)`）。
+- 新增业务模块必须**同时**改两处，否则不生效：`jeecg-boot-module/pom.xml` 的 `<modules>`（进反应堆）
+  与 `jeecg-module-system/jeecg-system-start/pom.xml` 的依赖（进运行时 classpath）。
+  只做前者是 airag 那种状态：能编译，但运行时不会加载。
+- 免登录接口用方法级 `@IgnoreAuth`（`org.jeecg.config.shiro.IgnoreAuth`）——**该注解只支持方法级，不能标在类上**。
+
+### 会话压缩指令 (Compaction)
+
+压缩 / 总结本会话时，**必须原样保留**以下内容，不得概括为"已完成若干功能"这类模糊表述：
+
+1. **代码改动**：文件路径 + 改动要点。
+2. **测试与构建结果**：执行的命令 + 实际输出 / 退出码（成功与失败都要留）。
+3. **接口定义**：URL、HTTP 方法、请求 / 响应体，以及 `Result<T>` 的结构。
+4. **数据库结构变更**：`wms_*` 建表 / 改表 DDL、Flyway 脚本文件名。
+
+> 说明：这是写在 CLAUDE.md 里的**约定**，用于引导摘要行为，不是 harness 层面的强制钩子。
+
+### 编码规范
+
+遵循《阿里巴巴Java开发手册》：类名 UpperCamelCase、方法与变量 lowerCamelCase、常量全大写下划线；
+禁止魔法值（提取到 `WmsConstants`）；禁止拼音与英文混用命名；POJO 布尔字段不加 `is` 前缀
+（避免 Lombok 生成的 `isXxx()` 与序列化字段名不一致）；金额与数量用 `BigDecimal`；
+日志用 SLF4J 占位符 `log.info("...{}", arg)`，禁止字符串拼接；事务保持短小。
+MySQL 表名 / 字段名小写，索引命名 `pk_` / `uk_` / `idx_`。
