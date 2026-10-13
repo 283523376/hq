@@ -5,12 +5,12 @@
     <div class="aui-logo" v-if="!getIsMobile">
       <div>
         <h3>
-          <img :src="logoImg" alt="jeecg" />
+          <img :src="logoImg" alt="楠柏莞" />
         </h3>
       </div>
     </div>
     <div v-else class="aui-phone-logo">
-      <img :src="logoImg" alt="jeecg" />
+      <img :src="logoImg" alt="楠柏莞" />
     </div>
     <div v-show="type === 'login'">
       <div class="aui-content">
@@ -18,7 +18,7 @@
           <div class="aui-form">
             <div class="aui-image">
               <div class="aui-image-text">
-                <img :src="adTextImg" />
+                <div class="aui-image-brand">永鑫WMS</div>
               </div>
             </div>
             <div class="aui-formBox">
@@ -186,7 +186,6 @@
   const MiniRegister = defineAsyncComponent(() => import('./MiniRegister.vue'));
   const MiniCodelogin = defineAsyncComponent(() => import('./MiniCodelogin.vue'));
   import logoImg from '/@/assets/loginmini/icon/jeecg_logo.png';
-  import adTextImg from '/@/assets/loginmini/icon/jeecg_ad_text.png';
   import { AppLocalePicker, AppDarkModeToggle } from '/@/components/Application';
   import { useLocaleStore } from '/@/store/modules/locale';
   import { createLocalStorage } from '/@/utils/cache';
@@ -577,6 +576,15 @@
 <style lang="less" scoped>
   @import '/@/assets/loginmini/style/home.less';
   @import '/@/assets/loginmini/style/base.less';
+
+  .aui-image-brand {
+    font-size: 42px;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: 6px;
+    text-align: center;
+    line-height: 1.3;
+  }
 
   :deep(.ant-input:focus) {
     box-shadow: none;
