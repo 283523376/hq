@@ -39,6 +39,7 @@
 - `wms_supplier` / `wms_order` 建表（Flyway）
 - 供应商 CRUD、订单创建 / 审核（通过 · 驳回）/ 下达 / 重新同步 / 查询
 - ERP/MES 同步 SPI + 可配置 HTTP 实现 + 重试 3 次 + 告警
+- **定时补偿任务**：扫描 `待同步` / `同步中`(僵死) / `同步失败` 的订单自动续跑（自愈）
 - 前端供应商管理页、订单管理页（支持按类型筛选）
 - 菜单与按钮权限
 
@@ -82,7 +83,7 @@
 | `audit_remark` | varchar(500) | 审核意见（驳回时必填） |
 | `dispatch_by` | varchar(50) | 下达人 |
 | `dispatch_time` | datetime | 下达时间 |
-| `sync_status` | varchar(20) | NOT NULL DEFAULT '待同步'，待同步 / 同步成功 / 同步失败 |
+| `sync_status` | varchar(20) | NOT NULL DEFAULT '待同步'，待同步 / **同步中** / 同步成功 / 同步失败 |
 | `retry_count` | int | NOT NULL DEFAULT 0，**最近一次同步尝试中实际发生的重试次数** |
 | `last_sync_error` | varchar(500) | 最后一次同步失败原因（验收取证点） |
 | `last_sync_time` | datetime | 最后一次同步尝试时间 |
@@ -113,7 +114,7 @@
 | 编辑保存 | 待审核 / 已驳回 | 仅待审核或已驳回状态的订单可编辑 |
 | 审核 | 待审核 | 仅待审核状态的订单可审核 |
 | 下达 | 已审核 | 仅已审核状态的订单可下达 |
-| 重新同步 | 已下达 且 `sync_status=同步失败` | 仅同步失败的订单可重新同步 |
+| 重新同步 | 已下达 且 `sync_status ∈ (同步失败, 待同步)` | 仅同步失败或待同步的订单可重新同步 |
 | 删除 | 待审核 / 已驳回 | 仅待审核或已驳回状态的订单可删除 |
 
 ### 5.3 审核语义
@@ -132,14 +133,17 @@ entity/     WmsSupplier.java
 dto/        WmsOrderAuditDTO.java          （id, pass, auditRemark）
 vo/         WmsOrderSyncOutcomeVO.java     （synced, syncError, retryCount）—— 下达/重同步的响应体
 mapper/     WmsSupplierMapper.java  WmsOrderMapper.java
+            xml/WmsOrderMapper.xml          （认领抢占 + 扫描候选，两条自定义 SQL）
 service/    IWmsSupplierService.java        impl/WmsSupplierServiceImpl.java
             IWmsOrderService.java           impl/WmsOrderServiceImpl.java
             IWmsOrderSyncService.java       impl/WmsOrderSyncServiceImpl.java    ← 重试编排
 sync/       WmsOrderSyncGateway.java        （SPI 接口）
             WmsOrderSyncResult.java         （单次尝试结果：success, errorMessage）
             HttpWmsOrderSyncGateway.java    （可配置 HTTP 实现）
+job/        WmsOrderSyncRetryJob.java       （定时补偿：扫描并续跑）
+            WmsOrderSyncJobRegistrar.java   （启动时自注册调度，幂等）
 controller/ WmsSupplierController.java  WmsOrderController.java
-constant/   WmsConstants.java               （追加工单类型/状态/同步常量）
+constant/   WmsConstants.java               （追加订单类型/状态/同步/任务常量）
 ```
 
 ### 6.1 同步的分层边界（本期唯一真架构决策）
@@ -163,22 +167,43 @@ constant/   WmsConstants.java               （追加工单类型/状态/同步�
 - 成功后 `log.info`，返回 `retryCount = 实际重试次数`。
 - 4 次全失败后依次执行：
   1. `log.error` 打全上下文：订单号、订单类型、供应商ID、重试次数、失败原因；
-  2. 调用 `ISysBaseAPI.sendSysAnnouncement(MessageDTO)` 向管理员发站内消息；**用 try/catch 包住**，避免告警自身失败反过来掩盖同步失败；
+  2. **仅当 `announce = true`** 时调用 `ISysBaseAPI.sendSysAnnouncement(MessageDTO)` 向管理员发站内消息；**用 try/catch 包住**，避免告警自身失败反过来掩盖同步失败；
   3. 返回失败结果，由订单服务落 `sync_status=同步失败`、`retry_count=3`、`last_sync_error`、`last_sync_time`。
+
+方法签名因此为 `syncOrder(WmsOrder order, boolean announce)`。
 
 告警参数：`fromUser = "system"`，`title = "WMS订单同步失败告警"`，`content` 含订单号/类型/重试次数/失败原因。
 
-### 6.3 事务边界（关键）
+**告警防轰炸（`announce` 开关的由来）**：**用户触发路径**（下达 / 手动重新同步）传 `announce = true`，发站内消息——目的是告诉人「你刚做的操作失败了」；**定时补偿路径**传 `announce = false`，只 `log.error` 落日志、不投站内消息。理由：定时任务每 5 分钟扫一次，对长期同步失败的订单反复投消息会造成轰炸。该订单的失败在**前端列表的同步状态与 `last_sync_error`、以及 ERROR 日志**中始终可见，取证能力不受影响。
 
-下达**不能**是单个长事务，否则会持锁 7 秒：
+### 6.3 事务边界与并发认领（关键）
 
-1. 【事务内】校验守卫 → 更新 `order_status=已下达`、`dispatch_by/time`、`sync_status=待同步` → 提交；
-2. 【事务外】执行同步重试（可能耗时约 7 秒）；
-3. 【单条更新】写回同步结果字段。
+**两个触发源会同时想同步同一张订单**：用户点「下达 / 重新同步」，以及定时补偿任务。二者都做「读订单 → 调 ERP/MES → 写结果」，若不互斥，同一张订单会被**重复投递给 ERP/MES**——这是业务正确性问题，不是观感问题。故引入「同步中」态做乐观认领（optimistic claim）。
 
-进程若在步骤 2 中途崩溃，订单停留在 `待同步`，可由「重新同步」补偿。
+**认领 SQL**（`WmsOrderMapper.xml`，返回**受影响行数**）：
 
-> 注：`sync_status=待同步` 且非失败态的订单不在「重新同步」的允许前置状态内，此为已知遗留（见 §11）。
+```sql
+UPDATE wms_order
+   SET sync_status = '同步中', last_sync_time = NOW()
+ WHERE id = #{id}
+   AND order_status = '已下达'
+   AND ( sync_status IN ('待同步','同步失败')
+         OR ( sync_status = '同步中' AND last_sync_time < #{staleBefore} ) )
+```
+
+受影响行数 = 1 → 认领成功，继续同步；= 0 → 已被他人持有或状态不允许，**直接跳过**（不报错）。
+
+`staleBefore` 用于回收**僵死**的「同步中」：阈值 = 当前时间 − `wms.sync.reclaim-timeout-seconds`（默认 300 秒，远大于单次同步最坏的约 7 秒）。
+
+**三段式时序**（下达 / 重新同步 / 定时任务三处**共用**）：
+
+1. 【事务内】校验守卫 → 更新 `order_status=已下达`、`dispatch_by/time`（仅下达需此步）→ **认领** `→ 同步中` → 提交；
+2. 【事务外】执行同步重试（最坏约 7 秒，不持任何事务）；
+3. 【单条更新】写回 `同步成功 / 同步失败` + `retry_count` + `last_sync_error` + `last_sync_time`。
+
+第 2 步崩溃时订单停在 `同步中`，**由定时任务在超过 `staleBefore` 后自动回收续跑**——这正是需求方要的「自愈」。
+
+**为什么下达不放进一个长事务**：否则会持有数据库事务与连接约 7 秒，并发下耗尽连接池。故刻意切开。
 
 ### 6.4 HTTP 实现
 
@@ -189,7 +214,39 @@ constant/   WmsConstants.java               （追加工单类型/状态/同步�
 - 已配置 → POST JSON（`orderNo`、`orderType`、`supplierId`、`supplierCode`、`supplierName`、`orderStatus`、`auditTime`、`dispatchTime`），带超时。
 - HTTP 非 2xx → 失败（含状态码与响应体）；抛异常 → 失败（含异常消息）。
 
-### 6.5 接口清单
+### 6.5 定时补偿任务（自愈）
+
+**发现的关键事实**：`sys_quartz_job` 表只是 JeecgBoot 的**注册表元数据**，全库**没有任何启动加载器**——任务仅经「定时任务管理」UI 的 `saveAndScheduleJob` 写入调度器。故**仅靠 Flyway 插一行，任务在全新环境不会执行**，会让「自愈」在每次新部署上静默失效。
+
+因此设计为**双保险**：
+
+| 组成 | 作用 |
+| --- | --- |
+| `WmsOrderSyncRetryJob implements org.quartz.Job` | 扫描与续跑逻辑。加 `@DisallowConcurrentExecution`，防单轮耗时超过周期时自我重叠 |
+| `WmsOrderSyncJobRegistrar` | `@EventListener(ApplicationReadyEvent.class)`，启动时**幂等自注册**：`scheduler.checkExists(JobKey.jobKey(JOB_ID))` 为假才 `scheduleJob` |
+| Flyway 的 `sys_quartz_job` 种子行 | 让任务在「定时任务管理」UI 可见，可用**立即执行**按钮手工触发（适合验收演示） |
+
+**约定对齐**（已核实 `QuartzJobServiceImpl`，全部踩在既有约定上）：
+
+- `JobDetail` / `CronTrigger` 均用 `.withIdentity(JOB_ID)`、**默认组**（无 group），与 `schedulerAdd` 一致——这样 UI 的启停按钮控制的是**同一个** job。
+- `id` 即 `sys_quartz_job.id`，故**常量与种子行必须同值**：`1920000000000000101`。
+- 类名须以 `org.jeecg.` 开头（`QuartzJobServiceImpl.getClass()` 有包白名单防 RCE）——`org.jeecg.modules.wms.job.WmsOrderSyncRetryJob` 合规。
+- 注册失败用 try/catch + WARN 包住，**不允许调度器的毛病阻断应用启动**。
+
+**启停控制走配置，不读 `sys_quartz_job.status`**：注册器以 `wms.sync.job.enabled`（默认 `true`）为准。**已知取舍**：管理员在 UI 里点「暂停」会在应用重启后被注册器重新拉起。之所以这样切，是因为读 `sys_quartz_job.status` 需要 wms 模块反向依赖 `system-biz` 的 `QuartzJob` 实体，**越界**；用配置开关既干净又好运维。UI 的**立即执行**不受此影响，始终可用于手工触发。
+
+**扫描逻辑**：
+
+1. `selectSyncCandidates` 取 `order_status='已下达'`、`del_flag=0` 且满足以下之一：`sync_status='同步失败'` / `='待同步'` / （`='同步中'` 且 `last_sync_time < staleBefore`）；按 `last_sync_time` 升序，**每轮最多 `WmsConstants.SYNC_SCAN_BATCH = 50` 条**（限制单轮耗时上限约 50 × 7s ≈ 6 分钟）；
+2. 逐条走 §6.3 三段式——**先认领再同步**，`announce = false`（见 §6.2 防轰炸）；
+3. 单条异常 try/catch 包住、`log.error` 后继续，不中断整轮；
+4. 每轮 `log.info` 汇总：候选数 / 认领成功数 / 同步成功数 / 同步失败数。
+
+**cron**：`0 3/5 * * * ? *`（每 5 分钟，落在 :03 / :08 / …）。刻意错开整点，避免与平台其它任务（如 `UserUpadtePwdJob` 的 `0 0 0 * * ?`）在整点堆叠。
+
+> 注：单轮最坏约 6 分钟 vs 周期 5 分钟——**会出现跨轮重叠**，但被 `@DisallowConcurrentExecution`（同 job 实例串行）与认领机制双重挡住，不会重复投递。
+
+### 6.6 接口清单
 
 **`WmsSupplierController`** `@RequestMapping("/wms/supplier")`
 
@@ -209,7 +266,7 @@ constant/   WmsConstants.java               （追加工单类型/状态/同步�
 
 | 方法 | 路径 | 入参 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/list` | `orderNo` `orderType` `orderStatus` `supplierId` `createTime_begin` `createTime_end` + 分页 | 分页查询，含按类型筛选 |
+| GET | `/list` | `orderNo` `orderType` `orderStatus` `syncStatus` `supplierId` `createTime_begin` `createTime_end` + 分页 | 分页查询，含按类型筛选与**按同步状态筛选**（运维查「所有同步失败」用；`syncStatus` 是持久化列，`QueryGenerator` 自动支持） |
 | GET | `/queryById` | `id` | 详情（回填 supplierName） |
 | GET | `/checkOrderNo` | `code`、`id`(可空) | 订单号唯一性（约束②） |
 | POST | `/add` | `WmsOrder` | 创建 → `待审核` |
@@ -242,8 +299,9 @@ src/views/wms/order/     index.vue  order.api.ts     order.data.ts     component
 
 **订单页**：
 
-- 搜索项：**订单号 / 订单类型 / 订单状态 / 供应商**（订单类型即「按类型筛选」）。
+- 搜索项：**订单号 / 订单类型 / 订单状态 / 同步状态 / 供应商**（订单类型即「按类型筛选」；同步状态筛选供运维捞出所有同步失败单）。
 - 列：订单号、类型、供应商、订单状态、同步状态、重试次数、创建时间。
+- **同步状态**渲染为带色 `Tag`：待同步(默认) / 同步中(处理中) / 同步成功(绿) / 同步失败(红)。
 - 同步失败时 `last_sync_error` 以 `Tooltip` 悬浮展示，失败原因一眼可见。
 - 行操作按状态动态显隐：
 
@@ -252,7 +310,7 @@ src/views/wms/order/     index.vue  order.api.ts     order.data.ts     component
 | 编辑 | 待审核 / 已驳回 | `wms:order:edit` |
 | 审核 | 待审核 | `wms:order:audit` |
 | 下达 | 已审核 | `wms:order:dispatch` |
-| 重新同步 | 已下达 且 同步失败 | `wms:order:resync` |
+| 重新同步 | 已下达 且（同步失败 或 待同步） | `wms:order:resync` |
 | 删除 | 待审核 / 已驳回 | `wms:order:delete` |
 
 - 订单表单供应商用 `Select`（数据源 `/wms/supplier/listAll`），与「供应商是平铺列表」一致，不用 `TreeSelect`。
@@ -292,6 +350,16 @@ src/views/wms/order/     index.vue  order.api.ts     order.data.ts     component
 | `1910000000000000046` | 订单-重新同步 | `wms:order:resync` | `…022` |
 
 5. `sys_role_permission` 给 admin（`f6817f48af4fb3af11b9e8bf182f618b`）授权，id 段 `1920000000000000021` / `…022` / `…031~033` / `…041~046`。
+6. `sys_quartz_job` 种子行（仅为让任务在「定时任务管理」UI 可见并支持**立即执行**；实际调度由 §6.5 的注册器负责，因为库里这行本身不会被自动加载）：
+
+| 列 | 值 |
+| --- | --- |
+| `id` | `1920000000000000101`（**必须**与 `WmsConstants.JOB_ID` 同值） |
+| `job_class_name` | `org.jeecg.modules.wms.job.WmsOrderSyncRetryJob` |
+| `cron_expression` | `0 3/5 * * * ? *` |
+| `description` | WMS订单同步失败补偿任务 |
+| `status` | `0`（正常） |
+| `del_flag` | `0` |
 
 ## 9. 依赖变更
 
@@ -308,7 +376,13 @@ src/views/wms/order/     index.vue  order.api.ts     order.data.ts     component
 
 **依据**：`jeecg-boot-module-airag/pom.xml` 已有同样写法（本地单体 `local-api` 生效、微服务 `cloud-api` 注释保留），本模块照此办理。已核实 `jeecg-system-local-api` 仅依赖其父 pom，**不构成循环依赖**。
 
-模块本身已在 `jeecg-boot-module/pom.xml` 的 `<modules>` 与 `jeecg-system-start/pom.xml` 的依赖中登记，**无需改动这两处**（已核实）。
+**无需为新依赖的部分**（均已核实，避免多做改动）：
+
+- **Quartz 不用加依赖**：`spring-boot-starter-quartz` 已声明在 `jeecg-boot-base-core/pom.xml`，wms 模块依赖 base-core 即**传递获得** `org.quartz.Job` 等类。
+- **Mapper XML 不用改配置**：`mapper-locations: classpath*:org/jeecg/**/xml/*Mapper.xml` 已在 `application-*.yml` **全部 profile** 中配置，XML 放 `src/main/java/org/jeecg/modules/wms/mapper/xml/` 即被加载（与模块 `package-info.java` 的说明一致）。
+- **模块接线不用改**：wms 已在 `jeecg-boot-module/pom.xml` 的 `<modules>` 与 `jeecg-system-start/pom.xml` 的依赖中登记。
+
+**运行时期望**：`ISysBaseAPI` 的实现 `SysBaseApiImpl` 位于 `system-biz`，单体模式下由 `jeecg-system-start` 提供；wms 模块**编译期只依赖接口**（`system-api`），这正是 airag 的既有做法。
 
 ## 10. 验证与验收证据
 
@@ -318,12 +392,16 @@ src/views/wms/order/     index.vue  order.api.ts     order.data.ts     component
 
 | 测试类 | 覆盖 |
 | --- | --- |
-| `WmsOrderServiceImplTest` | 状态机守卫全覆盖：合法流转（创建→审核→下达；创建→驳回→编辑→待审核）+ 每种非法前置状态被拒（断言抛出的报错文案） |
-| `WmsOrderSyncServiceImplTest` | 重试编排：① 首次即成功 → `retryCount=0` 且 gateway 恰调 1 次；② 第 2 次才成功 → `retryCount=1`；③ 4 次全失败 → 返回失败、`retryCount=3`、gateway 恰调 4 次、`errorMessage` 为最后一次的失败原因 |
+| `WmsOrderServiceImplTest` | ① 状态机守卫全覆盖：合法流转（创建→审核→下达；创建→驳回→编辑→待审核）+ 每种非法前置状态被拒（断言报错文案）；② **认领失败（`claimForSync` 返回 0）时不调用 gateway、不改状态** —— 并发互斥的决策逻辑，无需 DB |
+| `WmsOrderSyncServiceImplTest` | 重试编排：① 首次即成功 → `retryCount=0` 且 gateway 恰调 1 次；② 第 2 次才成功 → `retryCount=1`；③ 4 次全失败 → 返回失败、`retryCount=3`、gateway 恰调 4 次、`errorMessage` 为最后一次的失败原因；④ `announce=false` 时**不**发站内消息（验证防轰炸开关） |
+| `WmsOrderSyncRetryJobTest` | 单条失败不中断整轮：3 条候选中第 2 条抛异常 → 第 1、3 条仍被处理 |
 
 > **分层对应**（与 §6.2「编排不写库」一致）：`WmsOrderSyncServiceImplTest` 只断言**返回值**（成功与否、`retryCount`、失败原因文案、调用次数）——落库不是编排层的职责，故不在该测试中断言。`last_sync_error` / `retry_count` / `sync_status` 等**字段真正写进库**由 §10.3 步骤 6 的 SQL 查询取证。
 >
-> 诚实声明：单测覆盖的是**状态机与重试编排**这两处真逻辑。它们**不证明**前端页面渲染、`ISysBaseAPI` 告警真实投递、HTTP 报文格式被 ERP/MES 接受。这些的验证方式见 §10.3。
+> 诚实声明（边界划清楚）：
+> - 单测覆盖的是**状态机守卫、重试编排、认领决策、分批容错**这四处真逻辑，全部不启 Spring 上下文、不连库。
+> - **认领 SQL 本身**（`WmsOrderMapper.xml` 里的 `UPDATE … WHERE` 条件）**不在单测范围内**——它需要真实数据库。故用「`claimForSync` 返回 0 时服务跳过」来测决策，用 §10.3 的 E2E 测 SQL 真值。
+> - 单测**不证明**：前端页面渲染、`ISysBaseAPI` 告警真实投递、HTTP 报文格式被 ERP/MES 接受、Quartz 注册器在真机生效。这些的验证方式见 §10.3。
 
 ### 10.2 构建证据
 
@@ -349,6 +427,9 @@ cd jeecg-module-system/jeecg-system-start && mvn spring-boot:run
 6. **取证**：`SELECT order_no, sync_status, retry_count, last_sync_error, last_sync_time FROM wms_order WHERE order_no='PO20261014001';` → 应见 `同步失败 / 3 / 未配置 ERP/MES 同步地址… / <时间>`。
 7. **取证**：后端控制台应见 `ERROR` 级日志，含订单号、类型、重试次数与失败原因 —— 即验收标准②「同步失败时日志中有明确记录」。
 8. **取证**：`sys_announcement` 表新增一条标题为「WMS订单同步失败告警」的记录。
+9. **注册器取证**：**重启应用**（不做任何手工点击）→ 后端日志应出现补偿任务的注册记录（或「已存在，跳过」）。这验证 §6.5 发现的那个坑已被堵住——全新环境下自愈**开箱即用**，不依赖谁去 UI 点「启动」。
+10. **自愈取证 · 僵死回收**：手工把 `PO20261014001` 改成 `sync_status='同步中'` 且 `last_sync_time` 置为 10 分钟前（模拟进程崩溃残留），再到「系统管理 → 定时任务」点该任务的**立即执行** → 该行应被回收并重新同步，日志可见回收动作，`sync_status` 变为 `同步失败`、`retry_count=3`、`last_sync_time` 已刷新。
+11. **自愈取证 · 周期触发**：不手工触发，等一个周期，日志应出现每轮的 `log.info` 汇总（候选数 / 认领成功数 / 同步成功数 / 同步失败数）。
 
 ### 10.4 验收标准对照
 
@@ -356,12 +437,45 @@ cd jeecg-module-system/jeecg-system-start && mvn spring-boot:run
 | --- | --- |
 | 订单能正常创建、审核、下达 | §10.2 构建通过 + §10.3 步骤 3–5 + `WmsOrderServiceImplTest` |
 | 同步失败时日志中有明确记录 | §10.3 步骤 7 的 ERROR 日志 + 步骤 6 的落库字段 + `WmsOrderSyncServiceImplTest` 用例③ |
+| 同步失败可自愈（追加需求） | §10.3 步骤 9（注册器开箱即用）+ 步骤 10（僵死回收）+ 步骤 11（周期触发） |
 
 ## 11. 已知遗留与风险
 
-1. **`待同步` 僵死态**：进程在「已下达」提交后、同步结果写回前崩溃，订单停在 `sync_status=待同步`，且不在「重新同步」的允许前置状态内，需人工干预。未做定时补偿（需求方已选择同步阻塞式重试，未选定时任务）。如需要，后续补一个扫描 `sync_status IN ('待同步','同步失败')` 的 Quartz 任务即可。
-2. **同步阻塞约 7 秒**：下达请求最坏被拖慢约 7 秒（退避 1/2/4s + 4 次调用耗时），需求方已确认接受。
-3. **「重试 3 次」的解读**：按字面取「首次 1 次 + 重试 3 次 = 最多 4 次调用」。若需求方意图为「总计 3 次」，改 `WmsConstants.SYNC_MAX_RETRY` 一处常量即可。
-4. **告警通道单一**：仅站内消息 + ERROR 日志，未接钉钉/邮件。
-5. **订单无明细行**：当前订单只有头信息，无物料明细，与原材料/工序无关联。
-6. **`order_type` / `order_status` 为中文字面量**：可读性好，但改文案即等于改数据。若后续要国际化或多语言，需迁移到数据字典。
+1. **停不掉的补偿任务（已接受取舍）**：管理员在「定时任务管理」UI 点「暂停」，会在应用重启后被注册器重新拉起。启停实际以配置 `wms.sync.job.enabled` 为准（§6.5）。之所以不读 `sys_quartz_job.status`，是为了不引入 wms → `system-biz` 的反向依赖；如你更看重「UI 暂停能持久生效」，就得接受这层反向依赖，请明示。
+2. **单轮积压上限**：每轮最多处理 50 条、单轮最坏约 6 分钟 > 5 分钟周期。若同步失败订单持续多于该上限，会跨轮堆积——被 `@DisallowConcurrentExecution` 与认领机制挡住**重复投递**，但**排空速度可能赶不上堆积速度**。调 `SYNC_SCAN_BATCH` 或周期即可缓解。
+3. **认领 SQL 无单测**：`WmsOrderMapper.xml` 的条件更新只能靠 §10.3 步骤 10 的真库验证。这是本设计中**测试覆盖最薄的一处**，实现后应重点手工验证（尤其 `staleBefore` 边界）。
+4. **同步阻塞约 7 秒**：下达请求最坏被拖慢约 7 秒（4 次调用 + 退避 1/2/4s），需求方已确认接受。
+5. **「重试 3 次」口径**：已确认为「首次 1 次 + 重试 3 次 = 最多 4 次调用」。若要改，动 `WmsConstants.SYNC_MAX_RETRY` 一处即可。
+6. **告警通道单一，且补偿路径不告警**：仅站内消息 + ERROR 日志，未接钉钉/邮件；定时补偿路径**不发**站内消息（防轰炸，见 §6.2），故长期同步失败的订单只留日志与列表痕迹，不会持续提醒人。
+7. **订单无明细行**：当前订单只有头信息，无物料明细，与原材料/工序无关联。
+8. **`order_type` / `order_status` 为中文字面量**：可读性好，但改文案即等于改数据。若后续要国际化或多语言，需迁移到数据字典。
+9. **补偿任务不代用户下达**：「已审核未下达」的订单不会被后台自动下达——下达是人的决策，不应被自动化越过。
+
+## 12. 交付物清单
+
+**后端新增 20 个文件**（`jeecg-boot-module-wms/src/main/java/org/jeecg/modules/wms/`）：
+
+| 目录 | 文件 |
+| --- | --- |
+| `entity/` | `WmsSupplier.java`、`WmsOrder.java` |
+| `dto/` | `WmsOrderAuditDTO.java` |
+| `vo/` | `WmsOrderSyncOutcomeVO.java` |
+| `mapper/` | `WmsSupplierMapper.java`、`WmsOrderMapper.java`、`xml/WmsOrderMapper.xml` |
+| `service/` | `IWmsSupplierService.java`、`IWmsOrderService.java`、`IWmsOrderSyncService.java` |
+| `service/impl/` | `WmsSupplierServiceImpl.java`、`WmsOrderServiceImpl.java`、`WmsOrderSyncServiceImpl.java` |
+| `sync/` | `WmsOrderSyncGateway.java`、`WmsOrderSyncResult.java`、`HttpWmsOrderSyncGateway.java` |
+| `job/` | `WmsOrderSyncRetryJob.java`、`WmsOrderSyncJobRegistrar.java` |
+| `controller/` | `WmsSupplierController.java`、`WmsOrderController.java` |
+
+**后端修改 2 个文件**：`constant/WmsConstants.java`（追加订单类型 / 状态 / 同步状态 / 重试 / 任务常量）、`jeecg-boot-module-wms/pom.xml`（追加 `jeecg-system-local-api`）。
+
+**测试新增 3 个类**（`jeecg-boot-module-wms/src/test/java/org/jeecg/modules/wms/`，该目录当前不存在）：`WmsOrderServiceImplTest`、`WmsOrderSyncServiceImplTest`、`WmsOrderSyncRetryJobTest`。
+
+**Flyway 新增 1 个脚本**：`V3.9.5_3__wms_supplier_order.sql`。
+
+**前端新增 8 个文件**（`jeecgboot-vue3/src/views/wms/`）：
+
+| 目录 | 文件 |
+| --- | --- |
+| `supplier/` | `index.vue`、`supplier.api.ts`、`supplier.data.ts`、`components/SupplierModal.vue` |
+| `order/` | `index.vue`、`order.api.ts`、`order.data.ts`、`components/OrderModal.vue` |
