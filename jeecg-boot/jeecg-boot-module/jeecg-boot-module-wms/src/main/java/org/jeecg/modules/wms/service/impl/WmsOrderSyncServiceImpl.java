@@ -9,6 +9,7 @@ import org.jeecg.modules.wms.service.IWmsOrderSyncService;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
 import org.jeecg.modules.wms.sync.WmsOrderSyncGateway;
 import org.jeecg.modules.wms.sync.WmsOrderSyncResult;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -24,6 +25,16 @@ public class WmsOrderSyncServiceImpl implements IWmsOrderSyncService {
     private final ISysBaseAPI sysBaseAPI;
 
     private long[] backoffMs = WmsConstants.SYNC_RETRY_BACKOFF_MS;
+
+    /**
+     * 告警收件人（登录账号）。默认 {@link WmsConstants#ALERT_TO_USER}，可用配置覆盖。
+     *
+     * <p>必须非空：平台 {@code SysBaseApiImpl.sendSysAnnouncement} 会对 toUser 执行
+     * {@code split(",")}，null 会抛 NPE 并被下面 alert() 的 try/catch 吞掉，
+     * 结果只剩一行「告警投递失败」日志而管理员什么都收不到。
+     */
+    @Value("${wms.sync.alert.to-user:" + WmsConstants.ALERT_TO_USER + "}")
+    private String alertToUser = WmsConstants.ALERT_TO_USER;
 
     public WmsOrderSyncServiceImpl(WmsOrderSyncGateway gateway, ISysBaseAPI sysBaseAPI) {
         this.gateway = gateway;
@@ -83,7 +94,7 @@ public class WmsOrderSyncServiceImpl implements IWmsOrderSyncService {
         try {
             String content = String.format("订单号：%s；订单类型：%s；重试次数：%d；失败原因：%s",
                     order.getOrderNo(), order.getOrderType(), WmsConstants.SYNC_MAX_RETRY, error);
-            MessageDTO message = new MessageDTO(WmsConstants.ALERT_FROM_USER, null,
+            MessageDTO message = new MessageDTO(WmsConstants.ALERT_FROM_USER, alertToUser,
                     WmsConstants.SYNC_ALERT_TITLE, content);
             sysBaseAPI.sendSysAnnouncement(message);
         } catch (Exception e) {

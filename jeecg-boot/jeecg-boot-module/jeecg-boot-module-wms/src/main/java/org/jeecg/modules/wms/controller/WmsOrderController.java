@@ -47,14 +47,15 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
                                                 @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
                                                 @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
                                                 HttpServletRequest req) {
-        // 代码逻辑说明: supplierName 是非持久化字段（表里无对应列），必须先置空，
-        // 否则 QueryGenerator 会按它拼出 supplier_name 条件导致 SQL 报错
+        // 代码逻辑说明: supplierName / supplierCode 都是非持久化字段（表里无对应列），必须先置空，
+        // 否则 QueryGenerator 会按它们拼出 supplier_name / supplier_code 条件导致 SQL 报错
         wmsOrder.setSupplierName(null);
+        wmsOrder.setSupplierCode(null);
         QueryWrapper<WmsOrder> queryWrapper = QueryGenerator.initQueryWrapper(wmsOrder, req.getParameterMap());
         queryWrapper.orderByDesc("create_time");
         Page<WmsOrder> page = new Page<>(pageNo, pageSize);
         IPage<WmsOrder> pageList = service.page(page, queryWrapper);
-        service.fillSupplierName(pageList.getRecords());
+        service.fillSupplierInfo(pageList.getRecords());
         return Result.OK(pageList);
     }
 
@@ -68,7 +69,7 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
         if (entity == null) {
             return Result.error("未找到对应实体");
         }
-        service.fillSupplierName(java.util.Collections.singletonList(entity));
+        service.fillSupplierInfo(java.util.Collections.singletonList(entity));
         return Result.OK(entity);
     }
 

@@ -196,7 +196,7 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
     }
 
     @Override
-    public void fillSupplierName(List<WmsOrder> list) {
+    public void fillSupplierInfo(List<WmsOrder> list) {
         if (list == null || list.isEmpty()) {
             return;
         }
@@ -220,6 +220,7 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
             WmsSupplier supplier = order.getSupplierId() == null ? null : supplierMap.get(order.getSupplierId());
             if (supplier != null) {
                 order.setSupplierName(supplier.getSupplierName());
+                order.setSupplierCode(supplier.getSupplierCode());
             }
         }
     }
@@ -243,6 +244,10 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
         update.setDispatchTime(new Date());
         WmsUtils.fillUpdate(update);
         this.updateById(update);
+        // 快照是在上面这次更新之前读出来的，需补上下达信息，
+        // 否则传给同步的报文里 dispatchTime / dispatchBy 恒为 null
+        existing.setDispatchBy(update.getDispatchBy());
+        existing.setDispatchTime(update.getDispatchTime());
         return claimAndSync(id, existing);
     }
 
@@ -273,6 +278,9 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
         }
         snapshot.setOrderStatus(WmsConstants.ORDER_STATUS_DISPATCHED);
         snapshot.setSyncStatus(WmsConstants.SYNC_STATUS_RUNNING);
+        // 同步报文要用到供应商编码与名称，二者都是非持久化字段（快照来自 getById，恒为空），
+        // 故在真正投递前补齐，避免 ERP/MES 收到空供应商信息
+        this.fillSupplierInfo(java.util.Collections.singletonList(snapshot));
         WmsOrderSyncAttempt attempt = orderSyncService.syncOrder(snapshot, true);
         persistSyncResult(id, attempt);
         return new WmsOrderSyncOutcomeVO()

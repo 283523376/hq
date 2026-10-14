@@ -95,6 +95,15 @@ public final class WmsConstants {
     /** 告警消息的发送人标识。 */
     public static final String ALERT_FROM_USER = "system";
 
+    /**
+     * 告警消息的默认收件人（登录账号）。
+     *
+     * <p><b>不可为 null</b>：平台 {@code SysBaseApiImpl} 会对该值执行 {@code split(",")}，
+     * 传 null 会抛 NPE 并被调用方的 try/catch 吞掉，表现为「公告插入成功但收件人零条」——
+     * 管理员实际收不到任何告警。可用配置 {@code wms.sync.alert.to-user} 覆盖。
+     */
+    public static final String ALERT_TO_USER = "admin";
+
     // ---------------------------------------------------------------- 定时补偿任务
 
     /** 补偿任务在 {@code sys_quartz_job} 中的主键；必须与 Flyway 种子行、注册器三处一致。 */

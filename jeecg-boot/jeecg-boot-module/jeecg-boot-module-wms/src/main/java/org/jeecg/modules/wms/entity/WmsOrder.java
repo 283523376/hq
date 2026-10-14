@@ -43,11 +43,18 @@ public class WmsOrder extends JeecgEntity {
     private String supplierId;
 
     /**
-     * 供应商名称（非持久化）：列表展示用，查询后回填。
+     * 供应商名称（非持久化）：列表展示与同步报文用，查询后回填。
      */
     @TableField(exist = false)
     @Schema(description = "供应商名称")
     private String supplierName;
+
+    /**
+     * 供应商编码（非持久化）：随 supplierName 一并回填，供同步至 ERP/MES 的报文使用。
+     */
+    @TableField(exist = false)
+    @Schema(description = "供应商编码")
+    private String supplierCode;
 
     /** 订单状态：待审核/已审核/已下达/已驳回 */
     @Excel(name = "订单状态", width = 12)

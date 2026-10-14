@@ -1,12 +1,15 @@
 package org.jeecg.modules.wms.service.impl;
 
+import org.jeecg.common.api.dto.message.MessageDTO;
 import org.jeecg.common.system.api.ISysBaseAPI;
+import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsOrder;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
 import org.jeecg.modules.wms.sync.WmsOrderSyncGateway;
 import org.jeecg.modules.wms.sync.WmsOrderSyncResult;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -93,16 +96,30 @@ class WmsOrderSyncServiceImplTest {
         verify(gateway, times(WmsConstants.SYNC_MAX_RETRY + 1)).sync(any());
     }
 
-    /** ④ announce=true 时失败必须发站内消息。 */
+    /**
+     * ④ announce=true 时失败必须发站内消息，且**收件人必须非空**。
+     *
+     * <p>为什么不能只断言「调用过」：平台侧 {@code SysBaseApiImpl} 对 toUser 直接做
+     * {@code userId.split(",")}，传 null 会抛 NPE，而本方法用 try/catch 把它吞成一行日志——
+     * 结果是「公告插入了一行、收件人一条都没有」，管理员实际收不到任何告警，却看不出故障。
+     * Mock 不会复现该 NPE，所以只 verify 次数是**假绿**；这里断言真实收件人与内容。
+     */
     @Test
-    void syncOrder_shouldAnnounceWhenEnabled() {
+    void syncOrder_shouldAnnounceToRealRecipientWhenEnabled() {
         WmsOrderSyncGateway gateway = mock(WmsOrderSyncGateway.class);
         when(gateway.sync(any())).thenReturn(WmsOrderSyncResult.fail("挂了"));
         ISysBaseAPI sysBaseAPI = mock(ISysBaseAPI.class);
 
         service(gateway, sysBaseAPI).syncOrder(order(), true);
 
-        verify(sysBaseAPI, times(1)).sendSysAnnouncement(any());
+        ArgumentCaptor<MessageDTO> captor = ArgumentCaptor.forClass(MessageDTO.class);
+        verify(sysBaseAPI, times(1)).sendSysAnnouncement(captor.capture());
+        MessageDTO sent = captor.getValue();
+        assertTrue(oConvertUtils.isNotEmpty(sent.getToUser()),
+                "告警收件人不能为空，否则平台侧 split(\",\") 抛 NPE，消息实际投不出去");
+        assertEquals(WmsConstants.SYNC_ALERT_TITLE, sent.getTitle());
+        assertTrue(sent.getContent() != null && sent.getContent().contains("PO001"),
+                "告警内容应含订单号，实际为：" + sent.getContent());
     }
 
     /** ⑤ announce=false（定时补偿路径）时不得发消息，防止每 5 分钟轰炸一次。 */

@@ -72,6 +72,7 @@ public class HttpWmsOrderSyncGateway implements WmsOrderSyncGateway {
         payload.put("orderNo", order.getOrderNo());
         payload.put("orderType", order.getOrderType());
         payload.put("supplierId", order.getSupplierId());
+        payload.put("supplierCode", order.getSupplierCode());
         payload.put("supplierName", order.getSupplierName());
         payload.put("orderStatus", order.getOrderStatus());
         payload.put("auditTime", order.getAuditTime());

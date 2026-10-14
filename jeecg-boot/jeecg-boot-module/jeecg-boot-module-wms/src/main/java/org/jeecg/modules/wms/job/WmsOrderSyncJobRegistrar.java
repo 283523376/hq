@@ -43,10 +43,15 @@ public class WmsOrderSyncJobRegistrar {
         this.scheduler = scheduler;
     }
 
+    /** 仅供单测设置开关。 */
+    void setJobEnabledForTest(boolean jobEnabled) {
+        this.jobEnabled = jobEnabled;
+    }
+
     @EventListener(ApplicationReadyEvent.class)
     public void register() {
         if (!jobEnabled) {
-            log.info("补偿任务已按配置 {} 关闭，跳过注册", WmsConstants.SYNC_JOB_ENABLED_KEY);
+            unscheduleIfPresent();
             return;
         }
         try {
@@ -67,6 +72,28 @@ public class WmsOrderSyncJobRegistrar {
         } catch (Exception e) {
             // 调度器的毛病不允许阻断应用启动
             log.warn("补偿任务注册失败（不影响应用启动）：{}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 关闭开关时**主动摘除**已注册的任务。
+     *
+     * <p>本部署的 Quartz 是 JDBC 作业存储（{@code LocalDataSourceJobStore} + {@code isClustered:true}），
+     * 任务一旦注册过，其 trigger 就持久化在 QRTZ_* 表中，重启后会被调度器自动加载。
+     * 因此仅在关闭时"提前 return"是**停不掉**任务的：运维把 {@code wms.sync.job.enabled} 改成 false 并重启后，
+     * 日志会显示"已关闭"，任务却仍每 5 分钟照跑——属"看起来已停"的静默故障。
+     */
+    private void unscheduleIfPresent() {
+        try {
+            JobKey jobKey = JobKey.jobKey(WmsConstants.SYNC_JOB_ID);
+            if (scheduler.checkExists(jobKey)) {
+                scheduler.deleteJob(jobKey);
+                log.info("补偿任务[{}]已按配置 {} 关闭并摘除", WmsConstants.SYNC_JOB_ID, WmsConstants.SYNC_JOB_ENABLED_KEY);
+            } else {
+                log.info("补偿任务已按配置 {} 关闭，调度器中无残留", WmsConstants.SYNC_JOB_ENABLED_KEY);
+            }
+        } catch (Exception e) {
+            log.warn("补偿任务摘除失败（不影响应用启动）：{}", e.getMessage(), e);
         }
     }
 }

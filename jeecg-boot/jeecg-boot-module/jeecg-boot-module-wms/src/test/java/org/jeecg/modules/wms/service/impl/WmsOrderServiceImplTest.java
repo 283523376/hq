@@ -9,12 +9,14 @@ import org.jeecg.modules.wms.service.IWmsOrderSyncService;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
 import org.jeecg.modules.wms.vo.WmsOrderSyncOutcomeVO;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -230,38 +232,38 @@ class WmsOrderServiceImplTest {
 
     /** 供应商查不到（已删除/已停用）时，回填必须静默跳过，不能抛异常把整个列表打挂。 */
     @Test
-    void fillSupplierName_shouldTolerateMissingSupplier() {
+    void fillSupplierInfo_shouldTolerateMissingSupplier() {
         // selectBatchIds 自带 del_flag=0 过滤，已删除的供应商查不到 → 返回空集合
         WmsOrderServiceImpl service = serviceWithSupplierMapper(Collections.emptyList());
         WmsOrder order = new WmsOrder().setSupplierId("不存在的供应商ID");
         order.setId("1");
 
-        assertDoesNotThrow(() -> service.fillSupplierName(Collections.singletonList(order)));
+        assertDoesNotThrow(() -> service.fillSupplierInfo(Collections.singletonList(order)));
         assertEquals(null, order.getSupplierName());
     }
 
     /** 空列表与全空 supplierId 都必须安全返回（此时根本不该查库）。 */
     @Test
-    void fillSupplierName_shouldHandleEmptyInput() {
+    void fillSupplierInfo_shouldHandleEmptyInput() {
         WmsOrderServiceImpl service = serviceWithSupplierMapper(Collections.emptyList());
 
-        assertDoesNotThrow(() -> service.fillSupplierName(null));
-        assertDoesNotThrow(() -> service.fillSupplierName(Collections.emptyList()));
+        assertDoesNotThrow(() -> service.fillSupplierInfo(null));
+        assertDoesNotThrow(() -> service.fillSupplierInfo(Collections.emptyList()));
         WmsOrder blank = new WmsOrder();
         blank.setId("1");
-        assertDoesNotThrow(() -> service.fillSupplierName(Collections.singletonList(blank)));
+        assertDoesNotThrow(() -> service.fillSupplierInfo(Collections.singletonList(blank)));
     }
 
     /** 供应商存在时必须正确回填名称（防止"只测了容错、没测正常路径"）。 */
     @Test
-    void fillSupplierName_shouldFillExistingSupplier() {
+    void fillSupplierInfo_shouldFillExistingSupplier() {
         WmsSupplier supplier = new WmsSupplier().setSupplierName("永鑫五金");
         supplier.setId("S1");
         WmsOrderServiceImpl service = serviceWithSupplierMapper(Collections.singletonList(supplier));
         WmsOrder order = new WmsOrder().setSupplierId("S1");
         order.setId("1");
 
-        service.fillSupplierName(Collections.singletonList(order));
+        service.fillSupplierInfo(Collections.singletonList(order));
 
         assertEquals("永鑫五金", order.getSupplierName());
     }
@@ -299,11 +301,18 @@ class WmsOrderServiceImplTest {
         WmsOrder order = new WmsOrder()
                 .setOrderNo("PO001")
                 .setOrderType(WmsConstants.ORDER_TYPE_PURCHASE)
-                .setOrderStatus(WmsConstants.ORDER_STATUS_AUDITED);
+                .setOrderStatus(WmsConstants.ORDER_STATUS_AUDITED)
+                .setSupplierId("S1");
         order.setId("1");
         doReturn(order).when(service).getById("1");
         doReturn(1).when(service).claimForSync(any(), any());
         doReturn(true).when(service).updateById(any());
+        // claimAndSync 会为同步报文回填供应商信息，故必须注入供应商 Mapper
+        WmsSupplier supplier = new WmsSupplier().setSupplierName("永鑫五金").setSupplierCode("SUP001");
+        supplier.setId("S1");
+        WmsSupplierMapper supplierMapper = mock(WmsSupplierMapper.class);
+        when(supplierMapper.selectBatchIds(any())).thenReturn(Collections.singletonList(supplier));
+        service.setSupplierMapperForTest(supplierMapper);
 
         IWmsOrderSyncService syncService = mock(IWmsOrderSyncService.class);
         when(syncService.syncOrder(any(), anyBoolean()))
@@ -316,6 +325,17 @@ class WmsOrderServiceImplTest {
         assertEquals(false, outcome.getSynced());
         assertEquals("ERP 未配置", outcome.getSyncError());
         assertEquals(3, outcome.getRetryCount());
+
+        // 审查发现：传给同步的快照必须带齐报文要素，
+        // 否则一旦接入真实 ERP/MES，对方会收到空供应商编码/名称与空下达时间
+        ArgumentCaptor<WmsOrder> snapshotCaptor = ArgumentCaptor.forClass(WmsOrder.class);
+        verify(syncService).syncOrder(snapshotCaptor.capture(), eq(true));
+        WmsOrder snapshot = snapshotCaptor.getValue();
+        assertEquals("永鑫五金", snapshot.getSupplierName(), "同步报文需要供应商名称");
+        assertEquals("SUP001", snapshot.getSupplierCode(), "同步报文需要供应商编码");
+        assertNotNull(snapshot.getDispatchTime(), "同步报文需要下达时间（下达路径此前恒为 null）");
+        // 不下断言 dispatchBy：单测无 Shiro 安全上下文，WmsUtils.currentUsername() 按设计返回 null，
+        // 该字段的真实取值由端到端（已登录）覆盖，见验收报告 §2。
     }
 
     /** 只有「已审核」可下达。 */

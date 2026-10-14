@@ -34,8 +34,8 @@ public interface IWmsOrderService extends JeecgService<WmsOrder> {
     /** 判断订单号是否已被占用；编辑时传 id 以排除自身。 */
     boolean checkOrderNoExists(String orderNo, String id);
 
-    /** 回填供应商名称（非持久化字段，供列表使用）。 */
-    void fillSupplierName(List<WmsOrder> list);
+    /** 回填供应商名称与编码（非持久化字段，供列表展示与同步报文使用）。 */
+    void fillSupplierInfo(List<WmsOrder> list);
 
     /**
      * 下达订单：状态置「已下达」→ 认领 → 同步 ERP/MES。
