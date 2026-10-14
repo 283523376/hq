@@ -141,10 +141,17 @@ class WmsMaterialControllerTest {
         ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
         verify(service).page(any(Page.class), captor.capture());
         QueryWrapper<WmsMaterial> wrapper = (QueryWrapper<WmsMaterial>) captor.getValue();
+        // 必须先渲染 SQL 片段：MyBatis-Plus 的条件参数是惰性填充的，不调 getSqlSegment()
+        // 时 getParamNameValuePairs() 恒为空，下面的 assertFalse 会退化成永真断言（什么都不验证）
+        String sqlSegment = wrapper.getSqlSegment();
+        assertFalse(sqlSegment.contains("category_name"),
+                "非持久化字段 categoryName 不得被拼进查询条件，实际：" + sqlSegment);
+        assertFalse(sqlSegment.contains("category_code"),
+                "非持久化字段 categoryCode 不得被拼进查询条件，实际：" + sqlSegment);
         assertFalse(wrapper.getParamNameValuePairs().containsValue("半成品"),
-                "非持久化字段 categoryName 不得被拼进查询条件");
+                "非持久化字段 categoryName 的值不得出现在 SQL 参数中");
         assertFalse(wrapper.getParamNameValuePairs().containsValue("C01"),
-                "非持久化字段 categoryCode 不得被拼进查询条件");
+                "非持久化字段 categoryCode 的值不得出现在 SQL 参数中");
     }
 
     /** 查不到时返回「未找到对应实体」。 */
