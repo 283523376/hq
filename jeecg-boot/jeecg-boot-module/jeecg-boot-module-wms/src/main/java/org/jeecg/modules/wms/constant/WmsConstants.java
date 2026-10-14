@@ -33,6 +33,9 @@ public final class WmsConstants {
     /** 否。 */
     public static final String NO = "0";
 
-    /** 物料 Excel 导入：标题行 1 + 表头行 1，数据自物理第 3 行开始（行号 = 下标 + 3）。 */
-    public static final int IMPORT_ROW_OFFSET = 3;
+    /**
+     * 物料 Excel 导入：与平台导出/模板格式一致 —— 第 1 行标题、第 2 行第二标题（导出人/填写说明）、
+     * 第 3 行表头，数据自物理第 4 行开始（行号 = 列表下标 + 4）。
+     */
+    public static final int IMPORT_ROW_OFFSET = 4;
 }

@@ -211,9 +211,25 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
     }
 
     /**
+     * 下载空白导入模板（与导出格式一致：两行标题 + 一行表头，无数据行）。
+     */
+    @Operation(summary = "物料-下载导入模板")
+    @RequestMapping(value = "/importTemplate")
+    public ModelAndView importTemplate() {
+        ModelAndView mv = new ModelAndView(new JeecgEntityExcelView());
+        mv.addObject(NormalExcelConstants.DATA_LIST, new ArrayList<WmsMaterial>());
+        mv.addObject(NormalExcelConstants.FILE_NAME, "物料导入模板");
+        mv.addObject(NormalExcelConstants.CLASS, WmsMaterial.class);
+        // 第二行放填写说明（同时保证与导入的 titleRows=2 对齐）
+        mv.addObject(NormalExcelConstants.PARAMS,
+                new ExportParams("物料导入模板", "填写说明：物料编码、物料名称、分类编码为必填；请勿修改或删除前两行与表头行", "导入模板", ExcelType.XSSF));
+        return mv;
+    }
+
+    /**
      * 通过excel导入数据
      *
-     * <p>逐行保存、逐行收集错误，错误信息带**物理 Excel 行号**（标题行 1 + 表头行 1 → 数据从第 3 行起）。
+     * <p>逐行保存、逐行收集错误，错误信息带**物理 Excel 行号**（两行标题 + 一行表头 → 数据从第 4 行起）。
      * 不使用事务，避免部分成功被整体回滚。
      */
     @AutoLog(value = "物料-导入", operateType = 5)
@@ -230,7 +246,8 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
         for (Map.Entry<String, MultipartFile> entry : fileMap.entrySet()) {
             MultipartFile file = entry.getValue();
             ImportParams params = new ImportParams();
-            params.setTitleRows(1);
+            // 与平台导出/导入模板保持一致：第 1 行标题、第 2 行第二标题（导出人 / 填写说明）、第 3 行表头
+            params.setTitleRows(2);
             params.setHeadRows(1);
             params.setNeedSave(false);
             try {

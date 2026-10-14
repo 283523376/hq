@@ -10,10 +10,12 @@ enum Api {
   checkCode = '/wms/material/checkCode',
   importExcel = '/wms/material/importExcel',
   exportXls = '/wms/material/exportXls',
+  importTemplate = '/wms/material/importTemplate',
 }
 
 export const getImportUrl = Api.importExcel;
 export const getExportUrl = Api.exportXls;
+export const getTemplateUrl = Api.importTemplate;
 
 export const list = (params?) => defHttp.get({ url: Api.list, params });
 

@@ -31,6 +31,14 @@
             >
               导出
             </a-button>
+            <a-button
+              type="primary"
+              preIcon="ant-design:file-add-outlined"
+              v-auth="'wms:material:import'"
+              @click="onDownloadTemplate"
+            >
+              模板下载
+            </a-button>
             <a-dropdown v-if="selectedRowKeys.length > 0">
               <template #overlay>
                 <a-menu>
@@ -61,6 +69,7 @@
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useModal } from '/@/components/Modal';
   import { useListPage } from '/@/hooks/system/useListPage';
+  import { useMethods } from '/@/hooks/system/useMethods';
   import { useDesign } from '/@/hooks/web/useDesign';
   import CategoryTree from './components/CategoryTree.vue';
   import MaterialModal from './components/MaterialModal.vue';
@@ -72,6 +81,7 @@
     disableMaterial,
     getExportUrl,
     getImportUrl,
+    getTemplateUrl,
   } from './material.api';
 
   const { prefixCls } = useDesign('wms-material');
@@ -80,6 +90,7 @@
   const categoryId = ref('');
 
   const [registerModal, { openModal }] = useModal();
+  const { handleExportXls } = useMethods();
 
   const { onExportXls, onImportXls, tableContext } = useListPage({
     tableProps: {
@@ -89,7 +100,10 @@
       formConfig: { schemas: searchFormSchema },
       actionColumn: { width: 150 },
       beforeFetch(params) {
-        params.categoryId = categoryId.value;
+        // 必须返回合并结果：useListPage.onExportXls 会用 beforeFetch 的返回值覆盖 paramsForm，
+        // 而表格自身请求（useDataSource）有 `|| params` 兜底、导出侧没有；不返回会导致
+        // Object.assign(undefined, …) 抛 TypeError，表现为「点导出没反应」。
+        return Object.assign(params, { categoryId: categoryId.value });
       },
     },
     exportConfig: {
@@ -113,6 +127,11 @@
   /** 分类增删改后，物料列表的分类名可能变化，一并刷新 */
   function onCategoryRefresh() {
     reload();
+  }
+
+  /** 下载空白导入模板（Excel） */
+  function onDownloadTemplate() {
+    handleExportXls('物料导入模板', getTemplateUrl);
   }
 
   function handleCreate() {
