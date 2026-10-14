@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.controller;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.jeecg.common.api.vo.Result;
@@ -9,6 +10,7 @@ import org.jeecg.modules.wms.entity.WmsSupplier;
 import org.jeecg.modules.wms.service.IWmsSupplierService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.Arrays;
@@ -56,15 +58,22 @@ class WmsSupplierControllerTest {
         page.setTotal(1);
         doReturn(page).when(service).page(any(Page.class), any(Wrapper.class));
 
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addParameter("supplierName", "永鑫");
+        // 筛选值必须设在**实体入参**上：Spring 把查询参数绑定进实体，
+        // QueryGenerator 只从实体字段值构造条件（request 参数仅供 _begin/_end 与排序用）。
+        WmsSupplier query = new WmsSupplier().setSupplierName("永鑫");
 
         Result<IPage<WmsSupplier>> result = controller(service)
-                .queryPageList(new WmsSupplier(), 1, 10, request);
+                .queryPageList(query, 1, 10, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
         assertEquals(1, result.getResult().getTotal());
         assertEquals("永鑫五金", result.getResult().getRecords().get(0).getSupplierName());
+
+        ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(service).page(any(Page.class), captor.capture());
+        QueryWrapper<WmsSupplier> wrapper = (QueryWrapper<WmsSupplier>) captor.getValue();
+        String sqlSegment = wrapper.getSqlSegment();
+        assertTrue(sqlSegment.contains("supplier_name"), "按名称筛选未生效，实际：" + sqlSegment);
     }
 
     /** 按编码与状态筛选同样必须生效。 */
@@ -76,15 +85,22 @@ class WmsSupplierControllerTest {
         page.setTotal(0);
         doReturn(page).when(service).page(any(Page.class), any(Wrapper.class));
 
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addParameter("supplierCode", "SUP001");
-        request.addParameter("status", WmsConstants.STATUS_ENABLE);
+        WmsSupplier query = new WmsSupplier()
+                .setSupplierCode("SUP001")
+                .setStatus(WmsConstants.STATUS_ENABLE);
 
         Result<IPage<WmsSupplier>> result = controller(service)
-                .queryPageList(new WmsSupplier(), 1, 10, request);
+                .queryPageList(query, 1, 10, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
         assertEquals(0, result.getResult().getTotal());
+
+        ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(service).page(any(Page.class), captor.capture());
+        QueryWrapper<WmsSupplier> wrapper = (QueryWrapper<WmsSupplier>) captor.getValue();
+        String sqlSegment = wrapper.getSqlSegment();
+        assertTrue(sqlSegment.contains("supplier_code"), "按编码筛选未生效，实际：" + sqlSegment);
+        assertTrue(sqlSegment.contains("status"), "按状态筛选未生效，实际：" + sqlSegment);
     }
 
     // ------------------------------------------------------------ 下拉列表

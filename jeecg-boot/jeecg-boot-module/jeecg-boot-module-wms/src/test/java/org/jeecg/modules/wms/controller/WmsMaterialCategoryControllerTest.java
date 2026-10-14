@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.controller;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.jeecg.common.api.vo.Result;
@@ -10,6 +11,7 @@ import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.Collections;
@@ -84,15 +86,23 @@ class WmsMaterialCategoryControllerTest {
         page.setTotal(1);
         doReturn(page).when(service).page(any(Page.class), any(Wrapper.class));
 
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addParameter("categoryType", "半成品");
+        // 前端把筛选值作为查询参数发给接口，Spring 绑定进控制器的实体入参；
+        // QueryGenerator 只从**实体字段值**构造条件（request 参数仅用于 _begin/_end 区间与排序），
+        // 故这里必须把筛选值设在实体上，只塞 request 参数构造不出条件。
+        WmsMaterialCategory query = new WmsMaterialCategory().setCategoryType("半成品");
 
         Result<IPage<WmsMaterialCategory>> result = controller(service)
-                .queryPageList(new WmsMaterialCategory(), 1, 10, request);
+                .queryPageList(query, 1, 10, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
         assertEquals(1, result.getResult().getTotal());
         assertEquals("半成品", result.getResult().getRecords().get(0).getCategoryType());
+
+        ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(service).page(any(Page.class), captor.capture());
+        QueryWrapper<WmsMaterialCategory> wrapper = (QueryWrapper<WmsMaterialCategory>) captor.getValue();
+        String sqlSegment = wrapper.getSqlSegment();
+        assertTrue(sqlSegment.contains("category_type"), "分类类型筛选未生效，实际：" + sqlSegment);
     }
 
     // ------------------------------------------------------------ 编码唯一性校验

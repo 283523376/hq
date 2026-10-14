@@ -132,11 +132,15 @@ class WmsMaterialControllerTest {
         page.setTotal(0);
         doReturn(page).when(service).page(any(Page.class), any(Wrapper.class));
 
-        Result<IPage<WmsMaterial>> result = controller(service).queryPageList(
-                new WmsMaterial().setCategoryName("半成品").setCategoryCode("C01"),
-                1, 10, new MockHttpServletRequest());
+        WmsMaterial probe = new WmsMaterial().setCategoryName("半成品").setCategoryCode("C01");
+
+        Result<IPage<WmsMaterial>> result = controller(service)
+                .queryPageList(probe, 1, 10, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
+        // 直接断言控制器的动作：它必须把非持久化字段置空后才交给 QueryGenerator
+        assertNull(probe.getCategoryName(), "控制器必须先置空 categoryName 再构造查询条件");
+        assertNull(probe.getCategoryCode(), "控制器必须先置空 categoryCode 再构造查询条件");
 
         ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
         verify(service).page(any(Page.class), captor.capture());
