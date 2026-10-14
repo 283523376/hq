@@ -43,6 +43,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -73,6 +74,10 @@ class WmsMaterialControllerTest {
     @AfterEach
     void tearDown() {
         WmsTestSupport.unbindShiro();
+        // PmsUtil.uploadPath 是**静态**字段：不重置的话，它会一直悬着指向已被 JUnit 删除的临时目录，
+        // 同 JVM 内后续任何触发 PmsUtil 错误清单落盘的测试都会写进不存在的目录而失败——
+        // 「单独跑绿、批量跑红」的典型来源。
+        new PmsUtil().setUploadPath(null);
     }
 
     private static WmsMaterialController controller(IWmsMaterialService service) {
@@ -232,6 +237,7 @@ class WmsMaterialControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals("添加成功！", result.getMessage());
+        verify(service).addMaterial(any());
     }
 
     /** 编码重复时消息原样透出（BD001-T10）。 */
@@ -284,6 +290,7 @@ class WmsMaterialControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals("停用成功！", result.getMessage());
+        verify(service).disableMaterial("1");
     }
 
     /** 删除成功（BD001-T13）。 */
@@ -295,6 +302,7 @@ class WmsMaterialControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals("删除成功！", result.getMessage());
+        verify(service).removeMaterial("1");
     }
 
     /** 批量删除的空 ids 必须被挡下。 */

@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -292,6 +293,7 @@ class WmsOrderControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals("已驳回！", result.getMessage());
+        verify(service).auditOrder(dto);
     }
 
     /** 重复审核时守卫消息原样透出（BD002-T16）。 */
