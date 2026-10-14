@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -86,5 +87,17 @@ class WmsOrderSyncRetryJobTest {
         new WmsOrderSyncRetryJob(orderService, syncService).scanAndResyncForTest();
 
         verify(syncService, never()).syncOrder(any(), anyBoolean());
+    }
+
+    /**
+     * Quartz 的 JDBC 存储与「定时任务管理 → 立即执行」都需要一个可访问的**无参构造器**来实例化 Job。
+     * 若只提供带参构造器，运行时会在 scheduleJob 处抛
+     * 「NoSuchMethodException: ...WmsOrderSyncRetryJob.&lt;init&gt;()」，表现为「立即执行失败」——
+     * 而依赖注册器的正常调度路径不受影响，故容易漏测。此用例把该约束钉住。
+     */
+    @Test
+    void shouldExposeNoArgConstructorForQuartz() {
+        assertDoesNotThrow(() -> WmsOrderSyncRetryJob.class.getDeclaredConstructor(),
+                "Quartz 需要一个可访问的无参构造器，否则「立即执行」会失败");
     }
 }

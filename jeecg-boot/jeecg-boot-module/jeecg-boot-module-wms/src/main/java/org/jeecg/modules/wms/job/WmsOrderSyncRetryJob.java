@@ -35,11 +35,22 @@ import java.util.List;
 @DisallowConcurrentExecution
 public class WmsOrderSyncRetryJob implements Job {
 
-    private final IWmsOrderService orderService;
-    private final IWmsOrderSyncService orderSyncService;
+    @Autowired
+    private IWmsOrderService orderService;
 
     @Autowired
-    public WmsOrderSyncRetryJob(IWmsOrderService orderService, IWmsOrderSyncService orderSyncService) {
+    private IWmsOrderSyncService orderSyncService;
+
+    /**
+     * Quartz 的 JDBC 存储与「定时任务管理 → 立即执行」需要一个**可访问的无参构造器**来实例化 Job；
+     * 只提供带参构造器会在运行时抛 NoSuchMethodException，表现为「立即执行失败」。
+     * 依赖改为字段注入（与本项目 {@code UserUpadtePwdJob} 的既有写法一致）。
+     */
+    public WmsOrderSyncRetryJob() {
+    }
+
+    /** 仅供单测注入依赖，避免反射塞字段。 */
+    WmsOrderSyncRetryJob(IWmsOrderService orderService, IWmsOrderSyncService orderSyncService) {
         this.orderService = orderService;
         this.orderSyncService = orderSyncService;
     }
