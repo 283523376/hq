@@ -3,7 +3,10 @@ package org.jeecg.modules.wms.service;
 import org.jeecg.common.system.base.service.JeecgService;
 import org.jeecg.modules.wms.dto.WmsOrderAuditDTO;
 import org.jeecg.modules.wms.entity.WmsOrder;
+import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
+import org.jeecg.modules.wms.vo.WmsOrderSyncOutcomeVO;
 
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -33,4 +36,38 @@ public interface IWmsOrderService extends JeecgService<WmsOrder> {
 
     /** 回填供应商名称（非持久化字段，供列表使用）。 */
     void fillSupplierName(List<WmsOrder> list);
+
+    /**
+     * 下达订单：状态置「已下达」→ 认领 → 同步 ERP/MES。
+     *
+     * @return 同步结果；{@code synced=null} 表示未抢到认领、本次未执行同步
+     */
+    WmsOrderSyncOutcomeVO dispatchOrder(String id);
+
+    /**
+     * 重新同步（仅「已下达 且 同步失败/待同步」）。
+     */
+    WmsOrderSyncOutcomeVO resyncOrder(String id);
+
+    /**
+     * 乐观认领：把可同步的订单置为「同步中」。定时补偿任务经此入口，避免直接操作 Mapper。
+     *
+     * @return 受影响行数；1 表示认领成功，0 表示已被他人持有
+     */
+    int claimForSync(String id, Date staleBefore);
+
+    /**
+     * 取待补偿订单（定时任务用），避免定时任务直接操作 Mapper。
+     */
+    List<WmsOrder> selectSyncCandidates(Date staleBefore, int limit);
+
+    /**
+     * 写回同步结果。集中在一处，避免订单服务与定时任务各写一遍。
+     */
+    void persistSyncResult(String id, WmsOrderSyncAttempt attempt);
+
+    /**
+     * 「同步中」僵死阈值，供定时任务复用同一口径。
+     */
+    Date syncStaleBefore();
 }

@@ -11,7 +11,10 @@ import org.jeecg.modules.wms.entity.WmsSupplier;
 import org.jeecg.modules.wms.mapper.WmsOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsSupplierMapper;
 import org.jeecg.modules.wms.service.IWmsOrderService;
+import org.jeecg.modules.wms.service.IWmsOrderSyncService;
+import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsOrderSyncOutcomeVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -44,6 +47,14 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
     /** 仅供单测注入供应商 Mapper（裸 new 时该字段为空，回填会 NPE）。 */
     void setSupplierMapperForTest(WmsSupplierMapper wmsSupplierMapper) {
         this.wmsSupplierMapper = wmsSupplierMapper;
+    }
+
+    @Autowired
+    private IWmsOrderSyncService orderSyncService;
+
+    /** 仅供单测替换同步服务。 */
+    void setSyncServiceForTest(IWmsOrderSyncService orderSyncService) {
+        this.orderSyncService = orderSyncService;
     }
 
     // ------------------------------------------------------------ 创建
@@ -211,6 +222,99 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
                 order.setSupplierName(supplier.getSupplierName());
             }
         }
+    }
+
+    // ------------------------------------------------------------ 下达与重同步
+
+    @Override
+    public WmsOrderSyncOutcomeVO dispatchOrder(String id) {
+        WmsOrder existing = this.getById(id);
+        if (existing == null) {
+            throw new RuntimeException("未找到对应订单");
+        }
+        if (!WmsConstants.ORDER_STATUS_AUDITED.equals(existing.getOrderStatus())) {
+            throw new RuntimeException("仅已审核状态的订单可下达");
+        }
+        // 【事务内】先落下达状态，再抢占认领；两件事都不能拖进长事务
+        WmsOrder update = new WmsOrder();
+        update.setId(id);
+        update.setOrderStatus(WmsConstants.ORDER_STATUS_DISPATCHED);
+        update.setDispatchBy(WmsUtils.currentUsername());
+        update.setDispatchTime(new Date());
+        WmsUtils.fillUpdate(update);
+        this.updateById(update);
+        return claimAndSync(id, existing);
+    }
+
+    @Override
+    public WmsOrderSyncOutcomeVO resyncOrder(String id) {
+        WmsOrder existing = this.getById(id);
+        if (existing == null) {
+            throw new RuntimeException("未找到对应订单");
+        }
+        if (!WmsConstants.ORDER_STATUS_DISPATCHED.equals(existing.getOrderStatus())
+                || (!WmsConstants.SYNC_STATUS_FAILED.equals(existing.getSyncStatus())
+                    && !WmsConstants.SYNC_STATUS_PENDING.equals(existing.getSyncStatus()))) {
+            throw new RuntimeException("仅同步失败或待同步的订单可重新同步");
+        }
+        return claimAndSync(id, existing);
+    }
+
+    /**
+     * 【事务外】认领 → 同步（最坏约 7 秒，不持事务）→ 写回结果。
+     *
+     * <p>认领失败说明别的触发源正在处理这张单，直接跳过——绝不重复投递给 ERP/MES。
+     */
+    private WmsOrderSyncOutcomeVO claimAndSync(String id, WmsOrder snapshot) {
+        int claimed = claimForSync(id, syncStaleBefore());
+        if (claimed == 0) {
+            log.info("订单[{}]未抢到同步认领（可能已被其它触发源处理），本次跳过", snapshot.getOrderNo());
+            return new WmsOrderSyncOutcomeVO().setSynced(null);
+        }
+        snapshot.setOrderStatus(WmsConstants.ORDER_STATUS_DISPATCHED);
+        snapshot.setSyncStatus(WmsConstants.SYNC_STATUS_RUNNING);
+        WmsOrderSyncAttempt attempt = orderSyncService.syncOrder(snapshot, true);
+        persistSyncResult(id, attempt);
+        return new WmsOrderSyncOutcomeVO()
+                .setSynced(attempt.isSuccess())
+                .setSyncError(attempt.getErrorMessage())
+                .setRetryCount(attempt.getRetryCount());
+    }
+
+    /**
+     * 写回同步结果。单独一个短更新，避免与「同步中」的认领同处一个长事务。
+     *
+     * <p>公开给定时补偿任务复用，保证「同步结果怎么落库」只有这一处实现。
+     */
+    @Override
+    public void persistSyncResult(String id, WmsOrderSyncAttempt attempt) {
+        WmsOrder result = new WmsOrder();
+        result.setId(id);
+        result.setSyncStatus(attempt.isSuccess()
+                ? WmsConstants.SYNC_STATUS_SUCCESS
+                : WmsConstants.SYNC_STATUS_FAILED);
+        result.setRetryCount(attempt.getRetryCount());
+        result.setLastSyncError(attempt.isSuccess() ? null : attempt.getErrorMessage());
+        result.setLastSyncTime(new Date());
+        WmsUtils.fillUpdate(result);
+        this.updateById(result);
+    }
+
+    /** 「同步中」僵死阈值；定时任务复用同一口径，避免两处阈值漂移。 */
+    @Override
+    public Date syncStaleBefore() {
+        return new Date(System.currentTimeMillis()
+                - WmsConstants.SYNC_RECLAIM_TIMEOUT_SECONDS * 1000L);
+    }
+
+    @Override
+    public int claimForSync(String id, Date staleBefore) {
+        return baseMapper.claimForSync(id, staleBefore);
+    }
+
+    @Override
+    public List<WmsOrder> selectSyncCandidates(Date staleBefore, int limit) {
+        return baseMapper.selectSyncCandidates(staleBefore, limit);
     }
 
     private String trim(String value) {

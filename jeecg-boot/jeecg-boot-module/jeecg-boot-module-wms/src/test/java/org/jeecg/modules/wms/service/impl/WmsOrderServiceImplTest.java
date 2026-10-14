@@ -5,6 +5,9 @@ import org.jeecg.modules.wms.dto.WmsOrderAuditDTO;
 import org.jeecg.modules.wms.entity.WmsOrder;
 import org.jeecg.modules.wms.entity.WmsSupplier;
 import org.jeecg.modules.wms.mapper.WmsSupplierMapper;
+import org.jeecg.modules.wms.service.IWmsOrderSyncService;
+import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
+import org.jeecg.modules.wms.vo.WmsOrderSyncOutcomeVO;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
@@ -14,9 +17,14 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -256,5 +264,83 @@ class WmsOrderServiceImplTest {
         service.fillSupplierName(Collections.singletonList(order));
 
         assertEquals("永鑫五金", order.getSupplierName());
+    }
+
+    // ------------------------------------------------------------ Review Focus #3：并发互斥
+
+    /** 认领失败（别人已持有）时必须跳过，绝不能调用 gateway 重复投递 ERP/MES。 */
+    @Test
+    void dispatchOrder_whenClaimFails_shouldSkipSync() {
+        WmsOrderServiceImpl service = spy(new WmsOrderServiceImpl());
+        WmsOrder order = new WmsOrder()
+                .setOrderNo("PO001")
+                .setOrderType(WmsConstants.ORDER_TYPE_PURCHASE)
+                .setOrderStatus(WmsConstants.ORDER_STATUS_AUDITED);
+        order.setId("1");
+        doReturn(order).when(service).getById("1");
+        // dispatchOrder 会先写下达状态，必须打桩 updateById，否则会走到真实的 ServiceImpl（baseMapper 为空）NPE
+        doReturn(true).when(service).updateById(any());
+        doReturn(0).when(service).claimForSync(any(), any());
+
+        IWmsOrderSyncService syncService = mock(IWmsOrderSyncService.class);
+        service.setSyncServiceForTest(syncService);
+
+        WmsOrderSyncOutcomeVO outcome = service.dispatchOrder("1");
+
+        // 没抢到锁 → 既不调同步，也不谎报成功
+        verify(syncService, never()).syncOrder(any(), anyBoolean());
+        assertEquals(null, outcome.getSynced());
+    }
+
+    /** 下达成功且认领成功 → 必须调用同步一次，并把结果映射进 VO。 */
+    @Test
+    void dispatchOrder_whenClaimSucceeds_shouldSyncOnce() {
+        WmsOrderServiceImpl service = spy(new WmsOrderServiceImpl());
+        WmsOrder order = new WmsOrder()
+                .setOrderNo("PO001")
+                .setOrderType(WmsConstants.ORDER_TYPE_PURCHASE)
+                .setOrderStatus(WmsConstants.ORDER_STATUS_AUDITED);
+        order.setId("1");
+        doReturn(order).when(service).getById("1");
+        doReturn(1).when(service).claimForSync(any(), any());
+        doReturn(true).when(service).updateById(any());
+
+        IWmsOrderSyncService syncService = mock(IWmsOrderSyncService.class);
+        when(syncService.syncOrder(any(), anyBoolean()))
+                .thenReturn(new WmsOrderSyncAttempt(false, "ERP 未配置", 3));
+        service.setSyncServiceForTest(syncService);
+
+        WmsOrderSyncOutcomeVO outcome = service.dispatchOrder("1");
+
+        verify(syncService, times(1)).syncOrder(any(), eq(true));
+        assertEquals(false, outcome.getSynced());
+        assertEquals("ERP 未配置", outcome.getSyncError());
+        assertEquals(3, outcome.getRetryCount());
+    }
+
+    /** 只有「已审核」可下达。 */
+    @Test
+    void dispatchOrder_shouldRejectNonAudited() {
+        WmsOrderServiceImpl service = spy(new WmsOrderServiceImpl());
+        WmsOrder order = new WmsOrder().setOrderStatus(WmsConstants.ORDER_STATUS_PENDING_AUDIT);
+        order.setId("1");
+        doReturn(order).when(service).getById("1");
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.dispatchOrder("1"));
+        assertEquals("仅已审核状态的订单可下达", ex.getMessage());
+    }
+
+    /** 只有「已下达 且 同步失败/待同步」可重新同步。 */
+    @Test
+    void resyncOrder_shouldRejectNonFailedStates() {
+        WmsOrderServiceImpl service = spy(new WmsOrderServiceImpl());
+        WmsOrder order = new WmsOrder()
+                .setOrderStatus(WmsConstants.ORDER_STATUS_DISPATCHED)
+                .setSyncStatus(WmsConstants.SYNC_STATUS_SUCCESS);
+        order.setId("1");
+        doReturn(order).when(service).getById("1");
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.resyncOrder("1"));
+        assertEquals("仅同步失败或待同步的订单可重新同步", ex.getMessage());
     }
 }
