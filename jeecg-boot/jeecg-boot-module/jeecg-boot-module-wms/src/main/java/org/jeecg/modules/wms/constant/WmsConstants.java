@@ -123,4 +123,104 @@ public final class WmsConstants {
 
     /** 补偿任务启停开关的配置键；默认 true。 */
     public static final String SYNC_JOB_ENABLED_KEY = "wms.sync.job.enabled";
+
+    // ---------------------------------------------------------------- 库区类型
+
+    /** 库区类型-立库（半成品立库，24 层 × 6 列量级）。 */
+    public static final String WAREHOUSE_TYPE_STEREO = "立库";
+
+    /** 库区类型-敏捷仓（成品敏捷仓，料箱 10 层堆叠）。 */
+    public static final String WAREHOUSE_TYPE_AGILE = "敏捷仓";
+
+    /** 库区类型-线边柜（格子柜，不适用排/列/层网格）。 */
+    public static final String WAREHOUSE_TYPE_LINE_SIDE = "线边柜";
+
+    /**
+     * 库区树中「库区类型」节点的 key 前缀。
+     *
+     * <p>类型节点不是真实记录，其 key 由类型名合成；加前缀是为了**避免与库区真实 id 撞键**
+     * （否则前端树选中类型节点时会被当成某个库区的 id）。
+     */
+    public static final String WAREHOUSE_TYPE_NODE_PREFIX = "type:";
+
+    // ---------------------------------------------------------------- 库位状态
+
+    /** 库位状态-空闲。 */
+    public static final String LOCATION_STATUS_IDLE = "空闲";
+
+    /** 库位状态-占用（视为库位内有物料，禁止修改属性）。 */
+    public static final String LOCATION_STATUS_OCCUPIED = "占用";
+
+    /** 库位状态-故障。 */
+    public static final String LOCATION_STATUS_FAULT = "故障";
+
+    // ---------------------------------------------------------------- 库位批量生成
+
+    /** 单次生成请求的库位条数上限。 */
+    public static final int LOCATION_GEN_MAX_PER_REQUEST = 50000;
+
+    /** 批量生成时每批 INSERT IGNORE 的条数。 */
+    public static final int LOCATION_GEN_BATCH_SIZE = 1000;
+
+    /** 库位编码长度上限，与 wms_location.location_code 列宽一致。 */
+    public static final int LOCATION_CODE_MAX_LENGTH = 64;
+
+    // ---------------------------------------------------------------- 设备类型
+
+    /** 设备类型-堆垛机。 */
+    public static final String DEVICE_TYPE_STACKER = "堆垛机";
+
+    /** 设备类型-SCR 机器人。 */
+    public static final String DEVICE_TYPE_SCR = "SCR";
+
+    /** 设备类型-分拣单元。 */
+    public static final String DEVICE_TYPE_SORTING_UNIT = "分拣单元";
+
+    /** 设备类型-充电桩。 */
+    public static final String DEVICE_TYPE_CHARGER = "充电桩";
+
+    // ---------------------------------------------------------------- 设备状态
+
+    /** 设备状态-在线。 */
+    public static final String DEVICE_STATUS_ONLINE = "在线";
+
+    /** 设备状态-离线。 */
+    public static final String DEVICE_STATUS_OFFLINE = "离线";
+
+    /** 设备状态-故障。 */
+    public static final String DEVICE_STATUS_FAULT = "故障";
+
+    // ---------------------------------------------------------------- 设备离线告警
+
+    /** 心跳静默超过该秒数即判离线（默认 600 秒 = 10 分钟）。 */
+    public static final int DEVICE_OFFLINE_THRESHOLD_SECONDS = 600;
+
+    /** 同一设备两次离线告警之间的最小间隔（分钟），防轰炸。 */
+    public static final int DEVICE_ALERT_THROTTLE_MINUTES = 30;
+
+    /** 设备离线告警的消息标题。 */
+    public static final String DEVICE_ALERT_TITLE = "WMS设备离线告警";
+
+    /** 设备告警收件人配置键。 */
+    public static final String DEVICE_ALERT_TO_USER_KEY = "wms.device.alert.to-user";
+
+    /** 离线扫描每轮最多处理的设备数。 */
+    public static final int DEVICE_SCAN_BATCH = 200;
+
+    /** 设备离线扫描任务在 sys_quartz_job 中的主键；必须与 Flyway 种子行、注册器三处一致。 */
+    public static final String DEVICE_SCAN_JOB_ID = "1920000000000000102";
+
+    /** 设备离线扫描任务类名；必须与 Flyway 种子行的 job_class_name 一致。 */
+    public static final String DEVICE_SCAN_JOB_CLASS = "org.jeecg.modules.wms.job.WmsDeviceOfflineScanJob";
+
+    /**
+     * 设备离线扫描任务 cron：每 5 分钟，落在 :07 / :12 / …
+     *
+     * <p>刻意与订单补偿任务（{@link #SYNC_JOB_CRON}，落在 :03 / :08 / …）错开 4 分钟，
+     * 避免两轮任务同时打库。
+     */
+    public static final String DEVICE_SCAN_JOB_CRON = "0 7/5 * * * ? *";
+
+    /** 设备离线扫描任务启停开关的配置键；默认 true。 */
+    public static final String DEVICE_SCAN_JOB_ENABLED_KEY = "wms.device.job.enabled";
 }
