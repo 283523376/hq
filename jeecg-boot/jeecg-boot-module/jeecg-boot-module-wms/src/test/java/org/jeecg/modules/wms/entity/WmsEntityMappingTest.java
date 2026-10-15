@@ -87,13 +87,15 @@ class WmsEntityMappingTest {
      */
     @Test
     void deleteScheme_mustBeTimestampBased() {
-        // Phase A：4 张既有表（2026-10-15 按需求方指定方案改为删除时间戳）
+        // Phase A：4 张既有表（V3.9.5_8）
         assertTimestampDeleteScheme(WmsMaterial.class);
         assertTimestampDeleteScheme(WmsMaterialCategory.class);
         assertTimestampDeleteScheme(WmsSupplier.class);
         assertTimestampDeleteScheme(WmsOrder.class);
-        // Phase B（BD-003 的三张表）在下一阶段并入本用例；
-        // 现阶段它们仍是"物理删除"，故此处不列，避免断言与实际不符。
+        // Phase B：BD-003 的三张表（V3.9.5_9，由"物理删除"并入统一方案）
+        assertTimestampDeleteScheme(WmsWarehouse.class);
+        assertTimestampDeleteScheme(WmsLocation.class);
+        assertTimestampDeleteScheme(WmsDevice.class);
     }
 
     private static void assertTimestampDeleteScheme(Class<?> clazz) {

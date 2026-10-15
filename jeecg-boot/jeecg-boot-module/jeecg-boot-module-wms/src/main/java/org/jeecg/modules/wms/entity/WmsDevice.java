@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -68,11 +69,16 @@ public class WmsDevice extends JeecgEntity {
     private String warehouseName;
 
     /**
-     * 删除状态。**始终为 0** —— 本表刻意<b>不用逻辑删除</b>。
+     * 删除时间戳（epoch 毫秒）：**0 = 未删除**，否则为删除时刻。
      *
-     * <p>原因同 {@code WmsWarehouse}：{@code uk_wms_device_code} 不含 {@code del_flag}，
-     * 逻辑删除会让已删除的设备编码永久不可复用，且查重与保存的结论互相矛盾。
+     * <p>原因同 {@code WmsWarehouse}：{@code uk_wms_device_code} 必须把删除标记一起纳入，
+     * 否则已删除的设备编码永久不可复用、且查重与保存的结论互相矛盾。
+     * 用时间戳而非固定值，是为了让「删除 → 重建 → 再删除」可无限次进行。
+     *
+     * <p>本表原先是「物理删除」，于 V3.9.5_9 并入统一方案。
+     * 索引为 {@code (device_code, deleted_at)}。
      */
-    @Schema(description = "删除状态，恒为 0（本表不使用逻辑删除）")
-    private Integer delFlag;
+    @TableLogic(value = "0", delval = "UNIX_TIMESTAMP(NOW(3)) * 1000")
+    @Schema(description = "删除时间戳(epoch ms)：0=未删除")
+    private Long deletedAt;
 }

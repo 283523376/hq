@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -65,14 +66,21 @@ public class WmsLocation extends JeecgEntity {
     private String warehouseName;
 
     /**
-     * 删除状态。**始终为 0** —— 本表刻意<b>不用逻辑删除</b>。
+     * 删除时间戳（epoch 毫秒）：**0 = 未删除**，否则为删除时刻。
      *
-     * <p>原因最要命的一条：{@code uk_wms_location_grid} 只建在
-     * {@code (warehouse_id, row_no, col_no, layer_no)} 上、不含 {@code del_flag}。
-     * 若用逻辑删除，删掉几个库位后重跑生成，那几行会被 {@code INSERT IGNORE}
-     * <b>静默跳过</b>（计入 skipped）却**不会被恢复**，列表里也看不见 ——
-     * 直接破坏「重跑同范围可安全续做」这条承诺，且不留任何痕迹。
+     * <p><b>为什么不复用 0/1 的 del_flag</b>：两个唯一索引都必须把删除标记一起纳入 ——
+     * {@code uk_wms_location_code(location_code, deleted_at)} 与
+     * {@code uk_wms_location_grid(warehouse_id, row_no, col_no, layer_no, deleted_at)}。
+     * 否则被删除的库位会**永久占用**编码与网格位：删掉几个库位后重跑批量生成，
+     * 那几行会被 {@code INSERT IGNORE} <b>静默跳过</b>（计入 skipped）却**不会被恢复**，
+     * 列表里也看不见 —— 直接破坏「重跑同范围可安全续做」这条承诺。
+     *
+     * <p>用**时间戳**而非固定值（如 1），是因为固定值会让同一网格位**只能删一次**；
+     * 时间戳每次不同，「删除 → 重建 → 再删除」可无限次进行，且保留可恢复/可审计。
+     *
+     * <p>本表原先是「物理删除」，于 V3.9.5_9 并入统一方案。
      */
-    @Schema(description = "删除状态，恒为 0（本表不使用逻辑删除）")
-    private Integer delFlag;
+    @TableLogic(value = "0", delval = "UNIX_TIMESTAMP(NOW(3)) * 1000")
+    @Schema(description = "删除时间戳(epoch ms)：0=未删除")
+    private Long deletedAt;
 }

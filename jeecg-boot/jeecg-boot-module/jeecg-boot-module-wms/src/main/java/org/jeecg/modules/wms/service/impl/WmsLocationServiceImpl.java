@@ -290,7 +290,8 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
         location.setColNo(col);
         location.setLayerNo(layer);
         location.setStatus(WmsConstants.LOCATION_STATUS_IDLE);
-        location.setDelFlag(0);
+        // 删除时间戳方案下 0 = 未删除（自定义 XML 插入不会自动填，必须显式给）
+        location.setDeletedAt(0L);
         location.setCreateBy(username);
         location.setCreateTime(now);
         location.setUpdateBy(username);
