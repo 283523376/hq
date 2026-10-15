@@ -13,7 +13,9 @@ import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.vo.SelectTreeModel;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
+import org.jeecg.modules.wms.service.IWmsLocationService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,6 +38,10 @@ import java.util.List;
 @RequestMapping("/wms/warehouse")
 @Slf4j
 public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWarehouseService> {
+
+    /** 越界库位数要查 wms_location，故由库位服务提供，避免库区服务反向依赖库位实体之外的东西。 */
+    @Autowired
+    private IWmsLocationService wmsLocationService;
 
     @Operation(summary = "库区-库区树")
     @GetMapping(value = "/treeList")
@@ -62,7 +68,20 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
         if (entity == null) {
             return Result.error("未找到对应实体");
         }
+        entity.setOutOfEnvelopeCount(wmsLocationService.countOutOfEnvelope(id));
         return Result.OK(entity);
+    }
+
+    /**
+     * 位于当前维度之外的库位数。
+     *
+     * <p>维度是「声明」，库位是「已存在的资产」：缩维后两者可能不一致。
+     * 系统**不拦截**这种不一致，只把它显示出来，由人决定是补回维度还是删库位。
+     */
+    @Operation(summary = "库区-越界库位数")
+    @GetMapping(value = "/outOfEnvelopeCount")
+    public Result<Long> outOfEnvelopeCount(@RequestParam(name = "warehouseId", required = true) String warehouseId) {
+        return Result.OK(wmsLocationService.countOutOfEnvelope(warehouseId));
     }
 
     @Operation(summary = "库区-编码唯一性校验")
