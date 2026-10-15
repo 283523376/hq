@@ -88,7 +88,7 @@
 | `col_count` | int | **容量包络**：列数上限 |
 | `layer_count` | int | **容量包络**：层数上限 |
 | `status` | varchar(1) | NOT NULL DEFAULT '1'，1启用 0停用 |
-| `del_flag` + 审计四列 | | `JeecgEntity` 标准（`@TableLogic`） |
+| `deleted_at` + 审计四列 | | `JeecgEntity` 标准；删除标记用**删除时间戳**（`deleted_at`，0 = 未删除），见 §4.4 |
 
 > **`row_count`/`col_count`/`layer_count` 的语义是「生成上限」，不是「必有这么多库位」，也不参与编码计算。**
 > 需求方明确两点：**料箱不一定堆满仓库**；**所有维度可自由增减**。
@@ -107,7 +107,7 @@
 | `layer_no` | int | NOT NULL，层 |
 | `max_weight` | decimal(12,3) | 承重（kg） |
 | `status` | varchar(10) | NOT NULL DEFAULT '空闲'，**空闲 / 占用 / 故障** |
-| `del_flag` + 审计四列 | | 同 4.1 |
+| `deleted_at` + 审计四列 | | 同 4.1（删除时间戳，见 §4.4） |
 
 **唯一索引 `uk_wms_location_grid (warehouse_id, row_no, col_no, layer_no)`** —— 这不是装饰。
 单次生成最多 5 万条、敏捷仓目标 60 万级需要多次请求，靠该索引 + `INSERT IGNORE` 才能让
@@ -125,7 +125,7 @@
 | `status` | varchar(10) | NOT NULL DEFAULT '离线'，在线 / 离线 / 故障 |
 | `last_heartbeat` | datetime | 最近一次在线心跳（或显式置在线）时刻；**判定离线的唯一依据** |
 | `last_alert_time` | datetime | 最近一次离线告警时刻，用于**告警节流**（§6.3） |
-| `del_flag` + 审计四列 | | 同 4.1 |
+| `deleted_at` + 审计四列 | | 同 4.1（删除时间戳，见 §4.4） |
 
 复合索引 `idx_wms_device_type_status(device_type, status)` 支撑「按类型 / 按在线状态筛选」。
 
@@ -136,6 +136,37 @@
 `warehouse_type` / `warehouse_type` / `status` / `device_type` 均采用**中文字面量**存储，
 与既有 `wms_material_category.category_type`（半成品/成品/辅料）、`wms_order.order_type`（公司订单/采购订单/委外订单）
 一致，避免引入数据字典这一额外配置依赖。
+
+### 4.4 删除语义：删除时间戳（实施后按需求方指定方案改定）
+
+三张表的删除标记是 **`deleted_at`（BIGINT，epoch 毫秒；0 = 未删除，否则为删除时刻）**，
+由 `@TableLogic(value = "0", delval = "UNIX_TIMESTAMP(NOW(3)) * 1000")` 驱动：
+查询自动追加 `deleted_at = 0`，删除则写当前时间戳。
+
+**唯一索引必须把 `deleted_at` 一起纳入**：
+
+| 索引 | 列 |
+| --- | --- |
+| `uk_wms_warehouse_code` | `(warehouse_code, deleted_at)` |
+| `uk_wms_location_code` | `(location_code, deleted_at)` |
+| `uk_wms_location_grid` | `(warehouse_id, row_no, col_no, layer_no, deleted_at)` |
+| `uk_wms_device_code` | `(device_code, deleted_at)` |
+
+**为什么不是 0/1 的 `del_flag`**：唯一索引若不纳入删除标记，被删除的编码会**永久占用**它
+（表现为「查重说可用 → 保存撞唯一索引 → 用户看到原始 SQL 异常」）。
+而若纳入的删标记是**固定值**，同一编码就**只能删一次**（第二次删除的行与第一次删标记相同，仍撞索引）。
+用**时间戳**则每次删除值都不同，于是「删除 → 重建 → 再删除」可无限次进行，
+同时保留逻辑删除的**可恢复/可审计**特性。
+
+对 `wms_location` 的额外意义：网格唯一索引纳入 `deleted_at` 后，
+「删掉几个库位 → 重跑批量生成」会**新建**行，而不是被 `INSERT IGNORE` 静默跳过
+（计入 `skipped` 却不恢复，且列表里看不见）—— 删除语义与批量生成的**幂等续做**语义不再互相干扰。
+
+> **实施轨迹（保留决策痕迹）**：本规格最初按全模块惯例设计为 0/1 的 `del_flag`；
+> 实施时因唯一索引冲突改为「物理删除」（`V3.9.5_6`）；同日按需求方指定方案最终改为
+> **删除时间戳**（`V3.9.5_9`），并同步推广到 4 张既有表（`V3.9.5_8`），
+> 使全模块只有一个删除语义。详见
+> `docs/superpowers/specs/2026-10-15-yx-wms-hard-delete-existing-tables-design.md`。
 
 ## 5. 核心业务规则
 
@@ -298,7 +329,7 @@ constant/   WmsConstants.java              （追加库区/库位/设备/生成/
 <insert id="insertIgnoreBatch">
   INSERT IGNORE INTO wms_location
     (id, location_code, warehouse_id, row_no, col_no, layer_no,
-     max_weight, status, del_flag, create_by, create_time, update_by, update_time)
+     max_weight, status, deleted_at, create_by, create_time, update_by, update_time)
   VALUES
   <foreach collection="list" item="it" separator=",">
     (#{it.id}, #{it.locationCode}, #{it.warehouseId}, #{it.rowNo}, #{it.colNo}, #{it.layerNo},
