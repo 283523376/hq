@@ -94,6 +94,11 @@
       });
       warehouseNodes.value = flat;
       treeData.value = [{ key: '__all__', title: '全部库区', isWarehouse: false, children }];
+      // **默认展开全部分组**：这是两层树，而「批量生成」「新增库位」都要先选中
+      // **具体库区**才可用。若只展开根、把类型分组收起，用户第一眼只看到
+      // 「立库/敏捷仓/线边柜」，按钮全是灰的 —— 会以为按钮坏了。
+      // （浏览器实测发现的易用性问题，非样式偏好。）
+      expandedKeys.value = ['__all__', ...children.map((c) => c.key)];
     } finally {
       loading.value = false;
     }
