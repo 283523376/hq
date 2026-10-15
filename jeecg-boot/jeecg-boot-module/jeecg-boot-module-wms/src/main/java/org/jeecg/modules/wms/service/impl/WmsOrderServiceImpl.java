@@ -72,7 +72,8 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
             throw new RuntimeException("订单号已存在，请重新输入");
         }
         order.setId(null);
-        order.setDelFlag(0);
+        // 显式标记「未删除」：删除时间戳方案下 0 = 未删除（见 WmsOrder.deletedAt）
+        order.setDeletedAt(0L);
         order.setOrderStatus(WmsConstants.ORDER_STATUS_PENDING_AUDIT);
         order.setSyncStatus(WmsConstants.SYNC_STATUS_PENDING);
         order.setRetryCount(0);
@@ -209,8 +210,9 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
         if (supplierIds.isEmpty()) {
             return;
         }
-        // 代码逻辑说明: selectBatchIds 会自动带上 del_flag=0，已删除的供应商查不到；
-        // 此处刻意不报错，回填不到就留空，避免历史订单列表整体 500
+        // 代码逻辑说明: 供应商已被**物理删除**时 selectBatchIds 查不到（该表已不使用逻辑删除，
+// 见 WmsSupplier.delFlag 的注释与 V3.9.5_8）；此处刻意不报错，回填不到就留空，
+// 避免历史订单列表整体 500
         List<WmsSupplier> suppliers = wmsSupplierMapper.selectBatchIds(supplierIds);
         Map<String, WmsSupplier> supplierMap = new HashMap<>(suppliers.size());
         for (WmsSupplier supplier : suppliers) {

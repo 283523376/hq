@@ -64,9 +64,21 @@ public class WmsMaterialCategory extends JeecgEntity {
     private String hasChild;
 
     /**
-     * 删除状态：0正常 1已删除
+     * 删除时间戳（epoch 毫秒）：**0 = 未删除**，否则为删除时刻。
+     *
+     * <p><b>为什么不是 0/1 的 del_flag</b>：{@code uk_wms_mat_cat_code} 必须把删除标记
+     * 一起纳入唯一索引，否则被删除的分类编码会**永久占用**它 —— 表现为
+     * 「查重说可用 → 保存撞唯一索引 → 用户看到原始 SQL 异常」。
+     * 用**时间戳**而非固定值（如 1），是因为固定值会让同一编码**只能删一次**；
+     * 时间戳每次不同，「删除 → 重建 → 再删除」可无限次进行。
+     *
+     * <p>另一个好处：{@code removeCategory} 的守卫用 {@code this.count(...)} 统计
+     * 「有无物料 / 有无子分类」，过滤条件由 {@code @TableLogic} 统一追加
+     * {@code deleted_at = 0} —— 与库内实际占用的口径一致。
+     *
+     * <p>索引已相应改为 {@code (category_code, deleted_at)}。
      */
-    @TableLogic
-    @Schema(description = "删除状态：0正常 1已删除")
-    private Integer delFlag;
+    @TableLogic(value = "0", delval = "UNIX_TIMESTAMP(NOW(3)) * 1000")
+    @Schema(description = "删除时间戳(epoch ms)：0=未删除")
+    private Long deletedAt;
 }

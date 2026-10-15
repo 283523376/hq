@@ -38,7 +38,8 @@ public class WmsSupplierServiceImpl extends ServiceImpl<WmsSupplierMapper, WmsSu
             supplier.setStatus(WmsConstants.STATUS_ENABLE);
         }
         supplier.setId(null);
-        supplier.setDelFlag(0);
+        // 显式标记「未删除」：删除时间戳方案下 0 = 未删除（见 WmsSupplier.deletedAt）
+        supplier.setDeletedAt(0L);
         WmsUtils.fillCreate(supplier);
         this.save(supplier);
     }

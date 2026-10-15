@@ -395,7 +395,7 @@ class WmsMaterialControllerTest {
         assertEquals("C1", first.getCategoryId(), "导入必须按分类编码解析出 categoryId");
         assertEquals(WmsConstants.STATUS_ENABLE, first.getStatus());
         assertNull(first.getId(), "导入一律新增，id 必须清空");
-        assertEquals(0, first.getDelFlag());
+        assertEquals(0L, first.getDeletedAt().longValue(), "导入一律新增，删除时间戳必须为 0（未删除）");
     }
 
     /**

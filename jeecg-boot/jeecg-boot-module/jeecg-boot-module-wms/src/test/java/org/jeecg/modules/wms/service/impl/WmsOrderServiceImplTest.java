@@ -419,12 +419,13 @@ class WmsOrderServiceImplTest {
                 .setLastSyncError("旧错误").setLastSyncTime(new Date())
                 .setSyncStatus(WmsConstants.SYNC_STATUS_SUCCESS).setRetryCount(9);
         order.setId("客户端伪造ID");
-        order.setDelFlag(1);
+        // 伪造一个「已删除」时间戳，新增路径必须把它复位
+        order.setDeletedAt(1700000000000L);
 
         service.addOrder(order);
 
         assertNull(order.getId(), "新增必须清空 id");
-        assertEquals(0, order.getDelFlag());
+        assertEquals(0L, order.getDeletedAt().longValue(), "新增必须把删除时间戳复位为 0（未删除）");
         assertNull(order.getAuditBy());
         assertNull(order.getAuditTime());
         assertNull(order.getAuditRemark());

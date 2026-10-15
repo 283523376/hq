@@ -111,8 +111,21 @@ public class WmsOrder extends JeecgEntity {
     @Schema(description = "备注")
     private String remark;
 
-    /** 删除状态：0正常 1已删除 */
-    @TableLogic
-    @Schema(description = "删除状态：0正常 1已删除")
-    private Integer delFlag;
+    /**
+     * 删除时间戳（epoch 毫秒）：**0 = 未删除**，否则为删除时刻。
+     *
+     * <p><b>为什么不是 0/1 的 del_flag</b>：{@code uk_wms_order_no} 必须把删除标记
+     * 一起纳入唯一索引，否则被删除的订单号会**永久占用**它 —— 而「重号再建」
+     * 是常见操作，用户会直接撞上原始 SQL 异常。
+     * 用**时间戳**而非固定值（如 1），是因为固定值会让同一订单号**只能删一次**；
+     * 时间戳每次不同，「删除 → 重建 → 再删除」可无限次进行。
+     *
+     * <p>索引已相应改为 {@code (order_no, deleted_at)}；查询过滤由
+     * {@code @TableLogic} 自动追加 {@code deleted_at = 0}。
+     * {@code WmsOrderMapper.xml} 的认领/扫描 SQL 里是**显式**写的条件，已同步改为
+     * {@code deleted_at = 0}。
+     */
+    @TableLogic(value = "0", delval = "UNIX_TIMESTAMP(NOW(3)) * 1000")
+    @Schema(description = "删除时间戳(epoch ms)：0=未删除")
+    private Long deletedAt;
 }

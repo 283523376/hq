@@ -15,7 +15,7 @@
                last_sync_time = NOW()
          WHERE id = #{id}
            AND order_status = '已下达'
-           AND del_flag = 0
+           AND deleted_at = 0
            AND (
                  sync_status IN ('待同步', '同步失败')
                  OR (sync_status = '同步中' AND (last_sync_time IS NULL OR last_sync_time &lt; #{staleBefore}))
@@ -26,7 +26,7 @@
     <select id="selectSyncCandidates" resultType="org.jeecg.modules.wms.entity.WmsOrder">
         SELECT *
           FROM wms_order
-         WHERE del_flag = 0
+         WHERE deleted_at = 0
            AND order_status = '已下达'
            AND (
                  sync_status IN ('待同步', '同步失败')

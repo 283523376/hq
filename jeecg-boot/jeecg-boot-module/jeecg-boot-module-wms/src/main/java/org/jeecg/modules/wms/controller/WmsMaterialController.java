@@ -306,7 +306,8 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
         }
         // 导入一律新增：清空 id，由 MyBatis-Plus 生成
         material.setId(null);
-        material.setDelFlag(0);
+        // 显式标记「未删除」：删除时间戳方案下 0 = 未删除（见 WmsMaterial.deletedAt）
+        material.setDeletedAt(0L);
         Date now = new Date();
         material.setCreateTime(now);
         material.setUpdateTime(now);

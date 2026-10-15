@@ -94,9 +94,19 @@ public class WmsMaterial extends JeecgEntity {
     private String status;
 
     /**
-     * 删除状态：0正常 1已删除
+     * 删除时间戳（epoch 毫秒）：**0 = 未删除**，否则为删除时刻。
+     *
+     * <p><b>为什么不是 0/1 的 del_flag</b>：{@code uk_wms_material_code} 必须把删除标记
+     * 一起纳入唯一索引，否则被删除的编码会**永久占用**它 —— 表现为
+     * 「查重说可用 → 保存撞唯一索引 → 用户看到原始 SQL 异常」。
+     * 用**时间戳**而不是固定值（如 1）是因为固定值会让同一编码**只能删一次**
+     * （第二次删除的行与第一次删标记相同，仍撞索引）；时间戳每次不同，
+     * 于是「删除 → 重建 → 再删除」可无限次进行，且保留了可恢复/可审计特性。
+     *
+     * <p>索引已相应改为 {@code (material_code, deleted_at)}；查询过滤由
+     * {@code @TableLogic} 自动追加 {@code deleted_at = 0}。
      */
-    @TableLogic
-    @Schema(description = "删除状态：0正常 1已删除")
-    private Integer delFlag;
+    @TableLogic(value = "0", delval = "UNIX_TIMESTAMP(NOW(3)) * 1000")
+    @Schema(description = "删除时间戳(epoch ms)：0=未删除")
+    private Long deletedAt;
 }

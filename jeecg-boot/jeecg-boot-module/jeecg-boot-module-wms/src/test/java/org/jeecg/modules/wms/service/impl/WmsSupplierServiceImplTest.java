@@ -87,12 +87,13 @@ class WmsSupplierServiceImplTest {
                 .setSupplierCode("  SUP001  ").setSupplierName("永鑫五金")
                 .setContact("  张三  ").setPhone("  13800000000  ").setSupplyScope("  五金件  ");
         supplier.setId("客户端伪造ID");
-        supplier.setDelFlag(1);
+        // 伪造一个「已删除」时间戳，新增路径必须把它复位
+        supplier.setDeletedAt(1700000000000L);
 
         service.addSupplier(supplier);
 
         assertNull(supplier.getId(), "新增必须清空 id，交由 MyBatis-Plus 生成");
-        assertEquals(0, supplier.getDelFlag());
+        assertEquals(0L, supplier.getDeletedAt().longValue(), "新增必须把删除时间戳复位为 0（未删除）");
         assertEquals(WmsConstants.STATUS_ENABLE, supplier.getStatus());
         assertEquals("张三", supplier.getContact(), "联系人同样要去空格");
         assertEquals("13800000000", supplier.getPhone());
