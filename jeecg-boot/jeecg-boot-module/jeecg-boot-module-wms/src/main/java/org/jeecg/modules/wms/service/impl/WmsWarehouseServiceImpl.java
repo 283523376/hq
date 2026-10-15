@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.system.vo.SelectTreeModel;
@@ -114,7 +115,22 @@ public class WmsWarehouseServiceImpl extends ServiceImpl<WmsWarehouseMapper, Wms
             throw new RuntimeException("库区编码已存在，请重新输入");
         }
         WmsUtils.fillUpdate(warehouse);
+        // 常规字段走 updateById：它**跳过 null**，于是「表单漏传某字段」是安全的
+        // （漏传 status 时不会把 NOT NULL 列写成 null）。
         this.updateById(warehouse);
+        // 三个维度必须**显式** set：updateById 会跳过 null，而「清空维度」是明确要求
+        // （维度可自由增减），否则清空会返回保存成功而库里纹丝不动 —— 与解绑、
+        // 清空告警节流是同一类静默故障，端到端步骤 18e 抓到过。
+        //
+        // 「必须能写 null」（维度）与「null 表示未提供」（其它字段）是两个冲突的要求，
+        // 故拆成两条语句而不是合并成一个大 set —— 合并后漏传 status 会直接
+        // 抛 Column 'status' cannot be null（这是本修复第一版踩过的回归）。
+        UpdateWrapper<WmsWarehouse> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", warehouse.getId())
+                .set("row_count", warehouse.getRowCount())
+                .set("col_count", warehouse.getColCount())
+                .set("layer_count", warehouse.getLayerCount());
+        this.update(null, wrapper);
     }
 
     @Override

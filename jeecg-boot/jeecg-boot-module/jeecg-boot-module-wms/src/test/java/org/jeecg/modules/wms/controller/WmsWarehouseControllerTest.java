@@ -102,7 +102,9 @@ class WmsWarehouseControllerTest {
     void edit_shouldAllowShrinkingDimensions() {
         IWmsWarehouseService warehouseService = spy(new org.jeecg.modules.wms.service.impl.WmsWarehouseServiceImpl());
         doReturn(0L).when(warehouseService).count(any(Wrapper.class));
+        // 编辑是两条语句：常规字段走 updateById，三个维度走 UpdateWrapper（null 也要真的写进去）
         doReturn(true).when(warehouseService).updateById(any());
+        doReturn(true).when(warehouseService).update(any(), any(Wrapper.class));
         WmsWarehouseController controller = newController(warehouseService, mock(IWmsLocationService.class));
 
         assertTrue(controller.edit(warehouse("W1", 10)).isSuccess());

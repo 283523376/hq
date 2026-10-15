@@ -1,7 +1,6 @@
 package org.jeecg.modules.wms.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -68,8 +67,12 @@ public class WmsDevice extends JeecgEntity {
     @Schema(description = "归属库区名称")
     private String warehouseName;
 
-    /** 删除状态：0正常 1已删除。 */
-    @TableLogic
-    @Schema(description = "删除状态：0正常 1已删除")
+    /**
+     * 删除状态。**始终为 0** —— 本表刻意<b>不用逻辑删除</b>。
+     *
+     * <p>原因同 {@code WmsWarehouse}：{@code uk_wms_device_code} 不含 {@code del_flag}，
+     * 逻辑删除会让已删除的设备编码永久不可复用，且查重与保存的结论互相矛盾。
+     */
+    @Schema(description = "删除状态，恒为 0（本表不使用逻辑删除）")
     private Integer delFlag;
 }

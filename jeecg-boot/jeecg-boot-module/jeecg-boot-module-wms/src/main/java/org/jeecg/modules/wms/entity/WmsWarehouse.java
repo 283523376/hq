@@ -1,7 +1,6 @@
 package org.jeecg.modules.wms.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -71,8 +70,17 @@ public class WmsWarehouse extends JeecgEntity {
     @Schema(description = "位于当前维度之外的库位数")
     private Long outOfEnvelopeCount;
 
-    /** 删除状态：0正常 1已删除。 */
-    @TableLogic
-    @Schema(description = "删除状态：0正常 1已删除")
+    /**
+     * 删除状态。**始终为 0** —— 本表刻意<b>不用逻辑删除</b>。
+     *
+     * <p>原因：{@code uk_wms_warehouse_code} 只建在 {@code warehouse_code} 上、不含
+     * {@code del_flag}，而 {@code @TableLogic} 会让唯一性校验自动加 {@code del_flag=0}
+     * 从而看不见被逻辑删除的行 —— 于是「查重说可用、保存撞唯一索引」，
+     * 用户看到的是原始 SQL 异常，且被删除的编码**永久不可复用**。
+     *
+     * <p>保留该列只为与其它 {@code wms_} 表结构对齐；删除是物理删除。
+     * 安全由删除守卫承担（有库位/有设备不许删库区），留痕由 {@code @AutoLog} 操作日志承担。
+     */
+    @Schema(description = "删除状态，恒为 0（本表不使用逻辑删除）")
     private Integer delFlag;
 }

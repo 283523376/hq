@@ -86,15 +86,16 @@ class WmsWarehouseServiceImplTest {
         WmsWarehouseServiceImpl service = newService();
         doReturn(1L).when(service).count(any(Wrapper.class));
         doReturn(true).when(service).updateById(any());
+        doReturn(true).when(service).update(any(), any(Wrapper.class));
 
         // count 返回 1 表示「该编码已被别人占用」→ 应拒绝
         WmsWarehouse self = warehouse("1", "LB", "半成品立库", WmsConstants.WAREHOUSE_TYPE_STEREO);
         assertThrows(RuntimeException.class, () -> service.editWarehouse(self));
-        verify(service, never()).updateById(any());
+        verify(service, never()).update(any(), any(Wrapper.class));
 
         doReturn(0L).when(service).count(any(Wrapper.class));
         service.editWarehouse(self);
-        verify(service).updateById(any());
+        verify(service).update(any(), any(Wrapper.class));
     }
 
     // ------------------------------------------------------------ 库区树（蓝图步骤 2）
@@ -142,6 +143,7 @@ class WmsWarehouseServiceImplTest {
         WmsWarehouseServiceImpl service = newService();
         doReturn(0L).when(service).count(any(Wrapper.class));
         doReturn(true).when(service).updateById(any());
+        doReturn(true).when(service).update(any(), any(Wrapper.class));
 
         WmsWarehouse shrinking = warehouse("1", "LB", "半成品立库", WmsConstants.WAREHOUSE_TYPE_STEREO);
         shrinking.setRowCount(1).setColCount(6).setLayerCount(10);   // 由 24 缩到 10
@@ -151,21 +153,72 @@ class WmsWarehouseServiceImplTest {
         growing.setRowCount(1).setColCount(60422).setLayerCount(9999); // 扩到跨段宽
         service.editWarehouse(growing);
 
-        verify(service, org.mockito.Mockito.times(2)).updateById(any());
+        verify(service, org.mockito.Mockito.times(2)).update(any(), any(Wrapper.class));
     }
 
-    /** 维度清空也应保存成功（线边柜等不适用网格的库区），只是不允许生成库位（T5 守卫）。 */
+    /**
+     * 维度清空必须**真的写进 NULL**。
+     *
+     * <p>端到端验收抓到过这个缺陷：{@code updateById} 默认忽略 null 字段，于是
+     * 「把三个维度清空」会返回保存成功而库里纹丝不动 —— 与解绑、清空告警节流是同一类
+     * 静默故障。故编辑库区改用 {@code UpdateWrapper} 显式 set 三列。
+     *
+     * <p>该用例断言 SET 子句里出现三列 —— 这是 mock 层面能表达的最强证据；
+     * 真值由端到端步骤 18e 在真库上验证。
+     */
     @Test
-    void editWarehouse_shouldAllowNullDimensions() {
+    void editWarehouse_shouldWriteNullDimensionsThroughUpdateWrapper() {
         WmsWarehouseServiceImpl service = newService();
         doReturn(0L).when(service).count(any(Wrapper.class));
+        doReturn(true).when(service).update(any(), any(Wrapper.class));
         doReturn(true).when(service).updateById(any());
 
         WmsWarehouse lineSide = warehouse("1", "XB", "线边柜", WmsConstants.WAREHOUSE_TYPE_LINE_SIDE);
         lineSide.setRowCount(null).setColCount(null).setLayerCount(null);
         service.editWarehouse(lineSide);
 
-        verify(service).updateById(any());
+        ArgumentCaptor<Wrapper<WmsWarehouse>> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(service).update(any(), captor.capture());
+        String sqlSet = ((com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<WmsWarehouse>) captor.getValue())
+                .getSqlSet();
+        assertTrue(sqlSet.contains("row_count"), "实际 SET：" + sqlSet);
+        assertTrue(sqlSet.contains("col_count"), "实际 SET：" + sqlSet);
+        assertTrue(sqlSet.contains("layer_count"), "实际 SET：" + sqlSet);
+    }
+
+    /**
+     * **显式 set 的列必须只有那三个维度**，其余字段一律走 {@code updateById}。
+     *
+     * <p>这是对一次真实回归的钉死：为了让「清空维度」写进 NULL，第一版把**所有列**都显式 set 了，
+     * 结果编辑请求只要漏传某个 NOT NULL 字段（如 {@code status}），SQL 就会写 null 并抛
+     * {@code Column 'status' cannot be null} —— 而原先的 {@code updateById} 会跳过 null，
+     * 漏传字段本来是安全的。
+     *
+     * <p>「必须能写 null」（维度）与「null 表示未提供」（其它字段）是两个冲突的要求，
+     * 故拆成两条语句：维度显式 set，其余沿用 updateById 的跳过语义。
+     * 若有人图省事把两处合并回一个大 set，本用例会红。
+     */
+    @Test
+    void editWarehouse_mustNotExplicitlySetNonDimensionColumns() {
+        WmsWarehouseServiceImpl service = newService();
+        doReturn(0L).when(service).count(any(Wrapper.class));
+        doReturn(true).when(service).updateById(any());
+        doReturn(true).when(service).update(any(), any(Wrapper.class));
+
+        // 模拟表单漏传 status 的情形
+        WmsWarehouse partial = warehouse("1", "LB", "半成品立库", WmsConstants.WAREHOUSE_TYPE_STEREO);
+        partial.setRowCount(1).setColCount(6).setLayerCount(10);
+        partial.setStatus(null);
+        service.editWarehouse(partial);
+
+        ArgumentCaptor<Wrapper<WmsWarehouse>> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(service).update(any(), captor.capture());
+        String sqlSet = ((com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<WmsWarehouse>) captor.getValue())
+                .getSqlSet();
+        assertFalse(sqlSet.contains("status"), "漏传的字段不得被显式 set 成 null，实际 SET：" + sqlSet);
+        assertFalse(sqlSet.contains("warehouse_code"), "实际 SET：" + sqlSet);
+        assertFalse(sqlSet.contains("warehouse_name"), "实际 SET：" + sqlSet);
+        assertFalse(sqlSet.contains("warehouse_type"), "实际 SET：" + sqlSet);
     }
 
     // ------------------------------------------------------------ 删除守卫
