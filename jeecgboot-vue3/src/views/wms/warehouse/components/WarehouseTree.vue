@@ -1,0 +1,207 @@
+<template>
+  <a-card :bordered="false" style="height: 100%">
+    <a-spin :spinning="loading">
+      <div class="wms-tree-header">
+        <span class="wms-tree-title">库区</span>
+        <a-button
+          type="link"
+          size="small"
+          preIcon="ant-design:plus-outlined"
+          v-auth="'wms:warehouse:add'"
+          @click="handleAddTop"
+        >
+          新增库区
+        </a-button>
+      </div>
+      <a-tree
+        v-if="treeData.length"
+        showLine
+        :tree-data="treeData"
+        :selected-keys="selectedKeys"
+        v-model:expandedKeys="expandedKeys"
+        @select="onSelect"
+        style="overflow-y: auto; height: calc(100vh - 330px)"
+      >
+        <template #title="node">
+          <span class="wms-tree-node">
+            <span class="wms-tree-node__text">{{ node.title }}</span>
+            <!-- 类型节点是合成的分组，不可编辑/删除；只有库区节点才有操作 -->
+            <span v-if="node.isWarehouse" class="wms-tree-node__actions">
+              <a title="编辑" v-auth="'wms:warehouse:edit'" @click.stop="handleEdit(node)">
+                <Icon icon="ant-design:edit-outlined" />
+              </a>
+              <a title="停用" v-auth="'wms:warehouse:edit'" @click.stop="handleDisable(node)">
+                <Icon icon="ant-design:stop-outlined" />
+              </a>
+              <a title="删除" v-auth="'wms:warehouse:delete'" @click.stop="handleDelete(node)">
+                <Icon icon="ant-design:delete-outlined" />
+              </a>
+            </span>
+          </span>
+        </template>
+      </a-tree>
+      <a-empty v-else description="暂无库区" />
+    </a-spin>
+    <WarehouseModal @register="registerModal" @success="handleModalSuccess" />
+  </a-card>
+</template>
+
+<script lang="ts" name="wms-warehouse-tree" setup>
+  import { onMounted, ref } from 'vue';
+  import { Modal } from 'ant-design-vue';
+  import { useModal } from '/@/components/Modal';
+  import { useMessage } from '/@/hooks/web/useMessage';
+  import WarehouseModal from './WarehouseModal.vue';
+  import { queryTreeList, deleteWarehouse, disableWarehouse } from '../warehouse.api';
+
+  const emit = defineEmits(['select', 'refresh']);
+  const { createMessage } = useMessage();
+  const [registerModal, { openModal }] = useModal();
+
+  const loading = ref(false);
+  const treeData = ref<any[]>([]);
+  /** 虚拟根：用于清除库区过滤 */
+  const selectedKeys = ref<any[]>(['__all__']);
+  const expandedKeys = ref<any[]>(['__all__']);
+  /** 扁平化的库区节点，供生成弹窗带出维度 */
+  const warehouseNodes = ref<any[]>([]);
+
+  async function loadTree() {
+    loading.value = true;
+    try {
+      const res: any = await queryTreeList();
+      const list = Array.isArray(res) ? res : res?.result ?? [];
+      const flat: any[] = [];
+      const children = (list || []).map((typeNode: any) => {
+        const typeKey = String(typeNode.key ?? '');
+        return {
+          key: typeKey,
+          title: typeNode.title,
+          // 类型节点的 key 带 "type:" 前缀，与库区真实 id 区分开
+          isWarehouse: false,
+          children: (typeNode.children || []).map((w: any) => {
+            const node = {
+              key: w.key,
+              title: w.title,
+              typeKey,
+              typeName: typeNode.title,
+              isWarehouse: true,
+            };
+            flat.push(node);
+            return node;
+          }),
+        };
+      });
+      warehouseNodes.value = flat;
+      treeData.value = [{ key: '__all__', title: '全部库区', isWarehouse: false, children }];
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  onMounted(loadTree);
+
+  /** 选中 → 通知右侧表格过滤。类型节点按类型过滤，库区节点按 id 过滤。 */
+  function onSelect(keys, info) {
+    const key = keys && keys.length ? keys[0] : '';
+    if (!key || key === '__all__') {
+      selectedKeys.value = ['__all__'];
+      emit('select', {});
+      return;
+    }
+    selectedKeys.value = [key];
+    const node = info?.selectedNodes?.[0];
+    if (String(key).startsWith('type:')) {
+      emit('select', { warehouseType: String(key).substring('type:'.length) });
+    } else {
+      emit('select', {
+        warehouseId: node?.key ?? key,
+        warehouseName: node?.title ?? '',
+        warehouseType: node?.typeKey ? String(node.typeKey).substring('type:'.length) : '',
+      });
+    }
+  }
+
+  function handleAddTop() {
+    openModal(true, { isUpdate: false });
+  }
+
+  function handleEdit(node) {
+    openModal(true, { isUpdate: true, record: { id: node.key } });
+  }
+
+  function handleDisable(node) {
+    Modal.confirm({
+      title: '确认停用',
+      content: `确定停用库区「${node.title}」吗？停用后不能向其生成库位或绑定设备。`,
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        await disableWarehouse({ id: node.key });
+        createMessage.success('停用成功');
+        await loadTree();
+        emit('refresh');
+      },
+    });
+  }
+
+  function handleDelete(node) {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定删除库区「${node.title}」吗？`,
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        // 库区下有库位或已绑定设备时，后端会拒绝并把原因自动弹出
+        await deleteWarehouse({ id: node.key }, () => {});
+        createMessage.success('删除成功');
+        if (selectedKeys.value[0] === node.key) {
+          selectedKeys.value = ['__all__'];
+          emit('select', {});
+        }
+        await loadTree();
+        emit('refresh');
+      },
+    });
+  }
+
+  async function handleModalSuccess() {
+    await loadTree();
+    emit('refresh');
+  }
+
+  defineExpose({ loadTree, warehouseNodes });
+</script>
+
+<style lang="less" scoped>
+  .wms-tree-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+
+    .wms-tree-title {
+      font-weight: 600;
+    }
+  }
+
+  .wms-tree-node {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+
+    &__actions {
+      display: none;
+      margin-left: 8px;
+
+      a {
+        margin-left: 8px;
+      }
+    }
+  }
+
+  :deep(.ant-tree-node-content-wrapper:hover) .wms-tree-node__actions {
+    display: inline-block;
+  }
+</style>
