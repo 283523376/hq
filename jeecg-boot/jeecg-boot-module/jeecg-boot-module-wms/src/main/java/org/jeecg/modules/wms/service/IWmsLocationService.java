@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import org.jeecg.modules.wms.dto.WmsLocationAttrDTO;
 import org.jeecg.modules.wms.dto.WmsLocationGenDTO;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.vo.WmsLocationGenResultVO;
@@ -25,4 +26,41 @@ public interface IWmsLocationService extends IService<WmsLocation> {
      * @return 实际生成数与跳过数
      */
     WmsLocationGenResultVO generate(WmsLocationGenDTO dto);
+
+    /** 库位编码唯一性校验（蓝图异常①：库位编码重复 → 提示并拒绝保存）。{@code id} 非空时排除自身。 */
+    boolean checkCodeExists(String code, String id);
+
+    /**
+     * 手工补录单个库位（补网格空洞）。
+     *
+     * <p>编码<b>由后端按规则生成</b>，不接受前端传入 —— 否则编码与坐标会脱节，
+     * 而整个幂等与唯一性设计都建立在「编码是坐标的函数」之上。
+     */
+    void addLocation(WmsLocation location);
+
+    /**
+     * 编辑库位。
+     *
+     * <p>坐标不可改（改了编码就与坐标脱节）；可变字段只有承重与状态，
+     * 故与 {@link #updateAttr} 共用同一守卫。
+     */
+    void editLocation(WmsLocation location);
+
+    /** 更新承重 / 状态。库位为「占用」时拒绝（约束②）。 */
+    void updateAttr(WmsLocationAttrDTO dto);
+
+    /**
+     * 释放库位：占用 → 空闲。
+     *
+     * <p>存在的理由：若「占用」既表示有物料、又阻断一切状态修改，被误置为占用的库位
+     * 将永远无法人工恢复，约束②会变成锁死缺陷。本动作语义明确 —— 人工确认该库位已清空 ——
+     * 且不是绕过约束的通用后门（改承重仍被拒）。
+     */
+    void release(String id);
+
+    /** 逻辑删除；仅「空闲」库位可删。 */
+    void removeLocation(String id);
+
+    /** 位于库区当前维度之外的库位数。缩维后不为 0，用于提示而非拦截。 */
+    long countOutOfEnvelope(String warehouseId);
 }

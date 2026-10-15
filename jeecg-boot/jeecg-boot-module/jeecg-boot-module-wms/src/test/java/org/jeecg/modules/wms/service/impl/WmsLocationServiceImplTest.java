@@ -1,6 +1,8 @@
 package org.jeecg.modules.wms.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsLocationAttrDTO;
 import org.jeecg.modules.wms.dto.WmsLocationGenDTO;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
@@ -66,6 +68,9 @@ class WmsLocationServiceImplTest {
 
         IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
         when(warehouseService.requireEnabledWarehouse(any())).thenReturn(warehouse);
+        // countOutOfEnvelope 读的是 getById（它必须容忍「库区已停用但仍有库位」的情形），
+        // 故两条路径都要桩，否则该用例会因 fixture 缺桩而误报为 0。
+        when(warehouseService.getById(any())).thenReturn(warehouse);
         WmsTestSupport.inject(service, "wmsWarehouseService", warehouseService);
         return service;
     }
@@ -274,5 +279,199 @@ class WmsLocationServiceImplTest {
         WmsLocationGenDTO dto = range(1, 1, 1, 6, 1, 24);
         dto.setWarehouseId(null);
         assertThrows(RuntimeException.class, () -> service.generate(dto));
+    }
+
+    // ============================================================ T6: 属性 / 释放 / 删除
+
+    private static WmsLocation location(String id, String status) {
+        WmsLocation l = new WmsLocation().setLocationCode("LB-R01-C06-L24")
+                .setWarehouseId("W1").setRowNo(1).setColNo(6).setLayerNo(24).setStatus(status);
+        l.setId(id);
+        return l;
+    }
+
+    /** 给已有 service 加一个「按 id 返回给定库位」的桩。 */
+    private static void stubGetById(WmsLocationServiceImpl service, WmsLocation existing) {
+        org.mockito.Mockito.doReturn(existing).when(service).getById(existing.getId());
+    }
+
+    // ------------------------------------------------------------ 约束②：库位内有物料时禁改属性
+
+    @Test
+    void updateAttr_shouldRejectWhenOccupied() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        stubGetById(service, location("L1", WmsConstants.LOCATION_STATUS_OCCUPIED));
+
+        WmsLocationAttrDTO dto = new WmsLocationAttrDTO();
+        dto.setId("L1");
+        dto.setMaxWeight(new java.math.BigDecimal("500.000"));
+        dto.setStatus(WmsConstants.LOCATION_STATUS_FAULT);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.updateAttr(dto));
+        assertEquals("库位内有物料，不允许修改属性", ex.getMessage());
+        verify(service, org.mockito.Mockito.never()).updateById(any());
+    }
+
+    @Test
+    void updateAttr_shouldAllowWhenIdle() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        stubGetById(service, location("L1", WmsConstants.LOCATION_STATUS_IDLE));
+        org.mockito.Mockito.doReturn(true).when(service).updateById(any());
+
+        WmsLocationAttrDTO dto = new WmsLocationAttrDTO();
+        dto.setId("L1");
+        dto.setMaxWeight(new java.math.BigDecimal("500.000"));
+
+        service.updateAttr(dto);
+
+        ArgumentCaptor<WmsLocation> captor = ArgumentCaptor.forClass(WmsLocation.class);
+        verify(service).updateById(captor.capture());
+        assertEquals(new java.math.BigDecimal("500.000"), captor.getValue().getMaxWeight());
+        assertNotNull(captor.getValue().getUpdateTime(), "审计字段应由 WmsUtils.fillUpdate 填入");
+    }
+
+    @Test
+    void updateAttr_shouldRejectMissingLocation() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        org.mockito.Mockito.doReturn(null).when(service).getById("nope");
+        WmsLocationAttrDTO dto = new WmsLocationAttrDTO();
+        dto.setId("nope");
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.updateAttr(dto));
+        assertEquals("库位不存在", ex.getMessage());
+    }
+
+    // ------------------------------------------------------------ 释放
+
+    /**
+     * 释放的由来：若「占用」既代表有物料、又阻断一切状态修改，被误置为占用的库位就
+     * **永远无法人工恢复**，约束②会变成锁死缺陷。故单开一个语义明确的「占用 → 空闲」动作。
+     */
+    @Test
+    void release_shouldTurnOccupiedIntoIdle() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        stubGetById(service, location("L1", WmsConstants.LOCATION_STATUS_OCCUPIED));
+        org.mockito.Mockito.doReturn(true).when(service).updateById(any());
+
+        service.release("L1");
+
+        ArgumentCaptor<WmsLocation> captor = ArgumentCaptor.forClass(WmsLocation.class);
+        verify(service).updateById(captor.capture());
+        assertEquals(WmsConstants.LOCATION_STATUS_IDLE, captor.getValue().getStatus());
+    }
+
+    @Test
+    void release_shouldRejectWhenNotOccupied() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        stubGetById(service, location("L1", WmsConstants.LOCATION_STATUS_IDLE));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.release("L1"));
+        assertEquals("仅占用状态的库位可释放", ex.getMessage());
+        verify(service, org.mockito.Mockito.never()).updateById(any());
+    }
+
+    // ------------------------------------------------------------ 删除守卫
+
+    @Test
+    void removeLocation_shouldRejectWhenNotIdle() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        stubGetById(service, location("L1", WmsConstants.LOCATION_STATUS_OCCUPIED));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.removeLocation("L1"));
+        assertEquals("库位已占用或有故障，不允许删除", ex.getMessage());
+        verify(service, org.mockito.Mockito.never()).removeById(any(String.class));
+    }
+
+    @Test
+    void removeLocation_shouldRejectWhenFault() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        stubGetById(service, location("L1", WmsConstants.LOCATION_STATUS_FAULT));
+        assertThrows(RuntimeException.class, () -> service.removeLocation("L1"));
+    }
+
+    @Test
+    void removeLocation_shouldDeleteWhenIdle() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        stubGetById(service, location("L1", WmsConstants.LOCATION_STATUS_IDLE));
+        org.mockito.Mockito.doReturn(true).when(service).removeById(any(String.class));
+        service.removeLocation("L1");
+        verify(service).removeById("L1");
+    }
+
+    // ------------------------------------------------------------ 手工补录单个库位
+
+    @Test
+    void addLocation_shouldGenerateCodeFromCoordinates() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        org.mockito.Mockito.doReturn(0L).when(service).count(any(Wrapper.class));
+        org.mockito.Mockito.doReturn(true).when(service).save(any());
+
+        service.addLocation(new WmsLocation().setWarehouseId("W1")
+                .setRowNo(1).setColNo(6).setLayerNo(24));
+
+        ArgumentCaptor<WmsLocation> captor = ArgumentCaptor.forClass(WmsLocation.class);
+        verify(service).save(captor.capture());
+        assertEquals("LB-R01-C06-L24", captor.getValue().getLocationCode(), "编码由后端按规则生成，不接受前端传入");
+        assertEquals(WmsConstants.LOCATION_STATUS_IDLE, captor.getValue().getStatus());
+    }
+
+    @Test
+    void addLocation_shouldRejectDuplicateCoordinates() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        org.mockito.Mockito.doReturn(1L).when(service).count(any(Wrapper.class));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.addLocation(
+                new WmsLocation().setWarehouseId("W1").setRowNo(1).setColNo(6).setLayerNo(24)));
+        assertEquals("该坐标的库位已存在，请重新输入", ex.getMessage());
+        verify(service, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addLocation_shouldRejectBeyondEnvelope() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.addLocation(
+                new WmsLocation().setWarehouseId("W1").setRowNo(1).setColNo(6).setLayerNo(30)));
+        assertEquals("第 30 层超出库区层数上限 24", ex.getMessage());
+    }
+
+    // ------------------------------------------------------------ 编辑：坐标不可改
+
+    @Test
+    void editLocation_shouldRejectCoordinateChange() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        stubGetById(service, location("L1", WmsConstants.LOCATION_STATUS_IDLE));
+
+        // setId 继承自 JeecgEntity，链式返回的是父类型，故不能把 setId 串在 WmsLocation 的 setter 前面
+        WmsLocation submitted = new WmsLocation().setRowNo(1).setColNo(6).setLayerNo(10);
+        submitted.setId("L1");
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.editLocation(submitted));
+        assertEquals("库位坐标不可修改，如需变更请删除后重新生成", ex.getMessage());
+    }
+
+    @Test
+    void editLocation_shouldApplyAttributeGuard() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 24));
+        stubGetById(service, location("L1", WmsConstants.LOCATION_STATUS_OCCUPIED));
+
+        WmsLocation submitted = new WmsLocation().setMaxWeight(new java.math.BigDecimal("1.000"));
+        submitted.setId("L1");
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.editLocation(submitted));
+        assertEquals("库位内有物料，不允许修改属性", ex.getMessage());
+    }
+
+    // ------------------------------------------------------------ 越界计数（T7 用）
+
+    @Test
+    void countOutOfEnvelope_shouldCountLocationsBeyondDeclaredDimensions() {
+        WmsLocationServiceImpl service = newService(warehouse("LB", 1, 6, 10));
+        org.mockito.Mockito.doReturn(84L).when(service).count(any(Wrapper.class));
+        assertEquals(84L, service.countOutOfEnvelope("W1"));
+    }
+
+    @Test
+    void countOutOfEnvelope_shouldReturnZeroWhenNoDimensions() {
+        WmsLocationServiceImpl service = newService(warehouse("XB", null, null, null));
+        assertEquals(0L, service.countOutOfEnvelope("W1"));
     }
 }

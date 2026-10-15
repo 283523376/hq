@@ -1,10 +1,12 @@
 package org.jeecg.modules.wms.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsLocationAttrDTO;
 import org.jeecg.modules.wms.dto.WmsLocationGenDTO;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
@@ -17,6 +19,7 @@ import org.jeecg.modules.wms.vo.WmsLocationGenResultVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -75,6 +78,137 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
         log.info("库区[{}]批量生成库位完成：请求 {} 个，新生成 {} 个，跳过 {} 个",
                 warehouse.getWarehouseCode(), total, generated, skipped);
         return new WmsLocationGenResultVO(generated, skipped);
+    }
+
+    @Override
+    public boolean checkCodeExists(String code, String id) {
+        if (oConvertUtils.isEmpty(code)) {
+            return false;
+        }
+        QueryWrapper<WmsLocation> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("location_code", code);
+        if (oConvertUtils.isNotEmpty(id)) {
+            queryWrapper.ne("id", id);
+        }
+        return this.count(queryWrapper) > 0;
+    }
+
+    @Override
+    public void addLocation(WmsLocation location) {
+        WmsWarehouse warehouse = wmsWarehouseService.requireEnabledWarehouse(location.getWarehouseId());
+        Integer row = location.getRowNo();
+        Integer col = location.getColNo();
+        Integer layer = location.getLayerNo();
+        if (row == null || col == null || layer == null) {
+            throw new RuntimeException("排 / 列 / 层不能为空");
+        }
+        if (row < 1 || col < 1 || layer < 1) {
+            throw new RuntimeException("排 / 列 / 层必须为正整数");
+        }
+        requireWithinEnvelope(warehouse, row, col, layer);
+        long exists = this.count(new QueryWrapper<WmsLocation>()
+                .eq("warehouse_id", location.getWarehouseId())
+                .eq("row_no", row).eq("col_no", col).eq("layer_no", layer));
+        if (exists > 0) {
+            throw new RuntimeException("该坐标的库位已存在，请重新输入");
+        }
+        location.setLocationCode(
+                WmsLocationCodeGenerator.locationCode(warehouse.getWarehouseCode(), row, col, layer));
+        if (oConvertUtils.isEmpty(location.getStatus())) {
+            location.setStatus(WmsConstants.LOCATION_STATUS_IDLE);
+        }
+        WmsUtils.fillCreate(location);
+        this.save(location);
+    }
+
+    @Override
+    public void editLocation(WmsLocation location) {
+        WmsLocation existing = requireExisting(location.getId());
+        if (coordinateChanged(location, existing)) {
+            throw new RuntimeException("库位坐标不可修改，如需变更请删除后重新生成");
+        }
+        applyAttr(location.getId(), location.getMaxWeight(), location.getStatus(), existing);
+    }
+
+    @Override
+    public void updateAttr(WmsLocationAttrDTO dto) {
+        if (dto == null) {
+            throw new RuntimeException("库位不存在");
+        }
+        WmsLocation existing = requireExisting(dto.getId());
+        applyAttr(dto.getId(), dto.getMaxWeight(), dto.getStatus(), existing);
+    }
+
+    @Override
+    public void release(String id) {
+        WmsLocation existing = requireExisting(id);
+        if (!WmsConstants.LOCATION_STATUS_OCCUPIED.equals(existing.getStatus())) {
+            throw new RuntimeException("仅占用状态的库位可释放");
+        }
+        WmsLocation update = new WmsLocation();
+        update.setId(id);
+        update.setStatus(WmsConstants.LOCATION_STATUS_IDLE);
+        WmsUtils.fillUpdate(update);
+        this.updateById(update);
+    }
+
+    @Override
+    public void removeLocation(String id) {
+        WmsLocation existing = requireExisting(id);
+        if (!WmsConstants.LOCATION_STATUS_IDLE.equals(existing.getStatus())) {
+            throw new RuntimeException("库位已占用或有故障，不允许删除");
+        }
+        this.removeById(id);
+    }
+
+    @Override
+    public long countOutOfEnvelope(String warehouseId) {
+        WmsWarehouse warehouse = oConvertUtils.isEmpty(warehouseId)
+                ? null : wmsWarehouseService.getById(warehouseId);
+        if (warehouse == null
+                || warehouse.getRowCount() == null || warehouse.getColCount() == null
+                || warehouse.getLayerCount() == null) {
+            return 0L;
+        }
+        // 维度是「声明」，库位是「已存在的资产」：缩维后两者可能不一致。
+        // 这里只统计、不拦截 —— 由人决定是补回维度还是删库位。
+        return this.count(new QueryWrapper<WmsLocation>()
+                .eq("warehouse_id", warehouseId)
+                .and(w -> w.gt("row_no", warehouse.getRowCount())
+                        .or().gt("col_no", warehouse.getColCount())
+                        .or().gt("layer_no", warehouse.getLayerCount())));
+    }
+
+    /** 取库位，不存在直接抛。 */
+    private WmsLocation requireExisting(String id) {
+        WmsLocation existing = oConvertUtils.isEmpty(id) ? null : this.getById(id);
+        if (existing == null) {
+            throw new RuntimeException("库位不存在");
+        }
+        return existing;
+    }
+
+    private boolean coordinateChanged(WmsLocation submitted, WmsLocation existing) {
+        return (submitted.getRowNo() != null && !submitted.getRowNo().equals(existing.getRowNo()))
+                || (submitted.getColNo() != null && !submitted.getColNo().equals(existing.getColNo()))
+                || (submitted.getLayerNo() != null && !submitted.getLayerNo().equals(existing.getLayerNo()));
+    }
+
+    /**
+     * 应用属性变更（承重 / 状态），约束②在此强制。
+     *
+     * <p>{@code null} 字段不写库（MyBatis-Plus 默认忽略 null），故「只改承重」是安全的。
+     */
+    private void applyAttr(String id, BigDecimal maxWeight, String status, WmsLocation existing) {
+        if (WmsConstants.LOCATION_STATUS_OCCUPIED.equals(existing.getStatus())) {
+            throw new RuntimeException("库位内有物料，不允许修改属性");
+        }
+        WmsLocation update = new WmsLocation();
+        update.setId(id);
+        update.setMaxWeight(maxWeight);
+        update.setStatus(status);
+        WmsUtils.fillUpdate(update);
+        this.updateById(update);
     }
 
     /**
