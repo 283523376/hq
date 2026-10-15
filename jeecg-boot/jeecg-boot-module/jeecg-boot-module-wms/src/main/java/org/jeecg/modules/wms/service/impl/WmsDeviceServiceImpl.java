@@ -18,6 +18,7 @@ import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsDeviceBindResultVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -83,7 +84,18 @@ public class WmsDeviceServiceImpl extends ServiceImpl<WmsDeviceMapper, WmsDevice
         this.removeById(id);
     }
 
+    /**
+     * 绑定设备到库区。
+     *
+     * <p>**必须在一个事务里**：本方法是多写操作（逐台 {@code updateById}）。不加事务时，
+     * 第 2 台失败会让第 1 台已落库而接口返回「绑定失败」—— 用户据此认为没绑上，
+     * 实际有一台真绑上了，属**错误的状态结论**（代码审查发现）。
+     *
+     * <p>告警写入（{@code last_alert_time} 与站内消息）也在同一事务内：绑定回滚时
+     * 告警一并回滚，语义一致（没绑成就不该报「已绑定且离线」）。
+     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public WmsDeviceBindResultVO bind(WmsDeviceBindDTO dto) {
         if (dto == null || oConvertUtils.isEmpty(dto.getWarehouseId())) {
             throw new RuntimeException("库区不存在或已停用");

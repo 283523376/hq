@@ -185,6 +185,23 @@ class WmsDeviceServiceImplTest {
         assertEquals("请至少选择一台设备", ex.getMessage());
     }
 
+    /**
+     * `bind` 是**多写操作**（逐台 updateById），必须包在一个事务里。
+     *
+     * <p>代码审查发现：不加事务时，第 2 台失败会让第 1 台已落库而接口返回「绑定失败」——
+     * 用户据此认为没绑上，实际有一台真绑上了，属**错误的状态结论**。
+     *
+     * <p>回滚行为本身要有 Spring 事务管理器 + 真库才能验，单测只能钉住注解的存在；
+     * 这条注解被删掉会静默退回上述窗口，故用断言守住。
+     */
+    @Test
+    void bind_mustBeTransactional() throws Exception {
+        assertNotNull(
+                WmsDeviceServiceImpl.class.getMethod("bind", WmsDeviceBindDTO.class)
+                        .getAnnotation(org.springframework.transaction.annotation.Transactional.class),
+                "bind 循环内逐个 updateById，多写操作必须 @Transactional，否则部分失败会留下不一致");
+    }
+
     // ------------------------------------------------------------ 解绑：必须能真的写进 NULL
 
     /**

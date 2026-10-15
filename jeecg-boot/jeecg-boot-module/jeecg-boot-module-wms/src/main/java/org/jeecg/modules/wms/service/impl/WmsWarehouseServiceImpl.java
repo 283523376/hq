@@ -17,6 +17,7 @@ import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.util.WmsUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -108,8 +109,17 @@ public class WmsWarehouseServiceImpl extends ServiceImpl<WmsWarehouseMapper, Wms
      * 批量生成的范围，不参与库位编码计算（见 {@code WmsLocationCodeGenerator}），
      * 因此可自由增减。需求方明确要求「所有维度可以自由调节」。
      * 缩维后若已有库位落在新维度之外，系统**不拦截**，只在库区详情回填越界数量供人查看。
+     *
+     * <p>**必须在一个事务里**：本方法由两条写语句组成（常规字段 + 三个维度），
+     * 不加事务时第二条失败会留下「新编码/新名称 + 旧维度」的**半更新状态**，
+     * 而接口返回的是错误 —— 用户不知道该以哪个为准（代码审查发现）。
+     *
+     * <p><b>调用契约</b>：表单必须提交全部三个维度字段；**漏传即视为「清空」**
+     * （因为「维度必须能写 NULL」与「null 表示未提供」是两个冲突的要求，
+     * 见本方法内注释）。未来的部分更新调用方需注意这一点。
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void editWarehouse(WmsWarehouse warehouse) {
         if (checkCodeExists(warehouse.getWarehouseCode(), warehouse.getId())) {
             throw new RuntimeException("库区编码已存在，请重新输入");

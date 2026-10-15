@@ -25,7 +25,13 @@ public interface IWmsWarehouseService extends IService<WmsWarehouse> {
 
     void disableWarehouse(String id);
 
-    /** 逻辑删除；库区下存在库位或已绑定设备时拒绝。 */
+    /**
+     * **物理删除**；库区下存在库位或已绑定设备时拒绝。
+     *
+     * <p>不是逻辑删除：`uk_wms_warehouse_code` 只建在 `warehouse_code` 上、不含 `del_flag`，
+     * 逻辑删除会让已删除的编码永久不可复用，且查重与保存的结论互相矛盾
+     * （详见 `WmsWarehouse` 的 `delFlag` 字段注释与 `V3.9.5_6` 迁移脚本）。
+     */
     void removeWarehouse(String id);
 
     /** 某库区类型下的全部库区 id，供库位列表按类型过滤。 */

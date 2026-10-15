@@ -18,6 +18,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -198,6 +199,21 @@ class WmsWarehouseServiceImplTest {
      * 故拆成两条语句：维度显式 set，其余沿用 updateById 的跳过语义。
      * 若有人图省事把两处合并回一个大 set，本用例会红。
      */
+    /**
+     * `editWarehouse` 由**两条语句**组成（常规字段 updateById + 三个维度 UpdateWrapper），
+     * 必须包在一个事务里。
+     *
+     * <p>代码审查发现：不加事务时，第二条失败会留下「新编码/新名称 + 旧维度」的半更新状态，
+     * 而接口返回的是错误 —— 用户不知道该以哪个为准。
+     */
+    @Test
+    void editWarehouse_mustBeTransactional() throws Exception {
+        assertNotNull(
+                WmsWarehouseServiceImpl.class.getMethod("editWarehouse", WmsWarehouse.class)
+                        .getAnnotation(org.springframework.transaction.annotation.Transactional.class),
+                "editWarehouse 是两条写语句，必须 @Transactional，否则中间失败会留下半更新状态");
+    }
+
     @Test
     void editWarehouse_mustNotExplicitlySetNonDimensionColumns() {
         WmsWarehouseServiceImpl service = newService();

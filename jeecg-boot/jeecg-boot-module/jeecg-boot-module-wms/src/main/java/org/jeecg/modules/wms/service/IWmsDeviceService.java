@@ -35,7 +35,16 @@ public interface IWmsDeviceService extends IService<WmsDevice> {
     /** 解绑：把 {@code warehouse_id} 置 NULL。 */
     void unbind(List<String> ids);
 
-    /** WCS/RMS 状态上报。在线会刷新心跳并清空告警节流；离线/故障按节流告警。 */
+    /**
+     * WCS/RMS 状态上报。在线会刷新心跳并清空告警节流；离线/故障按节流告警。
+     *
+     * <p><b>接入 WCS/RMS 前必读</b>：本接口当前走平台 Shiro 登录态（需 JWT），
+     * 而 WCS/RMS 是**外部系统、拿不到用户 JWT**（代码审查发现）。
+     * 真正接入属蓝图流程 `YX-WMS-SB-002`，届时需要改鉴权方式 ——
+     * **但不可简单加 `@IgnoreAuth`**：那会开出一个任何匿名调用者都能改设备状态的接口。
+     * 正确做法是设备级凭证（如界面参数里配置的 appKey/appSecret 或双向证书）+ 只允许
+     * 上报其自身设备的状态。
+     */
     void reportStatus(WmsDeviceStatusDTO dto);
 
     /**

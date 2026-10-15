@@ -58,7 +58,14 @@ public interface IWmsLocationService extends IService<WmsLocation> {
      */
     void release(String id);
 
-    /** 逻辑删除；仅「空闲」库位可删。 */
+    /**
+     * **物理删除**；仅「空闲」库位可删。
+     *
+     * <p>不是逻辑删除：`uk_wms_location_grid` 只建在
+     * `(warehouse_id, row_no, col_no, layer_no)` 上、不含 `del_flag`，逻辑删除会让
+     * 「删掉几个库位后重跑生成」被 `INSERT IGNORE` 静默跳过却不恢复 ——
+     * 直接破坏本接口承诺的幂等续做（详见 `WmsLocation` 的 `delFlag` 字段注释）。
+     */
     void removeLocation(String id);
 
     /** 位于库区当前维度之外的库位数。缩维后不为 0，用于提示而非拦截。 */
