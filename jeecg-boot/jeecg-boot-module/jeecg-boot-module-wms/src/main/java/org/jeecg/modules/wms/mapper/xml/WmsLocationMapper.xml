@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsLocationMapper">
+
+    <!--
+      批量插入并跳过重复。
+      wms_location 上有两个唯一索引（uk_wms_location_code / uk_wms_location_grid），
+      靠 INSERT IGNORE + 它们，使「重跑同一生成范围」成为幂等操作 —— 这是
+      批量生成不做整体回滚的安全基础。
+      返回值 = 实际插入行数，重复行不计。
+    -->
+    <insert id="insertIgnoreBatch">
+        INSERT IGNORE INTO wms_location
+            (id, location_code, warehouse_id, row_no, col_no, layer_no,
+             max_weight, status, del_flag, create_by, create_time, update_by, update_time)
+        VALUES
+        <foreach collection="list" item="it" separator=",">
+            (#{it.id}, #{it.locationCode}, #{it.warehouseId}, #{it.rowNo}, #{it.colNo}, #{it.layerNo},
+             #{it.maxWeight}, #{it.status}, 0, #{it.createBy}, #{it.createTime}, #{it.updateBy}, #{it.updateTime})
+        </foreach>
+    </insert>
+
+</mapper>
