@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import org.jeecg.modules.wms.dto.WmsDeviceBindDTO;
 import org.jeecg.modules.wms.dto.WmsDeviceStatusDTO;
 import org.jeecg.modules.wms.entity.WmsDevice;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsDeviceBindResultVO;
 
 import java.util.List;
@@ -23,6 +25,19 @@ public interface IWmsDeviceService extends IService<WmsDevice> {
     void editDevice(WmsDevice device);
 
     void removeDevice(String id);
+
+    /**
+     * 批量删除设备。整体在一个事务里，循环复用单条守卫，任一条被拒则整体回滚。
+     */
+    void removeBatch(List<String> ids);
+
+    /**
+     * 删除预检：绑定中的设备不可删（绑定是有效业务状态，删除前须先解绑）。
+     */
+    WmsDeleteCheckVO checkDelete(String id);
+
+    /** 批量删除预检：逐条检查，列出不可删明细（编码 + 原因）。 */
+    WmsBatchDeleteCheckVO checkDeleteBatch(List<String> ids);
 
     /**
      * 绑定设备到库区。

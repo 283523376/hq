@@ -17,6 +17,8 @@ import org.jeecg.modules.wms.entity.WmsDevice;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.service.IWmsDeviceService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsDeviceBindResultVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -173,18 +176,44 @@ public class WmsDeviceController extends JeecgController<WmsDevice, IWmsDeviceSe
     @Operation(summary = "设备-删除")
     @DeleteMapping(value = "/delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
-        service.removeDevice(id);
-        return Result.OK("删除成功！");
+        try {
+            service.removeDevice(id);
+            return Result.OK("删除成功！");
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
     }
 
+    /** 批量删除。守卫在 service.removeBatch 的事务内逐条生效，任一条被拒则整体回滚。 */
     @AutoLog(value = "设备-批量删除", operateType = 4)
     @Operation(summary = "设备-批量删除")
     @DeleteMapping(value = "/deleteBatch")
     public Result<?> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
-        for (String id : ids.split(",")) {
-            service.removeDevice(id);
+        try {
+            service.removeBatch(Arrays.asList(ids.split(",")));
+            return Result.OK("批量删除成功！");
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
         }
-        return Result.OK("批量删除成功！");
+    }
+
+    /** 删除预检：绑定中的设备在这里给出「先解绑」提示；后端守卫仍在删除时兜底。 */
+    @Operation(summary = "设备-删除预检")
+    @GetMapping(value = "/checkDelete")
+    public Result<WmsDeleteCheckVO> checkDelete(@RequestParam(name = "id", required = true) String id) {
+        return Result.OK(service.checkDelete(id));
+    }
+
+    /** 批量删除预检：列出不可删明细。 */
+    @Operation(summary = "设备-批量删除预检")
+    @GetMapping(value = "/checkDeleteBatch")
+    public Result<WmsBatchDeleteCheckVO> checkDeleteBatch(@RequestParam(name = "ids", required = true) String ids) {
+        if (oConvertUtils.isEmpty(ids)) {
+            return Result.error("参数不识别！");
+        }
+        return Result.OK(service.checkDeleteBatch(Arrays.asList(ids.split(","))));
     }
 
     /**

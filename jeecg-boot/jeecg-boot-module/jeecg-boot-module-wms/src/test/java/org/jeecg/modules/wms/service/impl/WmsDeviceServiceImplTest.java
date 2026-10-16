@@ -10,6 +10,7 @@ import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.service.IWmsDeviceAlertService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsDeviceBindResultVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -350,5 +352,86 @@ class WmsDeviceServiceImplTest {
                 Arrays.asList(turned.get(0).getDeviceCode(), turned.get(1).getDeviceCode()),
                 "第 2 条失败不得中断整轮");
         assertEquals(2, turned.size());
+    }
+
+    // ============================================================ 删除守卫（spec 2026-10-16 §0 设备删除语义）
+
+    /** 构造只注入库区服务的 service，供删除守卫用例使用。 */
+    private static WmsDeviceServiceImpl guardService(IWmsWarehouseService warehouseService) {
+        WmsDeviceServiceImpl service = spy(new WmsDeviceServiceImpl());
+        WmsTestSupport.inject(service, "wmsWarehouseService", warehouseService);
+        WmsTestSupport.inject(service, "wmsDeviceAlertService", mock(IWmsDeviceAlertService.class));
+        return service;
+    }
+
+    /** 绑定中的设备必须拒绝删除——绑定是有效业务状态，静默解绑易困惑；与库区「有设备不许删」对称。 */
+    @Test
+    void removeDevice_shouldRejectWhenBound() {
+        IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
+        WmsDeviceServiceImpl service = guardService(warehouseService);
+        doReturn(device("D1", "DDJ01", WmsConstants.DEVICE_STATUS_ONLINE, "W1")).when(service).getById("D1");
+        doReturn(warehouse()).when(warehouseService).getById("W1");
+        doReturn(true).when(service).removeById(any(String.class));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.removeDevice("D1"));
+
+        assertEquals("设备已绑定库区，不允许删除，请先解绑", ex.getMessage());
+        verify(service, never()).removeById(any(String.class));
+    }
+
+    /** 未绑定的设备可删。 */
+    @Test
+    void removeDevice_shouldRemoveWhenUnbound() {
+        IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
+        WmsDeviceServiceImpl service = guardService(warehouseService);
+        doReturn(device("D1", "DDJ01", WmsConstants.DEVICE_STATUS_OFFLINE, null)).when(service).getById("D1");
+        doReturn(true).when(service).removeById("D1");
+
+        service.removeDevice("D1");
+
+        verify(service).removeById("D1");
+    }
+
+    /** 预检给出库区名样本。 */
+    @Test
+    void checkDelete_shouldReportWarehouseName() {
+        IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
+        WmsDeviceServiceImpl service = guardService(warehouseService);
+        doReturn(device("D1", "DDJ01", WmsConstants.DEVICE_STATUS_ONLINE, "W1")).when(service).getById("D1");
+        doReturn(warehouse()).when(warehouseService).getById("W1");
+
+        WmsDeleteCheckVO vo = service.checkDelete("D1");
+
+        assertEquals(false, vo.isDeletable());
+        assertEquals("设备已绑定库区「半成品立库」", vo.getBlockers().get(0).getMessage());
+        assertEquals(Arrays.asList("半成品立库"), vo.getBlockers().get(0).getSamples());
+    }
+
+    /** 库区已被逻辑删除（getById 查不到）时守卫不受影响，样本退化为 id。 */
+    @Test
+    void checkDelete_shouldFallBackToIdWhenWarehouseGone() {
+        IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
+        WmsDeviceServiceImpl service = guardService(warehouseService);
+        doReturn(device("D1", "DDJ01", WmsConstants.DEVICE_STATUS_ONLINE, "WX")).when(service).getById("D1");
+        doReturn(null).when(warehouseService).getById("WX");
+
+        WmsDeleteCheckVO vo = service.checkDelete("D1");
+
+        assertEquals(false, vo.isDeletable());
+        assertEquals("设备已绑定库区", vo.getBlockers().get(0).getMessage());
+        assertEquals(Arrays.asList("WX"), vo.getBlockers().get(0).getSamples());
+    }
+
+    /** 批量删除逐条走单条守卫。 */
+    @Test
+    void removeBatch_shouldLoopSingleGuard() {
+        IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
+        WmsDeviceServiceImpl service = guardService(warehouseService);
+        doNothing().when(service).removeDevice(any(String.class));
+
+        service.removeBatch(Arrays.asList("D1", "D2"));
+
+        verify(service).removeDevice("D1");
+        verify(service).removeDevice("D2");
     }
 }

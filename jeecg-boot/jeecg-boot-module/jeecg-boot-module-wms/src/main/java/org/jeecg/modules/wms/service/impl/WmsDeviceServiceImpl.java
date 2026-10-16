@@ -15,6 +15,8 @@ import org.jeecg.modules.wms.service.IWmsDeviceAlertService;
 import org.jeecg.modules.wms.service.IWmsDeviceService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsDeviceBindResultVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -81,7 +83,60 @@ public class WmsDeviceServiceImpl extends ServiceImpl<WmsDeviceMapper, WmsDevice
 
     @Override
     public void removeDevice(String id) {
+        WmsDeleteCheckVO check = checkDelete(id);
+        if (!check.isDeletable()) {
+            throw new RuntimeException("设备已绑定库区，不允许删除，请先解绑");
+        }
         this.removeById(id);
+    }
+
+    @Override
+    public WmsDeleteCheckVO checkDelete(String id) {
+        WmsDeleteCheckVO vo = new WmsDeleteCheckVO();
+        if (oConvertUtils.isEmpty(id)) {
+            return vo;
+        }
+        WmsDevice device = this.getById(id);
+        if (device == null || oConvertUtils.isEmpty(device.getWarehouseId())) {
+            return vo;
+        }
+        // 库区可能已被逻辑删除（getById 走 @TableLogic 查不到）——守卫不受影响，样本退化为 id
+        WmsWarehouse warehouse = wmsWarehouseService.getById(device.getWarehouseId());
+        String warehouseName = warehouse == null ? null : warehouse.getWarehouseName();
+        vo.addBlocker("设备已绑定库区" + (warehouseName == null ? "" : "「" + warehouseName + "」"),
+                1, Collections.singletonList(warehouseName == null ? device.getWarehouseId() : warehouseName));
+        return vo;
+    }
+
+    @Override
+    public WmsBatchDeleteCheckVO checkDeleteBatch(List<String> ids) {
+        WmsBatchDeleteCheckVO vo = new WmsBatchDeleteCheckVO();
+        if (ids == null || ids.isEmpty()) {
+            return vo;
+        }
+        for (String id : ids) {
+            WmsDeleteCheckVO check = checkDelete(id);
+            if (!check.isDeletable()) {
+                WmsDevice device = this.getById(id);
+                vo.addBlocked(id,
+                        device == null ? id : device.getDeviceCode(),
+                        check.getBlockers().stream()
+                                .map(WmsDeleteCheckVO.Blocker::getMessage)
+                                .collect(Collectors.joining("；")));
+            }
+        }
+        return vo;
+    }
+
+    /** 批量删除整体在一个事务里；controller 的循环下沉到此处（原 controller 逐条调、无事务）。 */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void removeBatch(List<String> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            for (String id : ids) {
+                removeDevice(id);
+            }
+        }
     }
 
     /**
