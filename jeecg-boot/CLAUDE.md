@@ -169,6 +169,28 @@ org.jeecg.modules.wms
   只做前者是 airag 那种状态：能编译，但运行时不会加载。
 - 免登录接口用方法级 `@IgnoreAuth`（`org.jeecg.config.shiro.IgnoreAuth`）——**该注解只支持方法级，不能标在类上**。
 
+### 删除守卫与引用完整性（强制约定）
+
+**凡有父子引用关系的表，删除「被引用方」一律走统一守卫，不得裸 `removeById`。**
+2026-10-16 已对全部 6 个资源落地（供应商/物料/分类/库区/库位/设备），
+spec 见 `docs/superpowers/specs/2026-10-16-yx-wms-引用完整性与删除守卫-design.md`。
+
+- **不建物理外键**：遵循《阿里巴巴Java开发手册》「一切外键概念在应用层解决」；且删除语义是
+  `deleted_at` 时间戳（逻辑删除，行不物理移除），物理 FK 挡不住「引用已逻辑删除的父行」。
+- **守卫方法成对**：`checkDelete(id) → WmsDeleteCheckVO{deletable, blockers[]}`（只读、一次报全）+
+  `checkDeleteBatch(ids) → WmsBatchDeleteCheckVO`；`removeXxx` 先调 `checkDelete`，不可删即抛
+  `RuntimeException(文案)`；`removeBatch` 必须 `@Transactional(rollbackFor = Exception.class)`
+  并**循环复用单条守卫**（循环写在 controller 里无事务 → 部分成功）。
+- **预检接口 + 后端兜底**：`GET /checkDelete`、`/checkDeleteBatch`（沿用既有 `:delete` 权限）；
+  前端点删除先调预检（`useWmsDeleteCheck` composable）——可删弹确认框、不可删弹禁止框列原因；
+  后端守卫仍在删除时兜底（预检与删除之间有并发窗口）。
+- **拒绝文案逐字透出**：delete 端点自带 `try/catch → Result.error(e.getMessage())`，
+  **不要依赖全局异常处理器**（`JeecgBootExceptionHandler` 会给未捕获异常加前缀）。
+- **计数只算未删除的引用行**：靠 `@TableLogic` 自动追加 `deleted_at = 0`，
+  **不要手写 `deleted_at` 条件**；查不到的 id 预检返回「可删」。
+- **新增引用关系时**：在父表 `checkDelete` 里追加一条 blocker 即可（物料已预留空白框架，等库存表接入）。
+  批量单测命令注意加 `-Dsurefire.failIfNoSpecifiedTests=false`，否则 `-am` 会被上游无匹配测试类打断。
+
 ### 会话压缩指令 (Compaction)
 
 压缩 / 总结本会话时，**必须原样保留**以下内容，不得概括为"已完成若干功能"这类模糊表述：
