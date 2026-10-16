@@ -684,4 +684,19 @@ class WmsOrderServiceImplTest {
         verify(mapper).claimForSync("1", staleBefore);
         verify(mapper).selectSyncCandidates(staleBefore, WmsConstants.SYNC_SCAN_BATCH);
     }
+
+    // ============================================================ 批量删除事务（spec 2026-10-16 §3.3）
+
+    /** 批量删除必须整体在一个事务里——无注解时第 N 条被拒会让前 N-1 条已提交（部分成功）。 */
+    @Test
+    void removeBatch_shouldBeTransactional() throws NoSuchMethodException {
+        java.lang.reflect.Method method =
+                WmsOrderServiceImpl.class.getMethod("removeBatch", List.class);
+
+        org.springframework.transaction.annotation.Transactional tx =
+                method.getAnnotation(org.springframework.transaction.annotation.Transactional.class);
+
+        assertNotNull(tx, "removeBatch 缺少 @Transactional，批量删除会部分成功");
+        assertTrue(tx.rollbackFor().length > 0, "必须显式 rollbackFor=Exception.class");
+    }
 }

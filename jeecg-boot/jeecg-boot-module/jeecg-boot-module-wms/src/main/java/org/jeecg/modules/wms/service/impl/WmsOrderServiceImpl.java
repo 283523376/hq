@@ -17,6 +17,7 @@ import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsOrderSyncOutcomeVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
 import java.util.Date;
@@ -170,7 +171,9 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
         this.removeById(id);
     }
 
+    /** 批量删除整体在一个事务里：循环复用单条状态守卫，任一条被拒则整体回滚。 */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void removeBatch(List<String> ids) {
         if (ids == null || ids.isEmpty()) {
             return;
