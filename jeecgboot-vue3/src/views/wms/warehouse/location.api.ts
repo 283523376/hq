@@ -10,7 +10,15 @@ enum Api {
   deleteOne = '/wms/location/delete',
   deleteBatch = '/wms/location/deleteBatch',
   checkCode = '/wms/location/checkCode',
+  checkDelete = '/wms/location/checkDelete',
+  checkDeleteBatch = '/wms/location/checkDeleteBatch',
 }
+
+/** 删除预检：非空闲（占用/故障）库位返回不可删原因 */
+export const checkLocationDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });
+
+/** 批量删除预检：列出不可删明细 */
+export const checkLocationDeleteBatch = (params: { ids: string }) => defHttp.get({ url: Api.checkDeleteBatch, params });
 
 export const list = (params?) => defHttp.get({ url: Api.list, params });
 

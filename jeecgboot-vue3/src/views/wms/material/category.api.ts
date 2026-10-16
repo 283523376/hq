@@ -9,7 +9,11 @@ enum Api {
   disable = '/wms/materialCategory/disable',
   deleteOne = '/wms/materialCategory/delete',
   checkCode = '/wms/materialCategory/checkCode',
+  checkDelete = '/wms/materialCategory/checkDelete',
 }
+
+/** 删除预检：分类下有物料/子分类时返回不可删原因（树形单删，无批量端点） */
+export const checkCategoryDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });
 
 /** 分类树（全量，含 children） */
 export const queryTreeList = (params?) => defHttp.get({ url: Api.treeList, params });

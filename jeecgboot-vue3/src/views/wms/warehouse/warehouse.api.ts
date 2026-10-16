@@ -11,7 +11,15 @@ enum Api {
   checkCode = '/wms/warehouse/checkCode',
   queryById = '/wms/warehouse/queryById',
   outOfEnvelopeCount = '/wms/warehouse/outOfEnvelopeCount',
+  checkDelete = '/wms/warehouse/checkDelete',
+  checkDeleteBatch = '/wms/warehouse/checkDeleteBatch',
 }
+
+/** 删除预检：库区下有库位/已绑定设备时返回不可删原因 */
+export const checkWarehouseDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });
+
+/** 批量删除预检：列出不可删明细（库区现无前端批量入口，接口备用） */
+export const checkWarehouseDeleteBatch = (params: { ids: string }) => defHttp.get({ url: Api.checkDeleteBatch, params });
 
 export const list = (params?) => defHttp.get({ url: Api.list, params });
 

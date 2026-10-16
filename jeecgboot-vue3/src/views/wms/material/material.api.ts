@@ -11,7 +11,15 @@ enum Api {
   importExcel = '/wms/material/importExcel',
   exportXls = '/wms/material/exportXls',
   importTemplate = '/wms/material/importTemplate',
+  checkDelete = '/wms/material/checkDelete',
+  checkDeleteBatch = '/wms/material/checkDeleteBatch',
 }
+
+/** 删除预检：物料当前恒可删；未来库存表接入后这里会给出禁止原因 */
+export const checkMaterialDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });
+
+/** 批量删除预检：列出不可删明细 */
+export const checkMaterialDeleteBatch = (params: { ids: string }) => defHttp.get({ url: Api.checkDeleteBatch, params });
 
 export const getImportUrl = Api.importExcel;
 export const getExportUrl = Api.exportXls;

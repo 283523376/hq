@@ -11,7 +11,15 @@ enum Api {
   deleteOne = '/wms/device/delete',
   deleteBatch = '/wms/device/deleteBatch',
   checkCode = '/wms/device/checkCode',
+  checkDelete = '/wms/device/checkDelete',
+  checkDeleteBatch = '/wms/device/checkDeleteBatch',
 }
+
+/** 删除预检：绑定中的设备返回不可删原因（先解绑再删） */
+export const checkDeviceDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });
+
+/** 批量删除预检：列出不可删明细 */
+export const checkDeviceDeleteBatch = (params: { ids: string }) => defHttp.get({ url: Api.checkDeleteBatch, params });
 
 export const list = (params?) => defHttp.get({ url: Api.list, params });
 
