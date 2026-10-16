@@ -14,6 +14,7 @@ import org.jeecg.common.system.vo.SelectTreeModel;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -148,5 +149,12 @@ public class WmsMaterialCategoryController extends JeecgController<WmsMaterialCa
             log.error(e.getMessage(), e);
             return Result.error(e.getMessage());
         }
+    }
+
+    /** 删除预检：分类树删除前调用；后端守卫仍在删除时兜底。 */
+    @Operation(summary = "分类-删除预检")
+    @GetMapping(value = "/checkDelete")
+    public Result<WmsDeleteCheckVO> checkDelete(@RequestParam(name = "id", required = true) String id) {
+        return Result.OK(service.checkDelete(id));
     }
 }

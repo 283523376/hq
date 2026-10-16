@@ -12,10 +12,12 @@ import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,13 +107,29 @@ public class WmsMaterialCategoryServiceImpl extends ServiceImpl<WmsMaterialCateg
     }
 
     @Override
-    public void removeCategory(String id) {
-        if (hasMaterial(id)) {
-            throw new RuntimeException("该分类下存在物料，不允许删除");
+    public WmsDeleteCheckVO checkDelete(String id) {
+        WmsDeleteCheckVO vo = new WmsDeleteCheckVO();
+        if (oConvertUtils.isEmpty(id)) {
+            return vo;
+        }
+        long materialCount = wmsMaterialMapper.selectCount(
+                new QueryWrapper<WmsMaterial>().eq("category_id", id));
+        if (materialCount > 0) {
+            vo.addBlocker("该分类下存在物料", materialCount, Collections.emptyList());
         }
         long childCount = this.count(new QueryWrapper<WmsMaterialCategory>().eq("parent_id", id));
         if (childCount > 0) {
-            throw new RuntimeException("该分类下存在子分类，不允许删除");
+            vo.addBlocker("该分类下存在子分类", childCount, Collections.emptyList());
+        }
+        return vo;
+    }
+
+    @Override
+    public void removeCategory(String id) {
+        WmsDeleteCheckVO check = checkDelete(id);
+        if (!check.isDeletable()) {
+            // blocker 顺序即文案优先级：物料先于子分类，与既有用例（BD001-T07）一致
+            throw new RuntimeException(check.getBlockers().get(0).getMessage() + "，不允许删除");
         }
         this.removeById(id);
     }

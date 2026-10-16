@@ -6,6 +6,7 @@ import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -226,13 +227,22 @@ class WmsMaterialCategoryServiceImplTest {
         assertEquals(WmsConstants.STATUS_DISABLE, captor.getValue().getStatus());
     }
 
-    // ------------------------------------------------------------ 删除守卫（BD001-T07）
+    // ------------------------------------------------------------ 删除守卫与预检（BD001-T07，spec 2026-10-16 §3.2）
+
+    /** 构造已注入 mock 物料 mapper 的 service：守卫查询 wms_material.category_id。 */
+    private WmsMaterialCategoryServiceImpl guardService(long materialCount) {
+        WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
+        WmsMaterialMapper materialMapper = mock(WmsMaterialMapper.class);
+        WmsTestSupport.inject(service, "wmsMaterialMapper", materialMapper);
+        doReturn(materialCount).when(materialMapper).selectCount(any(Wrapper.class));
+        return service;
+    }
 
     /** 分类下有物料必须拒绝删除（BD001-T07）。 */
     @Test
     void removeCategory_shouldRejectWhenHasMaterial() {
-        WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
-        doReturn(true).when(service).hasMaterial("1");
+        WmsMaterialCategoryServiceImpl service = guardService(1L);
+        doReturn(0L).when(service).count(any(Wrapper.class));
 
         RuntimeException ex = assertThrows(RuntimeException.class, () -> service.removeCategory("1"));
 
@@ -243,8 +253,7 @@ class WmsMaterialCategoryServiceImplTest {
     /** 分类下有子分类必须拒绝删除——否则子分类会变成孤儿。 */
     @Test
     void removeCategory_shouldRejectWhenHasChildren() {
-        WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
-        doReturn(false).when(service).hasMaterial("1");
+        WmsMaterialCategoryServiceImpl service = guardService(0L);
         doReturn(2L).when(service).count(any(Wrapper.class));
 
         RuntimeException ex = assertThrows(RuntimeException.class, () -> service.removeCategory("1"));
@@ -256,14 +265,27 @@ class WmsMaterialCategoryServiceImplTest {
     /** 既无物料也无子分类时才允许删除。 */
     @Test
     void removeCategory_shouldRemoveWhenClean() {
-        WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
-        doReturn(false).when(service).hasMaterial("1");
+        WmsMaterialCategoryServiceImpl service = guardService(0L);
         doReturn(0L).when(service).count(any(Wrapper.class));
         doReturn(true).when(service).removeById("1");
 
         service.removeCategory("1");
 
         verify(service).removeById("1");
+    }
+
+    /** 预检必须一次报全物料与子分类两 blocker（顺序：物料在前，与删除文案优先级一致）。 */
+    @Test
+    void checkDelete_shouldReportBothBlockersInOrder() {
+        WmsMaterialCategoryServiceImpl service = guardService(3L);
+        doReturn(2L).when(service).count(any(Wrapper.class));
+
+        WmsDeleteCheckVO vo = service.checkDelete("C1");
+
+        assertFalse(vo.isDeletable());
+        assertEquals(2, vo.getBlockers().size());
+        assertEquals("该分类下存在物料", vo.getBlockers().get(0).getMessage());
+        assertEquals("该分类下存在子分类", vo.getBlockers().get(1).getMessage());
     }
 
     // ------------------------------------------------------------ 查重

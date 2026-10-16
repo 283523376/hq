@@ -3,6 +3,7 @@ package org.jeecg.modules.wms.service;
 import org.jeecg.common.system.base.service.JeecgService;
 import org.jeecg.common.system.vo.SelectTreeModel;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 
 import java.util.List;
 
@@ -37,6 +38,11 @@ public interface IWmsMaterialCategoryService extends JeecgService<WmsMaterialCat
      * 删除分类；分类下存在物料或子分类时抛出异常。
      */
     void removeCategory(String id);
+
+    /**
+     * 删除预检：一次报全物料与子分类两 blocker（只读，供前端禁止弹窗）。
+     */
+    WmsDeleteCheckVO checkDelete(String id);
 
     /**
      * 判断分类编码是否已被占用。
