@@ -52,7 +52,8 @@
   import { useModal } from '/@/components/Modal';
   import { useMessage } from '/@/hooks/web/useMessage';
   import WarehouseModal from './WarehouseModal.vue';
-  import { queryTreeList, deleteWarehouse, disableWarehouse } from '../warehouse.api';
+  import { queryTreeList, deleteWarehouse, disableWarehouse, checkWarehouseDelete } from '../warehouse.api';
+  import { showDeleteBlocked } from '../../common/useWmsDeleteCheck';
 
   const emit = defineEmits(['select', 'refresh']);
   const { createMessage } = useMessage();
@@ -150,14 +151,19 @@
     });
   }
 
-  function handleDelete(node) {
+  async function handleDelete(node) {
+    // 预检先行：库区下有库位/已绑定设备时直接弹「无法删除」并列出原因；后端守卫仍在删除时兜底
+    const check: any = await checkWarehouseDelete({ id: node.key });
+    if (!check?.deletable) {
+      showDeleteBlocked(check?.blockers);
+      return;
+    }
     Modal.confirm({
       title: '确认删除',
       content: `确定删除库区「${node.title}」吗？`,
       okText: '确认',
       cancelText: '取消',
       onOk: async () => {
-        // 库区下有库位或已绑定设备时，后端会拒绝并把原因自动弹出
         await deleteWarehouse({ id: node.key }, () => {});
         createMessage.success('删除成功');
         if (selectedKeys.value[0] === node.key) {

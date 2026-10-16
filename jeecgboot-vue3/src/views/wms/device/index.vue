@@ -19,7 +19,7 @@
         <a-dropdown v-if="selectedRowKeys.length > 0">
           <template #overlay>
             <a-menu>
-              <a-menu-item key="1" @click="batchHandleDelete">
+              <a-menu-item key="1" @click="confirmBatchDelete(batchIds)">
                 <Icon icon="ant-design:delete-outlined" />
                 批量删除
               </a-menu-item>
@@ -41,6 +41,7 @@
 </template>
 
 <script lang="ts" name="wms-device" setup>
+  import { computed } from 'vue';
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useModal } from '/@/components/Modal';
   import { useListPage } from '/@/hooks/system/useListPage';
@@ -49,7 +50,15 @@
   import DeviceModal from './components/DeviceModal.vue';
   import DeviceBindModal from './components/DeviceBindModal.vue';
   import { columns, searchFormSchema } from './device.data';
-  import { list, deleteDevice, batchDeleteDevice, unbindDevices } from './device.api';
+  import {
+    list,
+    deleteDevice,
+    batchDeleteDevice,
+    unbindDevices,
+    checkDeviceDelete,
+    checkDeviceDeleteBatch,
+  } from './device.api';
+  import { useWmsDeleteCheck } from '../common/useWmsDeleteCheck';
 
   const { prefixCls } = useDesign('wms-device');
   const { createMessage } = useMessage();
@@ -67,6 +76,22 @@
     },
   });
   const [registerTable, { reload }, { rowSelection, selectedRowKeys }] = tableContext;
+
+  /** 勾选行 id（过滤树形加载占位行） */
+  const batchIds = computed(() =>
+    selectedRowKeys.value.filter((key) => !String(key).includes('loadChild')),
+  );
+
+  // 删除守卫统一交互：预检先行，后端守卫仍兜底（spec 2026-10-16 §4）
+  const { confirmDelete, confirmBatchDelete } = useWmsDeleteCheck(
+    {
+      checkDelete: checkDeviceDelete,
+      checkDeleteBatch: checkDeviceDeleteBatch,
+      remove: deleteDevice,
+      removeBatch: batchDeleteDevice,
+    },
+    handleSuccess,
+  );
 
   function handleSuccess() {
     selectedRowKeys.value = [];
@@ -92,25 +117,13 @@
     handleSuccess();
   }
 
-  async function handleDelete(record) {
-    await deleteDevice({ id: record.id }, handleSuccess);
-  }
-
-  async function batchHandleDelete() {
-    const ids = selectedRowKeys.value.filter((key) => !String(key).includes('loadChild'));
-    if (ids.length === 0) {
-      return;
-    }
-    await batchDeleteDevice({ ids: ids.join(',') }, handleSuccess);
-  }
-
   function getTableAction(record) {
     return [
       { label: '编辑', auth: 'wms:device:edit', onClick: handleEdit.bind(null, record) },
       {
         label: '删除',
         auth: 'wms:device:delete',
-        popConfirm: { title: '确定删除吗?', confirm: handleDelete.bind(null, record) },
+        onClick: confirmDelete.bind(null, record),
       },
     ];
   }

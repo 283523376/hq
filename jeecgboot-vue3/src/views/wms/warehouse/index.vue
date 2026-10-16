@@ -29,7 +29,7 @@
             <a-dropdown v-if="selectedRowKeys.length > 0">
               <template #overlay>
                 <a-menu>
-                  <a-menu-item key="1" @click="batchHandleDelete">
+                  <a-menu-item key="1" @click="confirmBatchDelete(batchIds)">
                     <Icon icon="ant-design:delete-outlined" />
                     批量删除
                   </a-menu-item>
@@ -65,8 +65,16 @@
   import LocationAttrModal from './components/LocationAttrModal.vue';
   import LocationModal from './components/LocationModal.vue';
   import { columns, searchFormSchema } from './location.data';
-  import { list, deleteLocation, releaseLocation, batchDeleteLocation } from './location.api';
+  import {
+    list,
+    deleteLocation,
+    releaseLocation,
+    batchDeleteLocation,
+    checkLocationDelete,
+    checkLocationDeleteBatch,
+  } from './location.api';
   import { queryById } from './warehouse.api';
+  import { useWmsDeleteCheck } from '../common/useWmsDeleteCheck';
 
   const { prefixCls } = useDesign('wms-warehouse');
   const { createMessage } = useMessage();
@@ -97,6 +105,22 @@
     },
   });
   const [registerTable, { reload }, { rowSelection, selectedRowKeys }] = tableContext;
+
+  /** 勾选行 id（过滤树形加载占位行） */
+  const batchIds = computed(() =>
+    selectedRowKeys.value.filter((key) => !String(key).includes('loadChild')),
+  );
+
+  // 删除守卫统一交互：预检先行，后端守卫仍兜底（spec 2026-10-16 §4）
+  const { confirmDelete, confirmBatchDelete } = useWmsDeleteCheck(
+    {
+      checkDelete: checkLocationDelete,
+      checkDeleteBatch: checkLocationDeleteBatch,
+      remove: deleteLocation,
+      removeBatch: batchDeleteLocation,
+    },
+    handleSuccess,
+  );
 
   function handleSuccess() {
     selectedRowKeys.value = [];
@@ -137,18 +161,6 @@
     handleSuccess();
   }
 
-  async function handleDelete(record) {
-    await deleteLocation({ id: record.id }, handleSuccess);
-  }
-
-  async function batchHandleDelete() {
-    const ids = selectedRowKeys.value.filter((key) => !String(key).includes('loadChild'));
-    if (ids.length === 0) {
-      return;
-    }
-    await batchDeleteLocation({ ids: ids.join(',') }, handleSuccess);
-  }
-
   function getTableAction(record) {
     const actions: any[] = [
       { label: '属性', auth: 'wms:location:attr', onClick: handleEdit.bind(null, record) },
@@ -161,12 +173,12 @@
         popConfirm: { title: '确认该库位已清空？释放后状态变为「空闲」', confirm: handleRelease.bind(null, record) },
       });
     }
-    // 删除仅对「空闲」可见（后端同样强制）
+    // 删除仅对「空闲」可见（后端同样强制）；预检先行
     if (record.status === '空闲') {
       actions.push({
         label: '删除',
         auth: 'wms:location:delete',
-        popConfirm: { title: '确定删除吗?', confirm: handleDelete.bind(null, record) },
+        onClick: confirmDelete.bind(null, record),
       });
     }
     return actions;
