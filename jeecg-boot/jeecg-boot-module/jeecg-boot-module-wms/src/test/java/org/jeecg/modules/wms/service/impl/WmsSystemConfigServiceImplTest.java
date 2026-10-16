@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.jeecg.modules.wms.dto.WmsConfigItemDTO;
+import org.jeecg.modules.wms.dto.WmsConfigRollbackDTO;
 import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
 import org.jeecg.modules.wms.entity.WmsSystemConfigHistory;
@@ -226,5 +227,118 @@ class WmsSystemConfigServiceImplTest {
 
         assertThrows(WmsConfigConflictException.class,
                 () -> service.save(saveDto("inventory", "inv.stock.min", "10")));
+    }
+
+    // ------------------------------------------------------------ 回滚与历史（BD-004 异常处理）
+
+    private static WmsSystemConfigHistory hist(String key, String value, int version, String type) {
+        WmsSystemConfigHistory h = new WmsSystemConfigHistory();
+        h.setConfigKey(key);
+        h.setConfigValue(value);
+        h.setVersionNo(version);
+        h.setChangeType(type);
+        return h;
+    }
+
+    /** 回滚取「次新」版本写回主表，并追加一条 ROLLBACK 历史（不删旧历史）。 */
+    @Test
+    void rollback_shouldRestorePreviousVersionAndAppendHistory() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        doReturn(true).when(service).save(any(WmsSystemConfig.class));
+        doReturn(0).when(service).currentVersionNo(any());
+        // 该键的历史：v2 当前值 60，v1 上一版本 50
+        doReturn(new ArrayList<>(List.of(
+                hist("device.offline.threshold.seconds", "60", 2, "SAVE"),
+                hist("device.offline.threshold.seconds", "50", 1, "SAVE"))))
+                .when(historyMapper).selectList(any(Wrapper.class));
+
+        WmsConfigRollbackDTO dto = new WmsConfigRollbackDTO();
+        dto.setGroup("device");
+        service.rollback(dto);
+
+        ArgumentCaptor<WmsSystemConfig> captor = ArgumentCaptor.forClass(WmsSystemConfig.class);
+        verify(service, times(2)).save(captor.capture());
+        assertEquals("50", captor.getAllValues().get(0).getConfigValue(), "应写回上一版本 50，而不是当前值 60");
+
+        ArgumentCaptor<WmsSystemConfigHistory> hCaptor = ArgumentCaptor.forClass(WmsSystemConfigHistory.class);
+        verify(historyMapper, times(2)).insert(hCaptor.capture());
+        assertEquals("ROLLBACK", hCaptor.getAllValues().get(0).getChangeType());
+    }
+
+    /** 只有 1 个版本的键没有可回滚版本——跳过它，不能报错也不能凭空造一个值。 */
+    @Test
+    void rollback_shouldSkipKeysWithoutPreviousVersion() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        doReturn(new ArrayList<>(List.of(hist("device.offline.threshold.seconds", "60", 1, "SAVE"))))
+                .when(historyMapper).selectList(any(Wrapper.class));
+
+        WmsConfigRollbackDTO dto = new WmsConfigRollbackDTO();
+        dto.setGroup("device");
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.rollback(dto));
+
+        assertTrue(ex.getMessage().contains("没有可回滚"), "应给出与「冲突」不同的提示，实际：" + ex.getMessage());
+        verify(service, never()).save(any(WmsSystemConfig.class));
+    }
+
+    /** 回滚目标值若过不了当前校验（规则中途加严），必须拒绝，不得先把非法值写进库（Review Focus 3）。 */
+    @Test
+    void rollback_shouldRejectWhenPreviousValueInvalid() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        // 历史里 v1 是 -5（当年合法），现在库存不允许负数
+        doReturn(new ArrayList<>(List.of(
+                hist("inv.stock.min", "10", 2, "SAVE"),
+                hist("inv.stock.min", "-5", 1, "SAVE"))))
+                .when(historyMapper).selectList(any(Wrapper.class));
+
+        WmsConfigRollbackDTO dto = new WmsConfigRollbackDTO();
+        dto.setGroup("inventory");
+        WmsConfigConflictException ex = assertThrows(WmsConfigConflictException.class, () -> service.rollback(dto));
+
+        assertEquals("配置项存在冲突，请检查", ex.getMessage());
+        verify(service, never()).save(any(WmsSystemConfig.class));
+        verify(service, never()).updateById(any(WmsSystemConfig.class));
+    }
+
+    /**
+     * 历史排序必须带 tie-break：并发保存可能产生重复版本号，回滚结果仍须确定（Review Focus 1）。
+     * 断言 ORDER BY 里出现 create_time —— 只有 version_no 的话这条会红。
+     */
+    @Test
+    void history_shouldOrderDeterministicallyOnDuplicateVersion() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(Collections.emptyList()).when(historyMapper).selectList(any(Wrapper.class));
+
+        service.history("inv.stock.min");
+
+        ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(historyMapper).selectList(captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertTrue(sql.contains("version_no"), "应按版本号排序，实际：" + sql);
+        assertTrue(sql.contains("create_time"), "必须带 tie-break（create_time）以保证重复版本号下结果确定，实际：" + sql);
+    }
+
+    /** 历史查询按版本降序返回（透传 mapper 结果）。 */
+    @Test
+    void history_shouldReturnRowsFromMapper() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(new ArrayList<>(List.of(
+                hist("device.offline.threshold.seconds", "60", 2, "SAVE"),
+                hist("device.offline.threshold.seconds", "50", 1, "SAVE"))))
+                .when(historyMapper).selectList(any(Wrapper.class));
+
+        assertEquals(2, service.history("device.offline.threshold.seconds").size());
     }
 }

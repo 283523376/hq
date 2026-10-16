@@ -8,6 +8,7 @@ import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConfigValidator;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsConfigItemDTO;
+import org.jeecg.modules.wms.dto.WmsConfigRollbackDTO;
 import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
 import org.jeecg.modules.wms.entity.WmsSystemConfigHistory;
@@ -132,6 +133,69 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
             wmsSystemConfigHistoryMapper.insert(history);
         }
         log.info("系统配置已保存：分组={}，项数={}", dto.getGroup(), values.size());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void rollback(WmsConfigRollbackDTO dto) {
+        if (dto == null || dto.getGroup() == null) {
+            throw new IllegalArgumentException("缺少配置分组");
+        }
+        WmsConfigGroup group = WmsConfigGroup.of(dto.getGroup());
+
+        // 1) 逐键取「次新」版本（当前值是最大版本，上一版本是第 2 条）
+        Map<String, String> previous = new LinkedHashMap<>();
+        for (WmsConfigKey key : WmsConfigKey.ofGroup(group)) {
+            List<WmsSystemConfigHistory> rows = recentHistory(key.getKey(), 2);
+            if (rows.size() >= 2) {
+                previous.put(key.getKey(), rows.get(1).getConfigValue());
+            }
+        }
+        if (previous.isEmpty()) {
+            throw new RuntimeException("当前分组没有可回滚的历史版本");
+        }
+
+        // 2) 回滚目标值必须仍能过校验：规则中途加严时旧值可能已非法 ——
+        //    宁可拒绝，也不要把非法值写进主表再让人去收拾
+        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate(group.getCode(), previous);
+        if (!conflicts.isEmpty()) {
+            throw new WmsConfigConflictException(conflicts);
+        }
+
+        // 3) 写回主表 + 追加 ROLLBACK 历史（不删旧历史，审计链完整）
+        Map<String, WmsSystemConfig> stored = loadStoredMap();
+        for (Map.Entry<String, String> entry : previous.entrySet()) {
+            WmsConfigKey meta = WmsConfigKey.of(entry.getKey());
+            String value = entry.getValue() == null ? "" : entry.getValue();
+
+            WmsSystemConfig existing = stored.get(entry.getKey());
+            if (existing == null) {
+                WmsSystemConfig row = new WmsSystemConfig()
+                        .setConfigKey(meta.getKey()).setConfigValue(value).setConfigDesc(meta.getLabel());
+                WmsUtils.fillCreate(row);
+                this.save(row);
+            } else {
+                existing.setConfigValue(value);
+                WmsUtils.fillUpdate(existing);
+                this.updateById(existing);
+            }
+
+            WmsSystemConfigHistory history = new WmsSystemConfigHistory();
+            history.setConfigKey(meta.getKey());
+            history.setConfigValue(value);
+            history.setVersionNo(currentVersionNo(meta.getKey()) + 1);
+            history.setChangeType(WmsConstants.CONFIG_CHANGE_ROLLBACK);
+            WmsUtils.fillCreate(history);
+            wmsSystemConfigHistoryMapper.insert(history);
+        }
+        log.info("系统配置已回滚：分组={}，项数={}", dto.getGroup(), previous.size());
+    }
+
+    @Override
+    public List<WmsSystemConfigHistory> history(String key) {
+        return wmsSystemConfigHistoryMapper.selectList(new QueryWrapper<WmsSystemConfigHistory>()
+                .eq("config_key", key)
+                .orderByDesc("version_no", "create_time", "id"));
     }
 
     /**

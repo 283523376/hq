@@ -1,8 +1,10 @@
 package org.jeecg.modules.wms.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import org.jeecg.modules.wms.dto.WmsConfigRollbackDTO;
 import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
+import org.jeecg.modules.wms.entity.WmsSystemConfigHistory;
 import org.jeecg.modules.wms.vo.WmsConfigGroupVO;
 import org.jeecg.modules.wms.vo.WmsConfigItemVO;
 
@@ -30,6 +32,17 @@ public interface IWmsSystemConfigService extends IService<WmsSystemConfig> {
      * @throws org.jeecg.modules.wms.exception.WmsConfigConflictException 校验不通过（message 逐字为蓝图原文）
      */
     void save(WmsConfigSaveDTO dto);
+
+    /**
+     * 把某分组整体回滚到上一版本。
+     *
+     * @throws RuntimeException 无任何可回滚项（提示文案与「冲突」不同）
+     * @throws org.jeecg.modules.wms.exception.WmsConfigConflictException 回滚目标值过不了当前校验
+     */
+    void rollback(WmsConfigRollbackDTO dto);
+
+    /** 某配置键的版本流水（版本降序），让留痕可查证。 */
+    List<WmsSystemConfigHistory> history(String key);
 
     /**
      * 只读整数配置。
