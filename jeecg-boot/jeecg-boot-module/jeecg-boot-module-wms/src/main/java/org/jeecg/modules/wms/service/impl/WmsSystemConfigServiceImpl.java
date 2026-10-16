@@ -5,18 +5,27 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.constant.WmsConfigGroup;
 import org.jeecg.modules.wms.constant.WmsConfigKey;
+import org.jeecg.modules.wms.constant.WmsConfigValidator;
+import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsConfigItemDTO;
+import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
 import org.jeecg.modules.wms.entity.WmsSystemConfigHistory;
+import org.jeecg.modules.wms.exception.WmsConfigConflictException;
 import org.jeecg.modules.wms.mapper.WmsSystemConfigHistoryMapper;
 import org.jeecg.modules.wms.mapper.WmsSystemConfigMapper;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsConfigConflict;
 import org.jeecg.modules.wms.vo.WmsConfigGroupVO;
 import org.jeecg.modules.wms.vo.WmsConfigItemVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -71,6 +80,58 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
     @Override
     public int getInt(String key, int fallback) {
         return fallback;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void save(WmsConfigSaveDTO dto) {
+        if (dto == null || dto.getGroup() == null) {
+            throw new IllegalArgumentException("缺少配置分组");
+        }
+        Map<String, String> values = new LinkedHashMap<>();
+        if (dto.getItems() != null) {
+            for (WmsConfigItemDTO item : dto.getItems()) {
+                if (item != null && item.getKey() != null) {
+                    values.put(item.getKey(), item.getValue());
+                }
+            }
+        }
+
+        // 1) 先校验，全组通过才动库。校验失败时下面两个写方法一次都不会被调用。
+        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate(dto.getGroup(), values);
+        if (!conflicts.isEmpty()) {
+            throw new WmsConfigConflictException(conflicts);
+        }
+
+        // 2) upsert 主表 + 3) 追加历史（同一事务：写历史失败则 upsert 一起回滚，不会出现「值改了没留痕」）
+        Map<String, WmsSystemConfig> stored = loadStoredMap();
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            WmsConfigKey meta = WmsConfigKey.of(entry.getKey());
+            String value = entry.getValue() == null ? "" : entry.getValue().trim();
+
+            WmsSystemConfig existing = stored.get(entry.getKey());
+            if (existing == null) {
+                WmsSystemConfig row = new WmsSystemConfig()
+                        .setConfigKey(meta.getKey())
+                        .setConfigValue(value)
+                        .setConfigDesc(meta.getLabel());
+                WmsUtils.fillCreate(row);
+                this.save(row);
+            } else {
+                existing.setConfigValue(value);
+                WmsUtils.fillUpdate(existing);
+                this.updateById(existing);
+            }
+
+            WmsSystemConfigHistory history = new WmsSystemConfigHistory();
+            history.setConfigKey(meta.getKey());
+            history.setConfigValue(value);
+            history.setVersionNo(currentVersionNo(meta.getKey()) + 1);
+            history.setChangeType(WmsConstants.CONFIG_CHANGE_SAVE);
+            WmsUtils.fillCreate(history);
+            wmsSystemConfigHistoryMapper.insert(history);
+        }
+        log.info("系统配置已保存：分组={}，项数={}", dto.getGroup(), values.size());
     }
 
     /**

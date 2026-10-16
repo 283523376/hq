@@ -201,6 +201,14 @@ public final class WmsConstants {
     /** 设备离线告警的消息标题。 */
     public static final String DEVICE_ALERT_TITLE = "WMS设备离线告警";
 
+    // ---------------------------------------------------------------- 系统配置（BD-004）
+
+    /** 配置变更类型：保存。 */
+    public static final String CONFIG_CHANGE_SAVE = "SAVE";
+
+    /** 配置变更类型：回滚。 */
+    public static final String CONFIG_CHANGE_ROLLBACK = "ROLLBACK";
+
     /** 设备告警收件人配置键。 */
     public static final String DEVICE_ALERT_TO_USER_KEY = "wms.device.alert.to-user";
 

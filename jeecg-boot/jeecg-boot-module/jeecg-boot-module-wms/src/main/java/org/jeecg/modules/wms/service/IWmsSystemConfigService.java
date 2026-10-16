@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
 import org.jeecg.modules.wms.vo.WmsConfigGroupVO;
 import org.jeecg.modules.wms.vo.WmsConfigItemVO;
@@ -22,6 +23,13 @@ public interface IWmsSystemConfigService extends IService<WmsSystemConfig> {
 
     /** 某配置键当前的最大版本号；0 表示从未保存过。 */
     int currentVersionNo(String key);
+
+    /**
+     * 保存某分组的全部配置：校验 → upsert → 留痕，单事务。
+     *
+     * @throws org.jeecg.modules.wms.exception.WmsConfigConflictException 校验不通过（message 逐字为蓝图原文）
+     */
+    void save(WmsConfigSaveDTO dto);
 
     /**
      * 只读整数配置。

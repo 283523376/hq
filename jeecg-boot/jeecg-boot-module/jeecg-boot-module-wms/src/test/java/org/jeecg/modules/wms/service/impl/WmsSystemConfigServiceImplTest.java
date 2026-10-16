@@ -1,11 +1,19 @@
 package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import org.jeecg.modules.wms.dto.WmsConfigItemDTO;
+import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
+import org.jeecg.modules.wms.entity.WmsSystemConfigHistory;
+import org.jeecg.modules.wms.exception.WmsConfigConflictException;
+import org.jeecg.modules.wms.mapper.WmsSystemConfigHistoryMapper;
+import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.vo.WmsConfigGroupVO;
 import org.jeecg.modules.wms.vo.WmsConfigItemVO;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -15,7 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * @Description: 系统配置读路径单测（不启 Spring、不连库）
@@ -115,5 +127,104 @@ class WmsSystemConfigServiceImplTest {
                 .filter(i -> "inv.stock.min".equals(i.getKey())).findFirst().orElseThrow();
 
         assertTrue(min.isCanRollback());
+    }
+
+    // ------------------------------------------------------------ 保存（BD-004 步骤 3~7）
+
+    private static WmsConfigSaveDTO saveDto(String group, String... keyValues) {
+        WmsConfigSaveDTO dto = new WmsConfigSaveDTO();
+        dto.setGroup(group);
+        List<WmsConfigItemDTO> items = new ArrayList<>();
+        for (int i = 0; i < keyValues.length; i += 2) {
+            items.add(new WmsConfigItemDTO(keyValues[i], keyValues[i + 1]));
+        }
+        dto.setItems(items);
+        return dto;
+    }
+
+    /** 保存成功：写主表（upsert）+ 为该组每个键追加一条历史。 */
+    @Test
+    void save_shouldUpsertAndAppendHistory() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        doReturn(true).when(service).save(any(WmsSystemConfig.class));
+        doReturn(0).when(service).currentVersionNo(any());
+
+        service.save(saveDto("inventory",
+                "inv.stock.min", "10", "inv.stock.safe", "50", "inv.stock.max", "200"));
+
+        // 3 个键都是新的 → 逐键插入主表；历史同样 3 条
+        verify(service, times(3)).save(any(WmsSystemConfig.class));
+        ArgumentCaptor<WmsSystemConfigHistory> captor = ArgumentCaptor.forClass(WmsSystemConfigHistory.class);
+        verify(historyMapper, times(3)).insert(captor.capture());
+        List<WmsSystemConfigHistory> rows = captor.getAllValues();
+        assertEquals("SAVE", rows.get(0).getChangeType());
+        assertEquals(1, rows.get(0).getVersionNo().intValue(), "首次保存版本号为 1");
+        assertEquals("10", rows.get(0).getConfigValue());
+    }
+
+    /** 已存在的键必须走更新而不是再插一行（否则会撞唯一索引）。 */
+    @Test
+    void save_shouldUpdateExistingRow() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(Collections.singletonList(row("inv.stock.min", "1"))).when(service).list(any(Wrapper.class));
+        doReturn(true).when(service).updateById(any(WmsSystemConfig.class));
+        doReturn(true).when(service).save(any(WmsSystemConfig.class));
+        doReturn(0).when(service).currentVersionNo(any());
+
+        service.save(saveDto("inventory",
+                "inv.stock.min", "10", "inv.stock.safe", "50", "inv.stock.max", "200"));
+
+        // 已存在的键走更新，另外两个新键走插入 —— 已存在的那个绝不能变成再插一行（会撞唯一索引）
+        verify(service).updateById(any(WmsSystemConfig.class));
+        verify(service, times(2)).save(any(WmsSystemConfig.class));
+    }
+
+    /** 校验不过：抛冲突异常，且**一个写方法都不许调**（整体不落库）。 */
+    @Test
+    void save_shouldNotWriteAnythingWhenInvalid() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+
+        WmsConfigConflictException ex = assertThrows(WmsConfigConflictException.class,
+                () -> service.save(saveDto("inventory",
+                        "inv.stock.min", "100", "inv.stock.safe", "50", "inv.stock.max", "200")));
+
+        assertEquals("配置项存在冲突，请检查", ex.getMessage(), "文案必须逐字对齐蓝图原文");
+        verify(service, never()).save(any(WmsSystemConfig.class));
+        verify(service, never()).updateById(any(WmsSystemConfig.class));
+        verify(historyMapper, never()).insert(any(WmsSystemConfigHistory.class));
+    }
+
+    /** 冲突异常必须带明细——只给一句话用户无从下手（Review Focus 5）。 */
+    @Test
+    void save_shouldCarryConflictsPayload() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", mock(WmsSystemConfigHistoryMapper.class));
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+
+        WmsConfigConflictException ex = assertThrows(WmsConfigConflictException.class,
+                () -> service.save(saveDto("inventory",
+                        "inv.stock.min", "100", "inv.stock.safe", "50", "inv.stock.max", "200")));
+
+        assertTrue(!ex.getConflicts().isEmpty(), "conflicts 明细不得为空");
+        assertEquals("inv.stock.min", ex.getConflicts().get(0).getKey());
+    }
+
+    /** 缺项也必须整组拒绝（保存是全组提交）。 */
+    @Test
+    void save_shouldRejectIncompleteGroup() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", mock(WmsSystemConfigHistoryMapper.class));
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+
+        assertThrows(WmsConfigConflictException.class,
+                () -> service.save(saveDto("inventory", "inv.stock.min", "10")));
     }
 }
