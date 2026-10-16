@@ -54,7 +54,8 @@
   import { useModal } from '/@/components/Modal';
   import { useMessage } from '/@/hooks/web/useMessage';
   import CategoryModal from './CategoryModal.vue';
-  import { queryTreeList, deleteCategory, disableCategory } from '../category.api';
+  import { queryTreeList, deleteCategory, disableCategory, checkCategoryDelete } from '../category.api';
+  import { showDeleteBlocked } from '../../common/useWmsDeleteCheck';
 
   const emit = defineEmits(['select', 'refresh']);
   const { createMessage } = useMessage();
@@ -129,14 +130,19 @@
     });
   }
 
-  function handleDelete(node) {
+  async function handleDelete(node) {
+    // 预检先行：分类下有物料/子分类时直接弹「无法删除」并列出原因；后端守卫仍在删除时兜底
+    const check: any = await checkCategoryDelete({ id: node.id });
+    if (!check?.deletable) {
+      showDeleteBlocked(check?.blockers);
+      return;
+    }
     Modal.confirm({
       title: '确认删除',
       content: `确定删除分类「${node.title}」吗？`,
       okText: '确认',
       cancelText: '取消',
       onOk: async () => {
-        // 分类下有物料/子分类时，后端会拒绝并把原因自动弹出
         await deleteCategory({ id: node.id }, () => {});
         createMessage.success('删除成功');
         await loadTree();

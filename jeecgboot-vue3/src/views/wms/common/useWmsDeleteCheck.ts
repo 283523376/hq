@@ -1,5 +1,7 @@
 import { h } from 'vue';
-import { createConfirm, createErrorModal } from '/@/hooks/web/useMessage';
+import { useMessage } from '/@/hooks/web/useMessage';
+
+const { createConfirm, createErrorModal } = useMessage();
 
 /** 对齐后端 org.jeecg.modules.wms.vo.WmsDeleteCheckVO */
 export interface WmsDeleteBlocker {

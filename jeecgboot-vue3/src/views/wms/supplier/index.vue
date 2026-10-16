@@ -8,7 +8,7 @@
         <a-dropdown v-if="selectedRowKeys.length > 0">
           <template #overlay>
             <a-menu>
-              <a-menu-item key="1" @click="batchHandleDelete">
+              <a-menu-item key="1" @click="confirmBatchDelete(batchIds)">
                 <Icon icon="ant-design:delete-outlined" />
                 批量删除
               </a-menu-item>
@@ -29,13 +29,22 @@
 </template>
 
 <script lang="ts" name="wms-supplier" setup>
+  import { computed } from 'vue';
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useModal } from '/@/components/Modal';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useDesign } from '/@/hooks/web/useDesign';
   import SupplierModal from './components/SupplierModal.vue';
   import { columns, searchFormSchema } from './supplier.data';
-  import { list, deleteSupplier, batchDeleteSupplier, disableSupplier } from './supplier.api';
+  import {
+    list,
+    deleteSupplier,
+    batchDeleteSupplier,
+    disableSupplier,
+    checkSupplierDelete,
+    checkSupplierDeleteBatch,
+  } from './supplier.api';
+  import { useWmsDeleteCheck } from '../common/useWmsDeleteCheck';
 
   const { prefixCls } = useDesign('wms-supplier');
 
@@ -53,24 +62,28 @@
 
   const [registerTable, { reload }, { rowSelection, selectedRowKeys }] = tableContext;
 
+  /** 勾选行 id（过滤树形加载占位行） */
+  const batchIds = computed(() =>
+    selectedRowKeys.value.filter((key) => !String(key).includes('loadChild')),
+  );
+
+  // 删除守卫统一交互：预检先行，后端守卫仍兜底（spec 2026-10-16 §4）
+  const { confirmDelete, confirmBatchDelete } = useWmsDeleteCheck(
+    {
+      checkDelete: checkSupplierDelete,
+      checkDeleteBatch: checkSupplierDeleteBatch,
+      remove: deleteSupplier,
+      removeBatch: batchDeleteSupplier,
+    },
+    handleSuccess,
+  );
+
   function handleCreate() {
     openModal(true, { isUpdate: false });
   }
 
   function handleEdit(record) {
     openModal(true, { record, isUpdate: true });
-  }
-
-  async function handleDelete(record) {
-    await deleteSupplier({ id: record.id }, handleSuccess);
-  }
-
-  async function batchHandleDelete() {
-    const ids = selectedRowKeys.value.filter((key) => !String(key).includes('loadChild'));
-    if (ids.length === 0) {
-      return;
-    }
-    await batchDeleteSupplier({ ids: ids.join(',') }, handleSuccess);
   }
 
   async function handleDisable(record) {
@@ -102,10 +115,7 @@
       {
         label: '删除',
         auth: 'wms:supplier:delete',
-        popConfirm: {
-          title: '确定删除吗?',
-          confirm: handleDelete.bind(null, record),
-        },
+        onClick: confirmDelete.bind(null, record),
       },
     ];
   }
