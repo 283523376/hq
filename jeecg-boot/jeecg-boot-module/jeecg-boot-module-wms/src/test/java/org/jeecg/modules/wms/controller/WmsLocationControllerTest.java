@@ -91,6 +91,27 @@ class WmsLocationControllerTest {
         verify(locationService).page(any(), any());
     }
 
+    // ------------------------------------------------------------ M2：具体库区优先于类型过滤
+
+    /** warehouseId 非空时必须跳过 warehouseType 分支——不再多拼一个冗余 IN 子句（M2）。 */
+    @Test
+    void list_shouldSkipTypeBranchWhenWarehouseIdPresent() {
+        IWmsLocationService locationService = mock(IWmsLocationService.class);
+        IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
+        when(locationService.page(any(), any())).thenReturn(new Page<>());
+        WmsLocationController controller = newController(locationService, warehouseService);
+
+        // 树上选中库区节点时 warehouseId 与 warehouseType 会同时传（WarehouseTree.onSelect）
+        WmsLocation query = new WmsLocation().setWarehouseId("W1");
+
+        Result<IPage<WmsLocation>> result = controller.queryPageList(
+                query, WmsConstants.WAREHOUSE_TYPE_STEREO, 1, 10, new MockHttpServletRequest());
+
+        assertTrue(result.isSuccess());
+        verify(warehouseService, never()).queryIdsByType(any());
+        verify(locationService).page(any(), any());
+    }
+
     // ------------------------------------------------------------ 库区名回填（含已删除库区）
 
     @Test

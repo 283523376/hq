@@ -71,7 +71,10 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
         // 非持久化字段必须先置空，否则 QueryGenerator 会拼出不存在的 warehouse_name 列条件
         wmsLocation.setWarehouseName(null);
         QueryWrapper<WmsLocation> queryWrapper = QueryGenerator.initQueryWrapper(wmsLocation, req.getParameterMap());
-        if (oConvertUtils.isNotEmpty(warehouseType)) {
+        // 具体库区 id 优先：树上选中库区节点会同时带 warehouseId 与 warehouseType（M2），
+        // 此时类型分支会冗余拼一个「该类型全部库区」的 IN 子句。id 已是最精确过滤，跳过类型分支。
+        if (oConvertUtils.isEmpty(wmsLocation.getWarehouseId())
+                && oConvertUtils.isNotEmpty(warehouseType)) {
             List<String> warehouseIds = wmsWarehouseService.queryIdsByType(warehouseType);
             if (warehouseIds.isEmpty()) {
                 return Result.OK(new Page<>(pageNo, pageSize));
