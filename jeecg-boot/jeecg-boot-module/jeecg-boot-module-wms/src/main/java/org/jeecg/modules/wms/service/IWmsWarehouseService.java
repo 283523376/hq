@@ -3,6 +3,8 @@ package org.jeecg.modules.wms.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.jeecg.common.system.vo.SelectTreeModel;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 
 import java.util.List;
 
@@ -33,6 +35,19 @@ public interface IWmsWarehouseService extends IService<WmsWarehouse> {
      * （详见 `WmsWarehouse` 的 `delFlag` 字段注释与 `V3.9.5_6` 迁移脚本）。
      */
     void removeWarehouse(String id);
+
+    /**
+     * 批量删除库区。整体在一个事务里，循环复用单条守卫，任一条被拒则整体回滚。
+     */
+    void removeBatch(List<String> ids);
+
+    /**
+     * 删除预检：一次报全库位与设备两 blocker（只读，供前端禁止弹窗）。
+     */
+    WmsDeleteCheckVO checkDelete(String id);
+
+    /** 批量删除预检：逐条检查，列出不可删明细（编码 + 原因）。 */
+    WmsBatchDeleteCheckVO checkDeleteBatch(List<String> ids);
 
     /** 某库区类型下的全部库区 id，供库位列表按类型过滤。 */
     List<String> queryIdsByType(String warehouseType);

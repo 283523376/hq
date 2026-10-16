@@ -9,6 +9,7 @@ import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.mapper.WmsDeviceMapper;
 import org.jeecg.modules.wms.mapper.WmsLocationMapper;
 import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -268,6 +270,39 @@ class WmsWarehouseServiceImplTest {
         doReturn(true).when(service).removeById(any(String.class));
         service.removeWarehouse("1");
         verify(service).removeById("1");
+    }
+
+    // ------------------------------------------------------------ 删除预检（spec 2026-10-16 §3.2）
+
+    /** 预检一次报全库位与设备两 blocker（顺序：库位在前，与删除文案优先级一致）。 */
+    @Test
+    void checkDelete_shouldReportBothBlockersInOrder() {
+        WmsWarehouseServiceImpl service = newService();
+        WmsLocationMapper locationMapper = mock(WmsLocationMapper.class);
+        WmsDeviceMapper deviceMapper = mock(WmsDeviceMapper.class);
+        when(locationMapper.selectCount(any(Wrapper.class))).thenReturn(2L);
+        when(deviceMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        WmsTestSupport.inject(service, "wmsLocationMapper", locationMapper);
+        WmsTestSupport.inject(service, "wmsDeviceMapper", deviceMapper);
+
+        WmsDeleteCheckVO vo = service.checkDelete("W1");
+
+        assertFalse(vo.isDeletable());
+        assertEquals(2, vo.getBlockers().size());
+        assertEquals("该库区下存在库位", vo.getBlockers().get(0).getMessage());
+        assertEquals("该库区已绑定设备", vo.getBlockers().get(1).getMessage());
+    }
+
+    /** 批量删除逐条走单条守卫。 */
+    @Test
+    void removeBatch_shouldLoopSingleGuard() {
+        WmsWarehouseServiceImpl service = newService();
+        doNothing().when(service).removeWarehouse(any(String.class));
+
+        service.removeBatch(Arrays.asList("W1", "W2"));
+
+        verify(service).removeWarehouse("W1");
+        verify(service).removeWarehouse("W2");
     }
 
     // ------------------------------------------------------------ requireEnabledWarehouse（T5 / T9 复用）
