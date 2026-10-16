@@ -17,6 +17,8 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.service.IWmsMaterialService;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecgframework.poi.excel.ExcelImportUtil;
 import org.jeecgframework.poi.excel.def.NormalExcelConstants;
 import org.jeecgframework.poi.excel.entity.ExportParams;
@@ -160,12 +162,17 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
     @Operation(summary = "物料-删除")
     @DeleteMapping(value = "/delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
-        service.removeMaterial(id);
-        return Result.OK("删除成功！");
+        try {
+            service.removeMaterial(id);
+            return Result.OK("删除成功！");
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
     }
 
     /**
-     * 批量删除
+     * 批量删除。守卫在 service.removeBatch 的事务内逐条生效，任一条被拒则整体回滚。
      */
     @AutoLog(value = "物料-批量删除", operateType = 4)
     @Operation(summary = "物料-批量删除")
@@ -174,8 +181,30 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
         if (oConvertUtils.isEmpty(ids)) {
             return Result.error("参数不识别！");
         }
-        service.removeBatch(Arrays.asList(ids.split(",")));
-        return Result.OK("删除成功！");
+        try {
+            service.removeBatch(Arrays.asList(ids.split(",")));
+            return Result.OK("删除成功！");
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /** 删除预检：物料当前恒可删；未来库存表接入后这里会给出禁止原因。 */
+    @Operation(summary = "物料-删除预检")
+    @GetMapping(value = "/checkDelete")
+    public Result<WmsDeleteCheckVO> checkDelete(@RequestParam(name = "id", required = true) String id) {
+        return Result.OK(service.checkDelete(id));
+    }
+
+    /** 批量删除预检：列出不可删明细。 */
+    @Operation(summary = "物料-批量删除预检")
+    @GetMapping(value = "/checkDeleteBatch")
+    public Result<WmsBatchDeleteCheckVO> checkDeleteBatch(@RequestParam(name = "ids", required = true) String ids) {
+        if (oConvertUtils.isEmpty(ids)) {
+            return Result.error("参数不识别！");
+        }
+        return Result.OK(service.checkDeleteBatch(Arrays.asList(ids.split(","))));
     }
 
     /**

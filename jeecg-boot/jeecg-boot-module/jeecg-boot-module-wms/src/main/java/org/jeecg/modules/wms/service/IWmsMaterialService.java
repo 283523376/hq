@@ -2,6 +2,8 @@ package org.jeecg.modules.wms.service;
 
 import org.jeecg.common.system.base.service.JeecgService;
 import org.jeecg.modules.wms.entity.WmsMaterial;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 
 import java.util.List;
 
@@ -28,14 +30,22 @@ public interface IWmsMaterialService extends JeecgService<WmsMaterial> {
     void disableMaterial(String id);
 
     /**
-     * 删除物料（逻辑删除）。
+     * 删除物料（逻辑删除）；经 checkDelete 框架（当前无子表引用，恒过）。
      */
     void removeMaterial(String id);
 
     /**
-     * 批量删除物料（逻辑删除）。
+     * 批量删除物料（逻辑删除）。整体在一个事务里，循环复用单条入口。
      */
     void removeBatch(List<String> ids);
+
+    /**
+     * 删除预检：物料当前无子表引用，恒可删；未来库存表/订单明细表接入时在此追加规则。
+     */
+    WmsDeleteCheckVO checkDelete(String id);
+
+    /** 批量删除预检：逐条检查，列出不可删明细。 */
+    WmsBatchDeleteCheckVO checkDeleteBatch(List<String> ids);
 
     /**
      * 判断物料编码是否已被占用。

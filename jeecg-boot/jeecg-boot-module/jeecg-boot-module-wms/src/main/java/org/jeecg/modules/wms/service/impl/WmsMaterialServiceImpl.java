@@ -11,8 +11,11 @@ import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.service.IWmsMaterialService;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -63,14 +66,42 @@ public class WmsMaterialServiceImpl extends ServiceImpl<WmsMaterialMapper, WmsMa
     }
 
     @Override
-    public void removeMaterial(String id) {
-        this.removeById(id);
+    public WmsDeleteCheckVO checkDelete(String id) {
+        // 物料当前没有子表引用（尚无库存表/订单明细表），故恒可删。
+        // 这是删除时间戳方案下的软删，数据可恢复；未来库存表接入时在此追加 blocker 即可。
+        return new WmsDeleteCheckVO();
     }
 
     @Override
+    public WmsBatchDeleteCheckVO checkDeleteBatch(List<String> ids) {
+        WmsBatchDeleteCheckVO vo = new WmsBatchDeleteCheckVO();
+        if (ids == null || ids.isEmpty()) {
+            return vo;
+        }
+        for (String id : ids) {
+            // checkDelete 恒可删，循环只为保持与其他资源一致的契约
+            checkDelete(id);
+        }
+        return vo;
+    }
+
+    @Override
+    public void removeMaterial(String id) {
+        WmsDeleteCheckVO check = checkDelete(id);
+        if (!check.isDeletable()) {
+            throw new RuntimeException(check.getBlockers().get(0).getMessage() + "，不允许删除");
+        }
+        this.removeById(id);
+    }
+
+    /** 批量删除整体在一个事务里（同 WmsSupplierServiceImpl.removeBatch 的理由）。 */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void removeBatch(List<String> ids) {
         if (ids != null && !ids.isEmpty()) {
-            this.removeByIds(ids);
+            for (String id : ids) {
+                removeMaterial(id);
+            }
         }
     }
 

@@ -6,6 +6,8 @@ import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -22,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -181,7 +184,30 @@ class WmsMaterialServiceImplTest {
         assertEquals(WmsConstants.STATUS_DISABLE, captor.getValue().getStatus());
     }
 
-    // ------------------------------------------------------------ 删除（BD001-T13/T14）
+    // ------------------------------------------------------------ 删除与预检（BD001-T13/T14，spec 2026-10-16 §3.1）
+
+    /** 物料当前无子表引用，预检恒可删；未来库存/订单明细表接入时在此方法里追加 blocker。 */
+    @Test
+    void checkDelete_shouldBeDeletable() {
+        WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
+
+        WmsDeleteCheckVO vo = service.checkDelete("M1");
+
+        assertTrue(vo.isDeletable());
+    }
+
+    /** 删除入口必须经过 checkDelete 框架（行为上恒过），保证未来加规则时 remove 不用改。 */
+    @Test
+    void removeMaterial_shouldPassThroughCheck() {
+        WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
+        doReturn(new WmsDeleteCheckVO()).when(service).checkDelete("M1");
+        doReturn(true).when(service).removeById("M1");
+
+        service.removeMaterial("M1");
+
+        verify(service).checkDelete("M1");
+        verify(service).removeById("M1");
+    }
 
     /** 无关联数据时按 id 直接删除（BD001-T13）。 */
     @Test
@@ -194,43 +220,38 @@ class WmsMaterialServiceImplTest {
         verify(service).removeById("1");
     }
 
-    /**
-     * ⚠ 现状记录（BD001-T14 缺口 G-14）：**没有**库存校验，删除不做任何关联检查。
-     *
-     * <p>本模块无库存表；`removeMaterial` 直接 `removeById`。蓝图要求「有库存不允许删除」，
-     * 需先建库存表与校验，属缺口（见 Task 10 清单）。
-     */
-    @Test
-    void removeMaterial_shouldNotCheckAnyReference() {
-        WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
-        doReturn(true).when(service).removeById("1");
-
-        assertDoesNotThrow(() -> service.removeMaterial("1"));
-
-        verify(service).removeById("1");
-    }
-
     /** 空/null 批量删除必须安全返回，不触发任何删除。 */
     @Test
     void removeBatch_shouldNoOpOnNullOrEmpty() {
         WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
+        doNothing().when(service).removeMaterial(any(String.class));
 
         service.removeBatch(null);
         service.removeBatch(Collections.emptyList());
 
-        verify(service, never()).removeByIds(any(Collection.class));
+        verify(service, never()).removeMaterial(any(String.class));
     }
 
-    /** 批量删除按 id 集合一次删除。 */
+    /** 批量删除逐条走单条入口。 */
     @Test
-    void removeBatch_shouldRemoveAll() {
+    void removeBatch_shouldLoopSingleGuard() {
         WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
-        doReturn(true).when(service).removeByIds(any(Collection.class));
+        doNothing().when(service).removeMaterial(any(String.class));
 
-        List<String> ids = Arrays.asList("1", "2");
-        service.removeBatch(ids);
+        service.removeBatch(Arrays.asList("M1", "M2"));
 
-        verify(service).removeByIds(ids);
+        verify(service).removeMaterial("M1");
+        verify(service).removeMaterial("M2");
+    }
+
+    /** 批量预检：全部可删时返回可删、无明细。 */
+    @Test
+    void checkDeleteBatch_shouldBeDeletable() {
+        WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
+
+        WmsBatchDeleteCheckVO vo = service.checkDeleteBatch(Arrays.asList("M1", "M2"));
+
+        assertTrue(vo.isDeletable());
     }
 
     // ------------------------------------------------------------ 查重
