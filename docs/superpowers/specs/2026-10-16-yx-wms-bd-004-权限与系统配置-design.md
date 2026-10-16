@@ -108,9 +108,20 @@ CREATE TABLE IF NOT EXISTS `wms_system_config_history` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC COMMENT='系统配置版本历史';
 ```
 
-**不建唯一索引**：历史表是只追加的流水，同一 `(config_key, version_no)` 一旦出现重复就说明写历史的并发控制出了问题，
-应在应用层用「当前最大 version_no + 1」在事务内保证，而不是靠数据库报错兜底（报错信息对用户无意义）。
-若并发确实需要硬保证，后续可加 `UNIQUE (config_key, version_no)`——**但那时要同时处理冲突重试**，故本轮不加。
+**不建唯一索引，且必须承认版本号在并发下可能重复**（本设计初稿在此处论断有误，写计划时复核后更正）：
+
+版本号取「该键当前最大值 + 1」，而 READ COMMITTED 隔离级别下这**不是串行操作**——
+两个并发的保存会各自读到同一个最大值、算出同一个版本号，事务提交后库里就有两行同版本号。
+所以「在事务内保证唯一」这句话是错的，不能作为不建唯一索引的理由。
+
+本轮的取舍与兜底：
+
+- **不建 `UNIQUE (config_key, version_no)`**：建了就得处理唯一键冲突重试（否则用户看到一句数据库报错），
+  而配置保存是**管理员手工操作**、并发概率极低，为它引入重试逻辑不划算。
+- **改为保证「结果确定」而不是「版本号唯一」**：所有按版本取数的查询（取当前版本、取上一版本、查流水）
+  一律使用**确定性排序** `version_no DESC, create_time DESC, id DESC`。
+  即使出现同版本号，回滚取到的「上一版本」也永远是同一行——**同样输入永远得到同样结果**。
+- 若将来确实需要硬保证，加唯一索引 + 冲突重试即可，值表与接口都不受影响。
 
 **本表不做逻辑删除、不参与删除守卫**：它是只追加的审计流水，永不删除。
 
@@ -193,6 +204,10 @@ CREATE TABLE IF NOT EXISTS `wms_system_config_history` (
 1. 取该组每个 key 的**次新**版本（按 `version_no` 降序第 2 条，即「上一版本」）；
 2. 写回主表；
 3. 为每个被回滚的 key 追加一条 `change_type = ROLLBACK` 的历史行（`version_no` = 当前最大值 + 1）。
+
+**排序必须是确定性的**（`version_no DESC, create_time DESC, id DESC`）：版本号在并发下可能重复（§2.2），
+只按 `version_no` 排序会让「上一版本」在重复版本号之间摇摆。加 `create_time`、`id` 作 tie-break 后，
+同样的库状态永远回滚到同一行。
 
 **不删除任何历史行**——回滚本身也要留痕，否则审计链断裂。
 
