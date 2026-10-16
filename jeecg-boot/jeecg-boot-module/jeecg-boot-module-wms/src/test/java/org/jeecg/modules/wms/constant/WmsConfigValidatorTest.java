@@ -156,4 +156,48 @@ class WmsConfigValidatorTest {
         assertThrows(IllegalArgumentException.class,
                 () -> WmsConfigValidator.validate("no-such-group", new HashMap<>()));
     }
+
+    // ------------------------------------------------------------ 整数宽度（评审 I1 / I3）
+
+    /**
+     * 超长数字必须报成**普通冲突**，不得抛 NumberFormatException。
+     *
+     * <p>UI 的 a-input-number 没有上界，管理员敲 20 位数字完全可达；而校验器自称「只报不抛」，
+     * 一旦抛异常就会绕过「逐字冲突文案 + 明细」这条路径。
+     */
+    @Test
+    void shouldRejectHugeNumberAsConflictNotException() {
+        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("inventory",
+                inventory("100000000000000000000", "50", "200"));
+        assertEquals(1, conflicts.size(), "必须是普通冲突，而不是异常");
+        assertEquals("inv.stock.min", conflicts.get(0).getKey());
+    }
+
+    /**
+     * 超出 int 范围的值必须被拒：否则「存得进、读不出」——
+     * 校验按 long 放行、一致性检查与 getInt 按 int 溢出，规则会漏判。
+     */
+    @Test
+    void shouldRejectValueAboveIntRange() {
+        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("inventory",
+                inventory("3000000000", "5", "10"));
+        assertEquals(1, conflicts.size(), "3000000000 超出 int 范围，必须判冲突");
+        assertEquals("inv.stock.min", conflicts.get(0).getKey());
+    }
+
+    /** int 上界内的极值仍应通过（别把上限设得比 int 还小）。 */
+    @Test
+    void shouldAcceptMaxIntValue() {
+        assertTrue(WmsConfigValidator.validate("inventory",
+                inventory("2147483647", "2147483647", "2147483647")).isEmpty());
+    }
+
+    /** 设备阈值同样受 int 上界约束（否则页面显示 30 亿、运行时回落 600）。 */
+    @Test
+    void shouldRejectDeviceThresholdAboveIntRange() {
+        Map<String, String> m = new HashMap<>();
+        m.put("device.offline.threshold.seconds", "3000000000");
+        m.put("device.alert.throttle.minutes", "30");
+        assertEquals(1, WmsConfigValidator.validate("device", m).size());
+    }
 }

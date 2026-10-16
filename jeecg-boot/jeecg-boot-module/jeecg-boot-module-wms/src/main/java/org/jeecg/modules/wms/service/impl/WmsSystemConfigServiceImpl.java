@@ -163,28 +163,39 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
             throw new IllegalArgumentException("缺少配置分组");
         }
         WmsConfigGroup group = WmsConfigGroup.of(dto.getGroup());
+        Map<String, WmsSystemConfig> stored = loadStoredMap();
 
-        // 1) 逐键取「次新」版本（当前值是最大版本，上一版本是第 2 条）
+        // 1) 逐键取「次新」版本（当前值是最大版本，上一版本是第 2 条）。
+        //    previous 只收「确实有上一版本」的键 —— 它们才是要写回的；
+        //    target 则补齐没有上一版本的键（用其当前值/默认值），它是回滚**之后的完整状态**。
         Map<String, String> previous = new LinkedHashMap<>();
+        Map<String, String> target = new LinkedHashMap<>();
         for (WmsConfigKey key : WmsConfigKey.ofGroup(group)) {
             List<WmsSystemConfigHistory> rows = recentHistory(key.getKey(), 2);
             if (rows.size() >= 2) {
-                previous.put(key.getKey(), rows.get(1).getConfigValue());
+                String value = rows.get(1).getConfigValue();
+                previous.put(key.getKey(), value);
+                target.put(key.getKey(), value);
+            } else {
+                WmsSystemConfig current = stored.get(key.getKey());
+                target.put(key.getKey(), current == null || current.getConfigValue() == null
+                        ? key.getDefaultValue() : current.getConfigValue());
             }
         }
         if (previous.isEmpty()) {
             throw new RuntimeException("当前分组没有可回滚的历史版本");
         }
 
-        // 2) 回滚目标值必须仍能过校验：规则中途加严时旧值可能已非法 ——
-        //    宁可拒绝，也不要把非法值写进主表再让人去收拾
-        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate(group.getCode(), previous);
+        // 2) 校验**回滚之后的完整状态**（而非只校验被回滚的那部分）。
+        //    两条理由：① 规则中途加严时旧值可能已非法，宁可拒绝也不能把非法值写进主表；
+        //    ② 若只把 previous 交给校验器，缺项会被判「配置项缺失」而报成冲突 ——
+        //    那会让「组内新增了一个配置项」导致整组回滚被误拒（评审 I2）。
+        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate(group.getCode(), target);
         if (!conflicts.isEmpty()) {
             throw new WmsConfigConflictException(conflicts);
         }
 
-        // 3) 写回主表 + 追加 ROLLBACK 历史（不删旧历史，审计链完整）
-        Map<String, WmsSystemConfig> stored = loadStoredMap();
+        // 3) 写回主表 + 追加 ROLLBACK 历史（只写 previous 里的键；不删旧历史，审计链完整）
         for (Map.Entry<String, String> entry : previous.entrySet()) {
             WmsConfigKey meta = WmsConfigKey.of(entry.getKey());
             String value = entry.getValue() == null ? "" : entry.getValue();
@@ -209,7 +220,8 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
             WmsUtils.fillCreate(history);
             wmsSystemConfigHistoryMapper.insert(history);
         }
-        log.info("系统配置已回滚：分组={}，项数={}", dto.getGroup(), previous.size());
+        log.info("系统配置已回滚：分组={}，回滚 {} 项（共 {} 项）",
+                dto.getGroup(), previous.size(), target.size());
     }
 
     @Override

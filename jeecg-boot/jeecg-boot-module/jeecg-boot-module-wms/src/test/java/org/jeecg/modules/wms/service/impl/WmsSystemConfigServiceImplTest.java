@@ -388,4 +388,44 @@ class WmsSystemConfigServiceImplTest {
     void getInt_shouldFallBackOnUnknownKey() {
         assertEquals(600, intService("60").getInt("no.such.key", 600));
     }
+
+    /**
+     * 组内只有部分键有上一版本时：**跳过没有的那个**，其余照常回滚——
+     * 不能因为「有一个键没有上一版本」就把整组判成冲突（评审 I2）。
+     *
+     * <p>真实触发：往既有分组新增一个配置项（枚举加一项）后，新键只有 v1、老键已在 v2+，
+     * 此时「回滚」按钮可点（canRollback 取 some），点下去必须能回滚老键、而不是报假冲突。
+     *
+     * <p>stub 用顺序返回，依赖 ofGroup 的枚举声明顺序（offline → throttle），确定性成立。
+     */
+    @Test
+    void rollback_shouldSkipKeysWithoutPreviousVersionButRollBackTheRest() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        // 两个键当前都有值
+        doReturn(new ArrayList<>(List.of(
+                row("device.offline.threshold.seconds", "60"),
+                row("device.alert.throttle.minutes", "30")))).when(service).list(any(Wrapper.class));
+        doReturn(true).when(service).updateById(any(WmsSystemConfig.class));
+        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(new ArrayList<>(List.of(
+                hist("device.offline.threshold.seconds", "60", 2, "SAVE"),
+                hist("device.offline.threshold.seconds", "50", 1, "SAVE"))))
+                .doReturn(new ArrayList<>(List.of(
+                        hist("device.alert.throttle.minutes", "30", 1, "SAVE"))))
+                .when(historyMapper).selectList(any(Wrapper.class));
+
+        WmsConfigRollbackDTO dto = new WmsConfigRollbackDTO();
+        dto.setGroup("device");
+        service.rollback(dto);
+
+        ArgumentCaptor<WmsSystemConfig> captor = ArgumentCaptor.forClass(WmsSystemConfig.class);
+        verify(service, times(1)).updateById(captor.capture());
+        assertEquals("device.offline.threshold.seconds", captor.getValue().getConfigKey());
+        assertEquals("50", captor.getValue().getConfigValue(), "只有「有上一版本」的键被回滚");
+        ArgumentCaptor<WmsSystemConfigHistory> hCaptor = ArgumentCaptor.forClass(WmsSystemConfigHistory.class);
+        verify(historyMapper, times(1)).insert(hCaptor.capture());
+        assertEquals("ROLLBACK", hCaptor.getAllValues().get(0).getChangeType());
+    }
 }

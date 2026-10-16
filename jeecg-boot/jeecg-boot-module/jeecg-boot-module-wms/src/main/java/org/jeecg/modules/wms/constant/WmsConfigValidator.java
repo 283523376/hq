@@ -94,7 +94,19 @@ public final class WmsConfigValidator {
                 if (!value.matches("-?\\d+")) {
                     return "必须为整数，实际：" + (raw == null ? "(空)" : raw);
                 }
-                long parsed = Long.parseLong(value);
+                long parsed;
+                try {
+                    parsed = Long.parseLong(value);
+                } catch (NumberFormatException e) {
+                    // 位数超过 long 也能通过正则（UI 的 a-input-number 没有上界，管理员可直接敲入）。
+                    // 必须报成普通冲突：校验器一旦抛异常，就会绕过「逐字冲突文案 + 明细」这条路径。
+                    return "数值过大，无法解析，实际：" + value;
+                }
+                if (parsed > Integer.MAX_VALUE) {
+                    // 校验用 long、一致性检查与 getInt 用 int：不设上界会出现「存得进、读不出」——
+                    // 自洽规则按 0 漏判，配置页显示 30 亿而运行时回落 600。
+                    return "数值超出上限 " + Integer.MAX_VALUE + "，实际：" + value;
+                }
                 if (item.getGroup() == WmsConfigGroup.INVENTORY && parsed < 0) {
                     return "不能为负数，实际：" + value;
                 }
