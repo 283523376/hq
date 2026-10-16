@@ -153,7 +153,7 @@ class WmsSystemConfigServiceImplTest {
         doReturn(true).when(service).save(any(WmsSystemConfig.class));
         doReturn(0).when(service).currentVersionNo(any());
 
-        service.save(saveDto("inventory",
+        service.saveGroup(saveDto("inventory",
                 "inv.stock.min", "10", "inv.stock.safe", "50", "inv.stock.max", "200"));
 
         // 3 个键都是新的 → 逐键插入主表；历史同样 3 条
@@ -177,7 +177,7 @@ class WmsSystemConfigServiceImplTest {
         doReturn(true).when(service).save(any(WmsSystemConfig.class));
         doReturn(0).when(service).currentVersionNo(any());
 
-        service.save(saveDto("inventory",
+        service.saveGroup(saveDto("inventory",
                 "inv.stock.min", "10", "inv.stock.safe", "50", "inv.stock.max", "200"));
 
         // 已存在的键走更新，另外两个新键走插入 —— 已存在的那个绝不能变成再插一行（会撞唯一索引）
@@ -194,7 +194,7 @@ class WmsSystemConfigServiceImplTest {
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
 
         WmsConfigConflictException ex = assertThrows(WmsConfigConflictException.class,
-                () -> service.save(saveDto("inventory",
+                () -> service.saveGroup(saveDto("inventory",
                         "inv.stock.min", "100", "inv.stock.safe", "50", "inv.stock.max", "200")));
 
         assertEquals("配置项存在冲突，请检查", ex.getMessage(), "文案必须逐字对齐蓝图原文");
@@ -211,7 +211,7 @@ class WmsSystemConfigServiceImplTest {
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
 
         WmsConfigConflictException ex = assertThrows(WmsConfigConflictException.class,
-                () -> service.save(saveDto("inventory",
+                () -> service.saveGroup(saveDto("inventory",
                         "inv.stock.min", "100", "inv.stock.safe", "50", "inv.stock.max", "200")));
 
         assertTrue(!ex.getConflicts().isEmpty(), "conflicts 明细不得为空");
@@ -226,7 +226,7 @@ class WmsSystemConfigServiceImplTest {
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
 
         assertThrows(WmsConfigConflictException.class,
-                () -> service.save(saveDto("inventory", "inv.stock.min", "10")));
+                () -> service.saveGroup(saveDto("inventory", "inv.stock.min", "10")));
     }
 
     // ------------------------------------------------------------ 回滚与历史（BD-004 异常处理）

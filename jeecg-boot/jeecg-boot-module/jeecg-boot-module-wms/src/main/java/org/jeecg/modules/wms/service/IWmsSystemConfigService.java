@@ -31,7 +31,7 @@ public interface IWmsSystemConfigService extends IService<WmsSystemConfig> {
      *
      * @throws org.jeecg.modules.wms.exception.WmsConfigConflictException 校验不通过（message 逐字为蓝图原文）
      */
-    void save(WmsConfigSaveDTO dto);
+    void saveGroup(WmsConfigSaveDTO dto);
 
     /**
      * 把某分组整体回滚到上一版本。

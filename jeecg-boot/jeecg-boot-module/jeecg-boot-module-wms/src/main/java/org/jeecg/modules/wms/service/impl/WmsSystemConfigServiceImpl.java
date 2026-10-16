@@ -85,7 +85,7 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void save(WmsConfigSaveDTO dto) {
+    public void saveGroup(WmsConfigSaveDTO dto) {
         if (dto == null || dto.getGroup() == null) {
             throw new IllegalArgumentException("缺少配置分组");
         }
