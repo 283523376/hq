@@ -312,35 +312,10 @@ class WmsMaterialCategoryServiceImplTest {
 
     // ------------------------------------------------------------ 分类下是否有物料
 
-    /** 空分类ID直接返回 false，不查库。 */
-    @Test
-    void hasMaterial_shouldShortCircuitOnBlankId() {
-        WmsMaterialCategoryServiceImpl service = new WmsMaterialCategoryServiceImpl();
-        WmsMaterialMapper materialMapper = mock(WmsMaterialMapper.class);
-        WmsTestSupport.inject(service, "wmsMaterialMapper", materialMapper);
-
-        assertFalse(service.hasMaterial(null));
-        assertFalse(service.hasMaterial(""));
-
-        verify(materialMapper, never()).selectCount(any(Wrapper.class));
-    }
-
-    /**
-     * 非空分类ID必须查物料表。
-     *
-     * <p>注意：本用例**不能**对 spy 的 {@code hasMaterial} 打桩——一旦打桩，被测的真实实现
-     * （走 mapper）就不会执行，测试沦为同义反复。
-     */
-    @Test
-    void hasMaterial_shouldQueryMaterialMapper() {
-        WmsMaterialCategoryServiceImpl service = new WmsMaterialCategoryServiceImpl();
-        WmsMaterialMapper materialMapper = mock(WmsMaterialMapper.class);
-        WmsTestSupport.inject(service, "wmsMaterialMapper", materialMapper);
-        when(materialMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
-
-        assertTrue(service.hasMaterial("C1"));
-        verify(materialMapper).selectCount(any(Wrapper.class));
-    }
+    // 注：原先的 hasMaterial_shouldShortCircuitOnBlankId / hasMaterial_shouldQueryMaterialMapper
+    // 随 hasMaterial 一并删除（2026-10-16）—— 守卫提取为 checkDelete 后该方法已无生产调用方，
+    // 保留它会让「往 hasMaterial 里加规则」被误认为影响删除守卫。物料计数现由
+    // checkDelete（及下方 checkDelete_* 用例）走 wmsMaterialMapper.selectCount 验证。
 
     // ------------------------------------------------------------ 按编码取ID
 
@@ -358,7 +333,7 @@ class WmsMaterialCategoryServiceImplTest {
     /**
      * 纯空白编码**不算空**——{@code oConvertUtils.isEmpty} 不 trim，故会照常查库。
      *
-     * <p>与 {@code hasMaterial} / {@code checkCodeExists} 的短路口径一致。此处刻意固化它，
+     * <p>与 {@code checkCodeExists} 的短路口径一致。此处刻意固化它，
      * 免得将来有人以为「空白会被短路」（写计划时我自己就先这么误判了一次）。
      */
     @Test

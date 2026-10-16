@@ -31,8 +31,10 @@ export interface WmsDeleteCheckApis {
 /** 弹「无法删除」禁止框：blockers 逐条一行（树组件与列表 composable 共用）。 */
 export function showDeleteBlocked(blockers: WmsDeleteBlocker[] | undefined, title = '无法删除') {
   const lines = (blockers ?? []).map((b) => {
+    // 数量为 1 时「（1）」没有信息量（设备「已绑定库区」、库位「已占用」这类状态型 blocker 尤其如此）
+    const count = b.count > 1 ? `（${b.count}）` : '';
     const sample = b.samples?.length ? `：${b.samples.join('、')}` : '';
-    return `${b.message}（${b.count}）${sample}`;
+    return `${b.message}${count}${sample}`;
   });
   createErrorModal({
     title,

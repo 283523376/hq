@@ -28,11 +28,13 @@ public interface IWmsWarehouseService extends IService<WmsWarehouse> {
     void disableWarehouse(String id);
 
     /**
-     * **物理删除**；库区下存在库位或已绑定设备时拒绝。
+     * **逻辑删除**（`deleted_at` 时间戳，见 `WmsWarehouse.deletedAt`）；
+     * 库区下存在库位或已绑定设备时拒绝。
      *
-     * <p>不是逻辑删除：`uk_wms_warehouse_code` 只建在 `warehouse_code` 上、不含 `del_flag`，
-     * 逻辑删除会让已删除的编码永久不可复用，且查重与保存的结论互相矛盾
-     * （详见 `WmsWarehouse` 的 `delFlag` 字段注释与 `V3.9.5_6` 迁移脚本）。
+     * <p>删除标记随唯一索引一起纳入（`uk_wms_warehouse_code` 为
+     * `(warehouse_code, deleted_at)`），因此已删除的编码可以复用 ——
+     * 「删除 → 重建 → 再删除」不会撞索引，查重与保存的结论也不再矛盾。
+     * （该语义由 V3.9.5_9 统一，此前本表一度是物理删除。）
      */
     void removeWarehouse(String id);
 

@@ -148,14 +148,6 @@ public class WmsMaterialCategoryServiceImpl extends ServiceImpl<WmsMaterialCateg
     }
 
     @Override
-    public boolean hasMaterial(String categoryId) {
-        if (oConvertUtils.isEmpty(categoryId)) {
-            return false;
-        }
-        return wmsMaterialMapper.selectCount(new QueryWrapper<WmsMaterial>().eq("category_id", categoryId)) > 0;
-    }
-
-    @Override
     public String queryIdByCode(String categoryCode) {
         if (oConvertUtils.isEmpty(categoryCode)) {
             return null;

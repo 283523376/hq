@@ -52,11 +52,6 @@ public interface IWmsMaterialCategoryService extends JeecgService<WmsMaterialCat
     boolean checkCodeExists(String code, String id);
 
     /**
-     * 分类下是否存在物料。
-     */
-    boolean hasMaterial(String categoryId);
-
-    /**
      * 按分类编码取分类ID。
      */
     String queryIdByCode(String categoryCode);

@@ -21,6 +21,7 @@ import java.util.Date;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -392,7 +393,7 @@ class WmsDeviceServiceImplTest {
         verify(service).removeById("D1");
     }
 
-    /** 预检给出库区名样本。 */
+    /** 预检给出库区名样本——名称只出现一次：放进 samples，不进 message（否则弹窗会重复显示）。 */
     @Test
     void checkDelete_shouldReportWarehouseName() {
         IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
@@ -403,8 +404,10 @@ class WmsDeviceServiceImplTest {
         WmsDeleteCheckVO vo = service.checkDelete("D1");
 
         assertEquals(false, vo.isDeletable());
-        assertEquals("设备已绑定库区「半成品立库」", vo.getBlockers().get(0).getMessage());
+        assertEquals("设备已绑定库区", vo.getBlockers().get(0).getMessage());
         assertEquals(Arrays.asList("半成品立库"), vo.getBlockers().get(0).getSamples());
+        assertFalse(vo.getBlockers().get(0).getMessage().contains("半成品立库"),
+                "message 已含名称又放 samples 会让前端渲染成「…「半成品立库」（1）：半成品立库」");
     }
 
     /** 库区已被逻辑删除（getById 查不到）时守卫不受影响，样本退化为 id。 */

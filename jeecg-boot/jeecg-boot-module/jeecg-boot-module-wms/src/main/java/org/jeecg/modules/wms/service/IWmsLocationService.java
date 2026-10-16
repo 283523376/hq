@@ -8,6 +8,8 @@ import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsLocationGenResultVO;
 
+import java.util.List;
+
 /**
  * @Description: 库位
  * @Author: 永鑫WMS
@@ -61,19 +63,20 @@ public interface IWmsLocationService extends IService<WmsLocation> {
     void release(String id);
 
     /**
-     * **物理删除**；仅「空闲」库位可删。
+     * **逻辑删除**（`deleted_at` 时间戳，见 `WmsLocation.deletedAt`）；仅「空闲」库位可删。
      *
-     * <p>不是逻辑删除：`uk_wms_location_grid` 只建在
-     * `(warehouse_id, row_no, col_no, layer_no)` 上、不含 `del_flag`，逻辑删除会让
-     * 「删掉几个库位后重跑生成」被 `INSERT IGNORE` 静默跳过却不恢复 ——
-     * 直接破坏本接口承诺的幂等续做（详见 `WmsLocation` 的 `delFlag` 字段注释）。
+     * <p>删除标记随唯一索引一起纳入（`uk_wms_location_grid` 为
+     * `(warehouse_id, row_no, col_no, layer_no, deleted_at)`），因此
+     * 「删掉几个库位后重跑生成」会新建行而不再被 `INSERT IGNORE` 静默跳过 ——
+     * 本接口承诺的幂等续做与删除语义互不干扰。（该语义由 V3.9.5_9 统一，
+     * 此前本表一度是物理删除。）
      */
     void removeLocation(String id);
 
     /**
      * 批量删除库位。整体在一个事务里，循环复用单条守卫，任一条被拒则整体回滚。
      */
-    void removeBatch(java.util.List<String> ids);
+    void removeBatch(List<String> ids);
 
     /**
      * 删除预检：非空闲（占用/故障）库位不可删（只读，供前端禁止弹窗）。
@@ -81,7 +84,7 @@ public interface IWmsLocationService extends IService<WmsLocation> {
     WmsDeleteCheckVO checkDelete(String id);
 
     /** 批量删除预检：逐条检查，列出不可删明细（编码 + 原因）。 */
-    WmsBatchDeleteCheckVO checkDeleteBatch(java.util.List<String> ids);
+    WmsBatchDeleteCheckVO checkDeleteBatch(List<String> ids);
 
     /** 位于库区当前维度之外的库位数。缩维后不为 0，用于提示而非拦截。 */
     long countOutOfEnvelope(String warehouseId);

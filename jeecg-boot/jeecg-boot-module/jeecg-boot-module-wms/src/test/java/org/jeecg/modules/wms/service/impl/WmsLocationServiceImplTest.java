@@ -547,6 +547,39 @@ class WmsLocationServiceImplTest {
         RuntimeException ex = assertThrows(RuntimeException.class, () -> service.addLocation(location));
 
         assertTrue(ex.getMessage().contains("库区编码过长"), "应提示编码超长，实际：" + ex.getMessage());
+        // 文案必须对「手工补录」也成立：没有「生成」也没有「范围」可缩，只有库区编码可改
+        assertFalse(ex.getMessage().contains("缩小范围"),
+                "手工补录路径无「范围」可缩，文案不得提及，实际：" + ex.getMessage());
+        assertTrue(ex.getMessage().contains("请缩短库区编码"), "实际：" + ex.getMessage());
         verify(service, never()).save(any(WmsLocation.class));
+    }
+
+    // ============================================================ 同一请求不重复查同一行
+
+    /** 删除路径只查一次库位行：requireExisting 已取到的实体必须复用，不得再 getById。 */
+    @Test
+    void removeLocation_shouldFetchLocationOnlyOnce() {
+        WmsLocationServiceImpl service = spy(new WmsLocationServiceImpl());
+        WmsLocation idle = new WmsLocation().setLocationCode("LB-R01-C01-L01").setStatus("空闲");
+        idle.setId("L1");
+        doReturn(idle).when(service).getById("L1");
+        doReturn(true).when(service).removeById("L1");
+
+        service.removeLocation("L1");
+
+        verify(service, times(1)).getById("L1");
+    }
+
+    /** 批量预检对被拦项也只查一次：取编码与判可删必须复用同一实体。 */
+    @Test
+    void checkDeleteBatch_shouldFetchEachLocationOnce() {
+        WmsLocationServiceImpl service = spy(new WmsLocationServiceImpl());
+        WmsLocation occupied = new WmsLocation().setLocationCode("LB-R01-C01-L01").setStatus("占用");
+        occupied.setId("L1");
+        doReturn(occupied).when(service).getById("L1");
+
+        service.checkDeleteBatch(Arrays.asList("L1"));
+
+        verify(service, times(1)).getById("L1");
     }
 }

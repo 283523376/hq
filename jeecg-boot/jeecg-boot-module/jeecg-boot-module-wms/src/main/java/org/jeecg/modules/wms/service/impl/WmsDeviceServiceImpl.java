@@ -103,8 +103,9 @@ public class WmsDeviceServiceImpl extends ServiceImpl<WmsDeviceMapper, WmsDevice
         // 库区可能已被逻辑删除（getById 走 @TableLogic 查不到）——守卫不受影响，样本退化为 id
         WmsWarehouse warehouse = wmsWarehouseService.getById(device.getWarehouseId());
         String warehouseName = warehouse == null ? null : warehouse.getWarehouseName();
-        vo.addBlocker("设备已绑定库区" + (warehouseName == null ? "" : "「" + warehouseName + "」"),
-                1, Collections.singletonList(warehouseName == null ? device.getWarehouseId() : warehouseName));
+        // 库区名只进 samples：message 里再含一次，前端会渲染成「…「半成品立库」（1）：半成品立库」
+        vo.addBlocker("设备已绑定库区", 1,
+                Collections.singletonList(warehouseName == null ? device.getWarehouseId() : warehouseName));
         return vo;
     }
 

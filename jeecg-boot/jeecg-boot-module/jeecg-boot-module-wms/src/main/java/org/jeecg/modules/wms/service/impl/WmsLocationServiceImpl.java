@@ -158,20 +158,10 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
 
     @Override
     public WmsDeleteCheckVO checkDelete(String id) {
-        WmsDeleteCheckVO vo = new WmsDeleteCheckVO();
         if (oConvertUtils.isEmpty(id)) {
-            return vo;
+            return new WmsDeleteCheckVO();
         }
-        WmsLocation location = this.getById(id);
-        if (location == null) {
-            // 查不到视为可删：删除路径的 requireExisting 负责报「未找到」，预检不越权替它说话
-            return vo;
-        }
-        if (!WmsConstants.LOCATION_STATUS_IDLE.equals(location.getStatus())) {
-            vo.addBlocker("库位已占用或有故障", 1,
-                    Collections.singletonList(location.getLocationCode()));
-        }
-        return vo;
+        return checkLocation(this.getById(id));
     }
 
     @Override
@@ -181,9 +171,10 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
             return vo;
         }
         for (String id : ids) {
-            WmsDeleteCheckVO check = checkDelete(id);
+            // 查一次、复用同一实体：编码与可删判定必须取自同一行，且同一请求不重复 getById
+            WmsLocation location = this.getById(id);
+            WmsDeleteCheckVO check = checkLocation(location);
             if (!check.isDeletable()) {
-                WmsLocation location = this.getById(id);
                 vo.addBlocked(id,
                         location == null ? id : location.getLocationCode(),
                         check.getBlockers().stream()
@@ -196,12 +187,30 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
 
     @Override
     public void removeLocation(String id) {
-        requireExisting(id);
-        WmsDeleteCheckVO check = checkDelete(id);
-        if (!check.isDeletable()) {
+        WmsLocation existing = requireExisting(id);
+        if (!checkLocation(existing).isDeletable()) {
             throw new RuntimeException("库位已占用或有故障，不允许删除");
         }
         this.removeById(id);
+    }
+
+    /**
+     * 守则判定，入参为**已取到的行**。
+     *
+     * <p>抽成独立方法是为了让「单条删除 / 单条预检 / 批量预检」三条路径复用同一实体，
+     * 而不是各自再 {@code getById} 一次（同一请求对同一行查两遍）。
+     */
+    private WmsDeleteCheckVO checkLocation(WmsLocation location) {
+        WmsDeleteCheckVO vo = new WmsDeleteCheckVO();
+        if (location == null) {
+            // 查不到视为可删：删除路径的 requireExisting 负责报「未找到」，预检不越权替它说话
+            return vo;
+        }
+        if (!WmsConstants.LOCATION_STATUS_IDLE.equals(location.getStatus())) {
+            vo.addBlocker("库位已占用或有故障", 1,
+                    Collections.singletonList(location.getLocationCode()));
+        }
+        return vo;
     }
 
     /** 批量删除整体在一个事务里（原 controller 循环逐条、无事务，遇守卫会部分成功）。 */
@@ -295,6 +304,7 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
         // 编码长度只随各段数字位数单调增长，故同样取末端即最坏情形
         // （口径与手工新增共用 checkedLocationCode；此处只校验，不取返回值）
         checkedLocationCode(warehouse, rowTo, colTo, layerTo);
+
         return total;
     }
 
@@ -306,9 +316,11 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
     private String checkedLocationCode(WmsWarehouse warehouse, int row, int col, int layer) {
         String code = WmsLocationCodeGenerator.locationCode(warehouse.getWarehouseCode(), row, col, layer);
         if (code.length() > WmsConstants.LOCATION_CODE_MAX_LENGTH) {
-            throw new RuntimeException("库区编码过长，生成的库位编码将超过 "
+            // 文案须对两条调用路径都成立：手工补录没有「生成」也没有「范围」可缩，
+            // 但两条路径都只能靠「缩短库区编码」解决 —— 故只给这一个出路。
+            throw new RuntimeException("库区编码过长，库位编码将超过 "
                     + WmsConstants.LOCATION_CODE_MAX_LENGTH + " 字符（示例：" + code
-                    + "），请缩短库区编码或缩小范围");
+                    + "），请缩短库区编码");
         }
         return code;
     }
