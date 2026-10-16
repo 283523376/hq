@@ -694,7 +694,7 @@ cd jeecg-module-system/jeecg-system-start && mvn spring-boot:run
     离线扫描任务的注册记录（或「已存在，跳过」）。这验证 §6.5 的坑已被堵住。
 13. **扫描任务取证 · 跃迁**：手工把 `DDJ01` 改成 `status='在线'` 且
     `last_heartbeat = NOW() - INTERVAL 20 MINUTE`（模拟心跳中断）→
-    到「系统管理 → 定时任务」点该任务的**立即执行** →
+    到「**系统监控** → 定时任务」点该行「**更多**」→**立即执行** →
     该行 `status` 变 `离线`，日志出现转离线记录，`sys_announcement` 新增聚合告警一条。
 14. **扫描任务取证 · 不误报**：新建一台**从没上报过心跳**的设备（`last_heartbeat IS NULL`）→
     点**立即执行** → 该行**保持原状态、不产生任何告警**（验证 §6.4 第 1 条）。
