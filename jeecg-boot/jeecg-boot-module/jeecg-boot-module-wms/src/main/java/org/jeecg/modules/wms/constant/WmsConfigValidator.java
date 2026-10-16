@@ -50,9 +50,12 @@ public final class WmsConfigValidator {
         }
         for (String submitted : safeValues.keySet()) {
             if (!groupKeys.contains(submitted)) {
-                WmsConfigKey foreign = WmsConfigKey.of(submitted);
-                conflicts.add(new WmsConfigConflict(submitted, foreign.getLabel(),
-                        "配置项不属于分组「" + group.getName() + "」"));
+                // 未知键也是**用户输入**（手工构造请求可达），必须报成冲突而不是抛异常 ——
+                // 抛异常会绕过「逐字冲突文案 + 明细」这条路径
+                WmsConfigKey known = findKeyOrNull(submitted);
+                conflicts.add(new WmsConfigConflict(submitted,
+                        known == null ? submitted : known.getLabel(),
+                        known == null ? "未知配置项" : "配置项不属于分组「" + group.getName() + "」"));
             }
         }
 
@@ -122,10 +125,12 @@ public final class WmsConfigValidator {
                     return "不能为空";
                 }
                 List<String> allowed = item.getOptions();
-                for (String part : value.split(",")) {
+                // split 用 -1：保留尾部空段，否则 ",,," 会被拆成空数组而静默通过
+                for (String part : value.split(",", -1)) {
                     String option = part.trim();
                     if (option.isEmpty()) {
-                        continue;
+                        // 空段几乎总是多打了一个逗号。静默丢弃会让库里存下与页面所见不一致的值
+                        return "存在空选项（多为多打了逗号），实际：" + value;
                     }
                     if (allowed == null || !allowed.contains(option)) {
                         return "取值不在候选范围（" + String.join("/", allowed == null ? List.<String>of() : allowed)
@@ -151,5 +156,15 @@ public final class WmsConfigValidator {
         } catch (Exception e) {
             return 0;
         }
+    }
+
+    /** 按 key 找元数据；找不到返回 null（对外是「未知道具」这一业务事实，不是异常）。 */
+    private static WmsConfigKey findKeyOrNull(String key) {
+        for (WmsConfigKey item : WmsConfigKey.values()) {
+            if (item.getKey().equals(key)) {
+                return item;
+            }
+        }
+        return null;
     }
 }

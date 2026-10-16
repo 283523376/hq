@@ -200,4 +200,45 @@ class WmsConfigValidatorTest {
         m.put("device.alert.throttle.minutes", "30");
         assertEquals(1, WmsConfigValidator.validate("device", m).size());
     }
+
+    // ------------------------------------------------------------ 遗留 Minor（评审 M3 / M6）
+
+    /**
+     * 枚举里**根本不存在**的键也必须报成冲突，而不是抛 IllegalArgumentException（M3）。
+     *
+     * <p>它是用户输入的一部分（手工构造请求可达），抛异常会绕过「逐字冲突文案 + 明细」。
+     */
+    @Test
+    void shouldReportUnknownKeyAsConflictNotException() {
+        Map<String, String> m = inventory("10", "50", "200");
+        m.put("foo", "1");
+
+        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("inventory", m);
+
+        assertEquals(1, conflicts.size(), "未知键必须是普通冲突，不是异常");
+        assertEquals("foo", conflicts.get(0).getKey());
+        assertTrue(conflicts.get(0).getReason().contains("未知配置项"), "实际：" + conflicts.get(0).getReason());
+    }
+
+    /** 多选项里的空段（多打一个逗号）必须判冲突——它几乎总是手误，静默丢弃会存下与页面不一致的值（M6）。 */
+    @Test
+    void shouldRejectEmptyMultiSegment() {
+        Map<String, String> m = new HashMap<>();
+        m.put("sync.auto", "true");
+        m.put("sync.scope", "库存账,,出入库记录");
+
+        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("sync", m);
+
+        assertEquals(1, conflicts.size(), "空段必须判冲突");
+        assertEquals("sync.scope", conflicts.get(0).getKey());
+    }
+
+    /** 段内前后空格不算错（服务层会规范化后落库），但整串只有逗号必须拒。 */
+    @Test
+    void shouldRejectMultiValueMadeOfCommasOnly() {
+        Map<String, String> m = new HashMap<>();
+        m.put("sync.auto", "true");
+        m.put("sync.scope", ",,,");
+        assertEquals(1, WmsConfigValidator.validate("sync", m).size());
+    }
 }

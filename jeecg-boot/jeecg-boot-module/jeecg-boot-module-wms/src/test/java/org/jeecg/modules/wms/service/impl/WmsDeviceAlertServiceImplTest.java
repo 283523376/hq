@@ -58,6 +58,38 @@ class WmsDeviceAlertServiceImplTest {
         return new Date(System.currentTimeMillis() - minutes * 60_000L);
     }
 
+    /** 与 {@link #newService} 相同，但把配置 mock 暴露出来以便断言查询次数（评审 M7）。 */
+    private static WmsDeviceAlertServiceImpl newServiceWithConfig(ISysBaseAPI sysBaseAPI, WmsDeviceMapper mapper,
+                                                                  IWmsSystemConfigService configService) {
+        WmsDeviceAlertServiceImpl service = new WmsDeviceAlertServiceImpl(sysBaseAPI, mapper);
+        WmsTestSupport.inject(service, "alertToUser", WmsConstants.ALERT_TO_USER);
+        WmsTestSupport.inject(service, "wmsSystemConfigService", configService);
+        return service;
+    }
+
+    /**
+     * 节流窗口一轮**只读一次配置**：窗口是组级参数，与设备无关（评审 M7）。
+     *
+     * <p>原实现把 getInt 放在逐台设备的 throttleExpired 里，一轮 N 台就是 N 次 SELECT；
+     * 与 spec §6「不加缓存，一次 SELECT 的成本可忽略」的前提不符。
+     */
+    @Test
+    void alertOffline_shouldReadThrottleConfigOncePerBatch() {
+        ISysBaseAPI sysBaseAPI = mock(ISysBaseAPI.class);
+        WmsDeviceMapper mapper = mock(WmsDeviceMapper.class);
+        IWmsSystemConfigService configService = mock(IWmsSystemConfigService.class);
+        when(configService.getInt(any(String.class), anyInt())).thenReturn(30);
+        WmsDeviceAlertServiceImpl service = newServiceWithConfig(sysBaseAPI, mapper, configService);
+
+        service.alertOffline(List.of(
+                device("D1", "DDJ01", minutesAgo(60)),
+                device("D2", "DDJ02", minutesAgo(60)),
+                device("D3", "DDJ03", minutesAgo(60))), true);
+
+        verify(configService, times(1)).getInt("device.alert.throttle.minutes",
+                WmsConstants.DEVICE_ALERT_THROTTLE_MINUTES);
+    }
+
     // ------------------------------------------------------------ 绑定路径：不节流，人的即时操作要即时反馈
 
     @Test

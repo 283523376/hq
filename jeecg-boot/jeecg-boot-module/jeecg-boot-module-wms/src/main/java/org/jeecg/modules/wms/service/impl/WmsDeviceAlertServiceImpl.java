@@ -62,12 +62,18 @@ public class WmsDeviceAlertServiceImpl implements IWmsDeviceAlertService {
             return Collections.emptyList();
         }
         Date now = new Date();
+        // 节流窗口是**组级**参数、与设备无关：一轮只读一次配置（评审 M7）。
+        // 不节流的绑定路径压根不需要它，故不读。
+        int throttleMinutes = respectThrottle
+                ? wmsSystemConfigService.getInt(WmsConfigKey.DEVICE_ALERT_THROTTLE_MINUTES.getKey(),
+                        WmsConstants.DEVICE_ALERT_THROTTLE_MINUTES)
+                : WmsConstants.DEVICE_ALERT_THROTTLE_MINUTES;
         List<WmsDevice> allowed = new ArrayList<>();
         for (WmsDevice device : devices) {
             if (device == null) {
                 continue;
             }
-            if (respectThrottle && !throttleExpired(device, now)) {
+            if (respectThrottle && !throttleExpired(device, now, throttleMinutes)) {
                 log.debug("设备[{}]在告警节流窗口内，跳过投递（上次告警：{}）",
                         device.getDeviceCode(), device.getLastAlertTime());
                 continue;
@@ -112,13 +118,10 @@ public class WmsDeviceAlertServiceImpl implements IWmsDeviceAlertService {
      * <p>窗口优先取系统配置；读不到/非法时 {@code getInt} 内部回落常量
      * {@code DEVICE_ALERT_THROTTLE_MINUTES}。从未告警过视为已过。
      */
-    private boolean throttleExpired(WmsDevice device, Date now) {
+    private boolean throttleExpired(WmsDevice device, Date now, int throttleMinutes) {
         if (device.getLastAlertTime() == null) {
             return true;
         }
-        int throttleMinutes = wmsSystemConfigService.getInt(
-                WmsConfigKey.DEVICE_ALERT_THROTTLE_MINUTES.getKey(),
-                WmsConstants.DEVICE_ALERT_THROTTLE_MINUTES);
         long silentMs = now.getTime() - device.getLastAlertTime().getTime();
         return silentMs >= throttleMinutes * 60_000L;
     }

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.constant.WmsConfigGroup;
 import org.jeecg.modules.wms.constant.WmsConfigKey;
+import org.jeecg.modules.wms.constant.WmsConfigType;
 import org.jeecg.modules.wms.constant.WmsConfigValidator;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsConfigItemDTO;
@@ -80,26 +81,42 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
 
     @Override
     public int getInt(String key, int fallback) {
+        // 未知键与「值有问题」必须分开报：NumberFormatException extends IllegalArgumentException，
+        // 混在一个 catch 里会把「值非法」说成「键未知」，排查时被引向完全错误的方向。
+        WmsConfigKey meta;
         try {
-            WmsConfigKey meta = WmsConfigKey.of(key);
-            WmsSystemConfig stored = this.getOne(new QueryWrapper<WmsSystemConfig>()
-                    .eq("config_key", meta.getKey()), false);
-            if (stored == null || stored.getConfigValue() == null || stored.getConfigValue().trim().isEmpty()) {
-                return fallback;
-            }
-            int parsed = Integer.parseInt(stored.getConfigValue().trim());
+            meta = WmsConfigKey.of(key);
+        } catch (IllegalArgumentException e) {
+            log.warn("读取了未知配置键[{}]，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+
+        WmsSystemConfig stored;
+        try {
+            stored = this.getOne(new QueryWrapper<WmsSystemConfig>().eq("config_key", meta.getKey()), false);
+        } catch (Exception e) {
+            log.warn("读取系统配置[{}]失败（{}），改用兜底值 {}", key, e.getMessage(), fallback);
+            return fallback;
+        }
+        if (stored == null) {
+            log.warn("系统配置[{}]尚未设置，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        String rawValue = stored.getConfigValue();
+        if (rawValue == null || rawValue.trim().isEmpty()) {
+            log.warn("系统配置[{}]的值为空，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        try {
+            int parsed = Integer.parseInt(rawValue.trim());
             if (parsed <= 0) {
                 log.warn("系统配置[{}]的值 {} 非正数，改用兜底值 {}", key, parsed, fallback);
                 return fallback;
             }
             return parsed;
-        } catch (IllegalArgumentException e) {
-            // 未知键属于编程错误，但读取路径不能因此崩：记 WARN 用兜底
-            log.warn("读取了未知配置键[{}]，改用兜底值 {}", key, fallback);
-            return fallback;
-        } catch (Exception e) {
-            // 配置损坏（非数字等）不得让调用方（离线扫描任务）失败 —— 监控链路断了比阈值不准严重得多
-            log.warn("系统配置[{}]的值不合法（{}），改用兜底值 {}", key, e.getMessage(), fallback);
+        } catch (NumberFormatException e) {
+            // 配置损坏不得让调用方（离线扫描任务）失败 —— 监控链路断了比阈值不准严重得多
+            log.warn("系统配置[{}]的值不合法（{}），改用兜底值 {}", key, rawValue, fallback);
             return fallback;
         }
     }
@@ -110,6 +127,8 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         if (dto == null || dto.getGroup() == null) {
             throw new IllegalArgumentException("缺少配置分组");
         }
+        // 与 list/history 的入参口径一致：先 trim 再用（评审 M5）
+        String groupCode = dto.getGroup().trim();
         Map<String, String> values = new LinkedHashMap<>();
         if (dto.getItems() != null) {
             for (WmsConfigItemDTO item : dto.getItems()) {
@@ -120,7 +139,7 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         }
 
         // 1) 先校验，全组通过才动库。校验失败时下面两个写方法一次都不会被调用。
-        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate(dto.getGroup(), values);
+        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate(groupCode, values);
         if (!conflicts.isEmpty()) {
             throw new WmsConfigConflictException(conflicts);
         }
@@ -129,7 +148,7 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         Map<String, WmsSystemConfig> stored = loadStoredMap();
         for (Map.Entry<String, String> entry : values.entrySet()) {
             WmsConfigKey meta = WmsConfigKey.of(entry.getKey());
-            String value = entry.getValue() == null ? "" : entry.getValue().trim();
+            String value = normalizeValue(meta, entry.getValue());
 
             WmsSystemConfig existing = stored.get(entry.getKey());
             if (existing == null) {
@@ -153,7 +172,28 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
             WmsUtils.fillCreate(history);
             wmsSystemConfigHistoryMapper.insert(history);
         }
-        log.info("系统配置已保存：分组={}，项数={}", dto.getGroup(), values.size());
+        log.info("系统配置已保存：分组={}，项数={}", groupCode, values.size());
+    }
+
+    /**
+     * 值规范化：统一按字符串存；多选项还要「段内 trim + 去空段」再拼回。
+     *
+     * <p>否则 "库存账 , 出入库记录" 会原样入库，前端 `split(',')` 后出现候选集之外的幽灵标签。
+     * （空段本身已由校验器拦下，这里的过滤是给历史值兜底。）
+     */
+    private static String normalizeValue(WmsConfigKey meta, String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (meta.getType() != WmsConfigType.MULTI || value.isEmpty()) {
+            return value;
+        }
+        List<String> parts = new ArrayList<>();
+        for (String part : value.split(",", -1)) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                parts.add(trimmed);
+            }
+        }
+        return String.join(",", parts);
     }
 
     @Override
@@ -162,7 +202,7 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         if (dto == null || dto.getGroup() == null) {
             throw new IllegalArgumentException("缺少配置分组");
         }
-        WmsConfigGroup group = WmsConfigGroup.of(dto.getGroup());
+        WmsConfigGroup group = WmsConfigGroup.of(dto.getGroup().trim());
         Map<String, WmsSystemConfig> stored = loadStoredMap();
 
         // 1) 逐键取「次新」版本（当前值是最大版本，上一版本是第 2 条）。
@@ -198,7 +238,7 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         // 3) 写回主表 + 追加 ROLLBACK 历史（只写 previous 里的键；不删旧历史，审计链完整）
         for (Map.Entry<String, String> entry : previous.entrySet()) {
             WmsConfigKey meta = WmsConfigKey.of(entry.getKey());
-            String value = entry.getValue() == null ? "" : entry.getValue();
+            String value = normalizeValue(meta, entry.getValue());
 
             WmsSystemConfig existing = stored.get(entry.getKey());
             if (existing == null) {

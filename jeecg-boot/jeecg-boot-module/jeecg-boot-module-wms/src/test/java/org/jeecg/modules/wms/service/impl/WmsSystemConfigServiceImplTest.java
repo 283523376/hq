@@ -4,6 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.jeecg.modules.wms.dto.WmsConfigItemDTO;
 import org.jeecg.modules.wms.dto.WmsConfigRollbackDTO;
 import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
 import org.jeecg.modules.wms.entity.WmsSystemConfigHistory;
 import org.jeecg.modules.wms.exception.WmsConfigConflictException;
@@ -13,6 +17,7 @@ import org.jeecg.modules.wms.vo.WmsConfigGroupVO;
 import org.jeecg.modules.wms.vo.WmsConfigItemVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -427,5 +432,132 @@ class WmsSystemConfigServiceImplTest {
         ArgumentCaptor<WmsSystemConfigHistory> hCaptor = ArgumentCaptor.forClass(WmsSystemConfigHistory.class);
         verify(historyMapper, times(1)).insert(hCaptor.capture());
         assertEquals("ROLLBACK", hCaptor.getAllValues().get(0).getChangeType());
+    }
+
+    // ------------------------------------------------------------ 遗留 Minor（评审 M1 / M2 / M5 / M6）
+
+    /** 捕获本类日志，用于断言 WARN 文案（评审 M1/M2：兜底必须留痕且不得张冠李戴）。 */
+    private static ListAppender<ILoggingEvent> attachAppender() {
+        Logger logger = (Logger) LoggerFactory.getLogger(WmsSystemConfigServiceImpl.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private static void detachAppender(ListAppender<ILoggingEvent> appender) {
+        ((Logger) LoggerFactory.getLogger(WmsSystemConfigServiceImpl.class)).detachAppender(appender);
+    }
+
+    private static boolean warnedAbout(ListAppender<ILoggingEvent> appender, String keyword) {
+        return appender.list.stream().anyMatch(e ->
+                e.getLevel() == Level.WARN && e.getFormattedMessage().contains(keyword));
+    }
+
+    /**
+     * 值非法（非数字）时 WARN 必须说「值不合法」，**不能**报成「未知配置键」（M1）。
+     *
+     * <p>`NumberFormatException extends IllegalArgumentException`，catch 顺序写反就会张冠李戴，
+     * 排查时会被引到完全错误的方向。
+     */
+    @Test
+    void getInt_shouldWarnAboutBadValueNotUnknownKey() {
+        ListAppender<ILoggingEvent> appender = attachAppender();
+        try {
+            intService("abc").getInt("device.offline.threshold.seconds", 600);
+
+            assertTrue(warnedAbout(appender, "不合法"), "应报「值不合法」，实际日志：" + appender.list);
+            assertTrue(!warnedAbout(appender, "未知配置键"), "不得报成「未知配置键」，实际日志：" + appender.list);
+        } finally {
+            detachAppender(appender);
+        }
+    }
+
+    /** 未知键仍报「未知配置键」（M1 的另一半：修 catch 顺序不能把这条弄丢）。 */
+    @Test
+    void getInt_shouldWarnAboutUnknownKey() {
+        ListAppender<ILoggingEvent> appender = attachAppender();
+        try {
+            intService("60").getInt("no.such.key", 600);
+            assertTrue(warnedAbout(appender, "未知配置键"), "实际日志：" + appender.list);
+        } finally {
+            detachAppender(appender);
+        }
+    }
+
+    /** 行不存在 / 值为空也必须打 WARN —— 接口 Javadoc 与 spec §6 都承诺「读不到→回落并打 WARN」（M2）。 */
+    @Test
+    void getInt_shouldWarnWhenRowMissingOrBlank() {
+        ListAppender<ILoggingEvent> appender = attachAppender();
+        try {
+            intService(null).getInt("device.offline.threshold.seconds", 600);
+            intService("   ").getInt("device.offline.threshold.seconds", 600);
+
+            assertEquals(2, appender.list.stream()
+                            .filter(e -> e.getLevel() == Level.WARN).count(),
+                    "两条兜底路径各应留一条 WARN，实际日志：" + appender.list);
+        } finally {
+            detachAppender(appender);
+        }
+    }
+
+    /** group 带首尾空格必须能用，与 list/history 的入参处理一致（M5）。 */
+    @Test
+    void saveGroup_shouldTrimGroupCode() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", mock(WmsSystemConfigHistoryMapper.class));
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        doReturn(true).when(service).save(any(WmsSystemConfig.class));
+        doReturn(0).when(service).currentVersionNo(any());
+
+        // 不该抛「未知配置分组：  inventory  」
+        service.saveGroup(saveDto("  inventory  ",
+                "inv.stock.min", "10", "inv.stock.safe", "50", "inv.stock.max", "200"));
+
+        verify(service, times(3)).save(any(WmsSystemConfig.class));
+    }
+
+    /** 回滚同样要能接受带空格的 group（M5）。 */
+    @Test
+    void rollback_shouldTrimGroupCode() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        doReturn(true).when(service).save(any(WmsSystemConfig.class));
+        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(new ArrayList<>(List.of(
+                hist("device.offline.threshold.seconds", "60", 2, "SAVE"),
+                hist("device.offline.threshold.seconds", "50", 1, "SAVE"))))
+                .when(historyMapper).selectList(any(Wrapper.class));
+
+        WmsConfigRollbackDTO dto = new WmsConfigRollbackDTO();
+        dto.setGroup("  device  ");
+        service.rollback(dto);
+
+        verify(service, times(2)).save(any(WmsSystemConfig.class));
+    }
+
+    /**
+     * 多选值落库前必须规范化（段内 trim + 去空段后重新拼接）（M6）。
+     *
+     * <p>原样存 "库存账 , 出入库记录" 会让前端 `split(',')` 得到带空格的幽灵标签。
+     */
+    @Test
+    void saveGroup_shouldNormalizeMultiValueBeforeStoring() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", mock(WmsSystemConfigHistoryMapper.class));
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        doReturn(true).when(service).save(any(WmsSystemConfig.class));
+        doReturn(0).when(service).currentVersionNo(any());
+
+        service.saveGroup(saveDto("sync",
+                "sync.scope", "库存账 , 出入库记录", "sync.auto", "true"));
+
+        ArgumentCaptor<WmsSystemConfig> captor = ArgumentCaptor.forClass(WmsSystemConfig.class);
+        verify(service, times(2)).save(captor.capture());
+        WmsSystemConfig scopeRow = captor.getAllValues().stream()
+                .filter(r -> "sync.scope".equals(r.getConfigKey())).findFirst().orElseThrow();
+        assertEquals("库存账,出入库记录", scopeRow.getConfigValue(), "段内空格必须被规范化掉");
     }
 }

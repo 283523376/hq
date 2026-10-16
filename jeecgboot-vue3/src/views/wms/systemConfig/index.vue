@@ -85,7 +85,8 @@
 </template>
 
 <script lang="ts" name="wms-system-config" setup>
-  import { computed, onMounted, reactive, ref } from 'vue';
+  import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+  import { onBeforeRouteLeave } from 'vue-router';
   import { Modal } from 'ant-design-vue';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { getDefinitions, saveGroupConfig, rollbackGroupConfig } from './systemConfig.api';
@@ -152,6 +153,44 @@
   }
 
   onMounted(loadAll);
+
+  /**
+   * 浏览器刷新 / 关闭 / 后退时提示未保存的改动。
+   *
+   * <p>`beforeunload` 只能同步挂一个原生确认框（文案不可自定义，这是浏览器限制），
+   * 但它覆盖了「刷新」这条最容易丢数据的路径；页内路由切换由下面 onBeforeRouteLeave 负责。
+   */
+  function handleBeforeUnload(e: BeforeUnloadEvent) {
+    if (dirty.value) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  }
+
+  onMounted(() => window.addEventListener('beforeunload', handleBeforeUnload));
+  onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnload));
+
+  /** 离开本页前的确认（返回 false 即取消导航）。 */
+  function confirmLeaveInPage(): Promise<boolean> {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: '有未保存的修改',
+        content: '离开本页会丢失当前修改，确定继续吗？',
+        okText: '放弃修改并离开',
+        cancelText: '留在本页',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  // 切到其它菜单 / 后退时同样要拦：原先只拦了页内左侧分组，刷新与顶部菜单会静默丢改动
+  onBeforeRouteLeave(async () => {
+    if (!dirty.value) {
+      return true;
+    }
+    return await confirmLeaveInPage();
+  });
 
   /** 切换分组前提示未保存的改动（不能静默丢失） */
   function handleGroupChange(e: any) {
