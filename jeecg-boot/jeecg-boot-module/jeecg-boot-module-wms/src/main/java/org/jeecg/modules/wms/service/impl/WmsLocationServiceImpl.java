@@ -15,14 +15,19 @@ import org.jeecg.modules.wms.service.IWmsLocationService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.util.WmsLocationCodeGenerator;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsLocationGenResultVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * @Description: 库位
@@ -112,8 +117,7 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
         if (exists > 0) {
             throw new RuntimeException("该坐标的库位已存在，请重新输入");
         }
-        location.setLocationCode(
-                WmsLocationCodeGenerator.locationCode(warehouse.getWarehouseCode(), row, col, layer));
+        location.setLocationCode(checkedLocationCode(warehouse, row, col, layer));
         if (oConvertUtils.isEmpty(location.getStatus())) {
             location.setStatus(WmsConstants.LOCATION_STATUS_IDLE);
         }
@@ -153,12 +157,62 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
     }
 
     @Override
+    public WmsDeleteCheckVO checkDelete(String id) {
+        WmsDeleteCheckVO vo = new WmsDeleteCheckVO();
+        if (oConvertUtils.isEmpty(id)) {
+            return vo;
+        }
+        WmsLocation location = this.getById(id);
+        if (location == null) {
+            // 查不到视为可删：删除路径的 requireExisting 负责报「未找到」，预检不越权替它说话
+            return vo;
+        }
+        if (!WmsConstants.LOCATION_STATUS_IDLE.equals(location.getStatus())) {
+            vo.addBlocker("库位已占用或有故障", 1,
+                    Collections.singletonList(location.getLocationCode()));
+        }
+        return vo;
+    }
+
+    @Override
+    public WmsBatchDeleteCheckVO checkDeleteBatch(List<String> ids) {
+        WmsBatchDeleteCheckVO vo = new WmsBatchDeleteCheckVO();
+        if (ids == null || ids.isEmpty()) {
+            return vo;
+        }
+        for (String id : ids) {
+            WmsDeleteCheckVO check = checkDelete(id);
+            if (!check.isDeletable()) {
+                WmsLocation location = this.getById(id);
+                vo.addBlocked(id,
+                        location == null ? id : location.getLocationCode(),
+                        check.getBlockers().stream()
+                                .map(WmsDeleteCheckVO.Blocker::getMessage)
+                                .collect(Collectors.joining("；")));
+            }
+        }
+        return vo;
+    }
+
+    @Override
     public void removeLocation(String id) {
-        WmsLocation existing = requireExisting(id);
-        if (!WmsConstants.LOCATION_STATUS_IDLE.equals(existing.getStatus())) {
+        requireExisting(id);
+        WmsDeleteCheckVO check = checkDelete(id);
+        if (!check.isDeletable()) {
             throw new RuntimeException("库位已占用或有故障，不允许删除");
         }
         this.removeById(id);
+    }
+
+    /** 批量删除整体在一个事务里（原 controller 循环逐条、无事务，遇守卫会部分成功）。 */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void removeBatch(List<String> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            for (String id : ids) {
+                removeLocation(id);
+            }
+        }
     }
 
     @Override
@@ -239,14 +293,24 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
                     + " 个库位，本次 " + total + " 个，请按层 / 列分批");
         }
         // 编码长度只随各段数字位数单调增长，故同样取末端即最坏情形
-        String longestCode = WmsLocationCodeGenerator.locationCode(
-                warehouse.getWarehouseCode(), rowTo, colTo, layerTo);
-        if (longestCode.length() > WmsConstants.LOCATION_CODE_MAX_LENGTH) {
+        // （口径与手工新增共用 checkedLocationCode；此处只校验，不取返回值）
+        checkedLocationCode(warehouse, rowTo, colTo, layerTo);
+        return total;
+    }
+
+    /**
+     * 编码长度守卫：手工新增与批量生成共用同一口径（M4）。
+     * 库位编码 = 库区编码 + 三段坐标，location_code 列宽 64；超长在生成前拦截，
+     * 而不是让用户看到原始 SQL 异常。
+     */
+    private String checkedLocationCode(WmsWarehouse warehouse, int row, int col, int layer) {
+        String code = WmsLocationCodeGenerator.locationCode(warehouse.getWarehouseCode(), row, col, layer);
+        if (code.length() > WmsConstants.LOCATION_CODE_MAX_LENGTH) {
             throw new RuntimeException("库区编码过长，生成的库位编码将超过 "
-                    + WmsConstants.LOCATION_CODE_MAX_LENGTH + " 字符（示例：" + longestCode
+                    + WmsConstants.LOCATION_CODE_MAX_LENGTH + " 字符（示例：" + code
                     + "），请缩短库区编码或缩小范围");
         }
-        return total;
+        return code;
     }
 
     /**

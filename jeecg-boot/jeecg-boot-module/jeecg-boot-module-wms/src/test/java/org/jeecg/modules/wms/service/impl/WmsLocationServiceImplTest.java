@@ -7,6 +7,8 @@ import org.jeecg.modules.wms.dto.WmsLocationGenDTO;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.mapper.WmsLocationMapper;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.vo.WmsLocationGenResultVO;
@@ -14,15 +16,20 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -473,5 +480,73 @@ class WmsLocationServiceImplTest {
     void countOutOfEnvelope_shouldReturnZeroWhenNoDimensions() {
         WmsLocationServiceImpl service = newService(warehouse("XB", null, null, null));
         assertEquals(0L, service.countOutOfEnvelope("W1"));
+    }
+
+    // ============================================================ 删除预检（spec 2026-10-16 §3.2）
+
+    /** 非空闲库位预检必须不可删，样本带库位编码。 */
+    @Test
+    void checkDelete_shouldReportOccupiedLocation() {
+        WmsLocationServiceImpl service = spy(new WmsLocationServiceImpl());
+        WmsLocation occupied = new WmsLocation().setLocationCode("LB-R01-C01-L01").setStatus("占用");
+        occupied.setId("L1");
+        doReturn(occupied).when(service).getById("L1");
+
+        WmsDeleteCheckVO vo = service.checkDelete("L1");
+
+        assertFalse(vo.isDeletable());
+        assertEquals("库位已占用或有故障", vo.getBlockers().get(0).getMessage());
+        assertEquals(Arrays.asList("LB-R01-C01-L01"), vo.getBlockers().get(0).getSamples());
+    }
+
+    /** 空闲库位预检可删；查不到的 id 也为可删（由 removeLocation 的 requireExisting 区分报错）。 */
+    @Test
+    void checkDelete_shouldBeDeletableWhenIdleOrUnknown() {
+        WmsLocationServiceImpl service = spy(new WmsLocationServiceImpl());
+        WmsLocation idle = new WmsLocation().setLocationCode("LB-R01-C01-L01").setStatus("空闲");
+        idle.setId("L1");
+        doReturn(idle).when(service).getById("L1");
+        doReturn(null).when(service).getById("LX");
+
+        assertTrue(service.checkDelete("L1").isDeletable());
+        assertTrue(service.checkDelete("LX").isDeletable());
+    }
+
+    /** 批量删除逐条走单条守卫。 */
+    @Test
+    void removeBatch_shouldLoopSingleGuard() {
+        WmsLocationServiceImpl service = spy(new WmsLocationServiceImpl());
+        doNothing().when(service).removeLocation(any(String.class));
+
+        service.removeBatch(Arrays.asList("L1", "L2"));
+
+        verify(service).removeLocation("L1");
+        verify(service).removeLocation("L2");
+    }
+
+    // ============================================================ M4：手工补录编码长度预校验
+
+    /** 库区编码过长时手工新增必须给业务提示，与批量生成同一口径（M4）。 */
+    @Test
+    void addLocation_shouldRejectOverlongCode() {
+        WmsLocationServiceImpl service = spy(new WmsLocationServiceImpl());
+        WmsLocationMapper mapper = mock(WmsLocationMapper.class);
+        when(mapper.selectCount(any())).thenReturn(0L);
+        WmsTestSupport.inject(service, "baseMapper", mapper);
+        IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
+        // 库区编码 55 字符，拼上 -R99-C99-L99 后 67 字符，超过 64 上限
+        when(warehouseService.requireEnabledWarehouse(any()))
+                .thenReturn(warehouse("VERY_LONG_WAREHOUSE_CODE_EXCEEDING_THE_LIMIT_0123456789", 100, 100, 100));
+        WmsTestSupport.inject(service, "wmsWarehouseService", warehouseService);
+        WmsLocation location = new WmsLocation();
+        location.setWarehouseId("W1");
+        location.setRowNo(99);
+        location.setColNo(99);
+        location.setLayerNo(99);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.addLocation(location));
+
+        assertTrue(ex.getMessage().contains("库区编码过长"), "应提示编码超长，实际：" + ex.getMessage());
+        verify(service, never()).save(any(WmsLocation.class));
     }
 }

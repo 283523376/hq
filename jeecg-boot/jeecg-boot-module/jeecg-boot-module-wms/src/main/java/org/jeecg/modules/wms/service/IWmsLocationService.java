@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import org.jeecg.modules.wms.dto.WmsLocationAttrDTO;
 import org.jeecg.modules.wms.dto.WmsLocationGenDTO;
 import org.jeecg.modules.wms.entity.WmsLocation;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsLocationGenResultVO;
 
 /**
@@ -67,6 +69,19 @@ public interface IWmsLocationService extends IService<WmsLocation> {
      * 直接破坏本接口承诺的幂等续做（详见 `WmsLocation` 的 `delFlag` 字段注释）。
      */
     void removeLocation(String id);
+
+    /**
+     * 批量删除库位。整体在一个事务里，循环复用单条守卫，任一条被拒则整体回滚。
+     */
+    void removeBatch(java.util.List<String> ids);
+
+    /**
+     * 删除预检：非空闲（占用/故障）库位不可删（只读，供前端禁止弹窗）。
+     */
+    WmsDeleteCheckVO checkDelete(String id);
+
+    /** 批量删除预检：逐条检查，列出不可删明细（编码 + 原因）。 */
+    WmsBatchDeleteCheckVO checkDeleteBatch(java.util.List<String> ids);
 
     /** 位于库区当前维度之外的库位数。缩维后不为 0，用于提示而非拦截。 */
     long countOutOfEnvelope(String warehouseId);
