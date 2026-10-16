@@ -3,20 +3,29 @@ package org.jeecg.modules.wms.service.impl;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.entity.WmsOrder;
 import org.jeecg.modules.wms.entity.WmsSupplier;
+import org.jeecg.modules.wms.mapper.WmsOrderMapper;
+import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -198,12 +207,35 @@ class WmsSupplierServiceImplTest {
         assertEquals(WmsConstants.STATUS_DISABLE, captor.getValue().getStatus());
     }
 
-    // ============================================================ 删除（BD002-T05/T06）
+    // ============================================================ 删除守卫（TC-BD002-006）
 
-    /** 无关联订单时按 id 直接删除（BD002-T05）。 */
+    /** 构造已注入 mock 订单 mapper 的 service：守卫查询 wms_order.supplier_id。 */
+    private WmsSupplierServiceImpl guardService(long orderCount, List<WmsOrder> orders) {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        WmsOrderMapper orderMapper = mock(WmsOrderMapper.class);
+        WmsTestSupport.inject(service, "wmsOrderMapper", orderMapper);
+        doReturn(orderCount).when(orderMapper).selectCount(any(Wrapper.class));
+        doReturn(orders).when(orderMapper).selectList(any(Wrapper.class));
+        return service;
+    }
+
+    /** 有关联订单必须拒绝删除，文案逐字对齐 TC-BD002-006 预期结果。 */
+    @Test
+    void removeSupplier_shouldRejectWhenHasOrders() {
+        WmsSupplierServiceImpl service = guardService(3L,
+                Arrays.asList(new WmsOrder().setOrderNo("PO001"), new WmsOrder().setOrderNo("PO002")));
+        doReturn(true).when(service).removeById(any(String.class));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.removeSupplier("S1"));
+
+        assertEquals("该供应商存在关联订单，不允许删除", ex.getMessage());
+        verify(service, never()).removeById(any(String.class));
+    }
+
+    /** 无关联订单时正常删除（替换原 removeSupplier_shouldRemoveById）。 */
     @Test
     void removeSupplier_shouldRemoveById() {
-        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        WmsSupplierServiceImpl service = guardService(0L, Collections.emptyList());
         doReturn(true).when(service).removeById("1");
 
         service.removeSupplier("1");
@@ -211,43 +243,72 @@ class WmsSupplierServiceImplTest {
         verify(service).removeById("1");
     }
 
-    /**
-     * ⚠ 现状记录（BD002-T06 缺口 G-06）：**没有**关联订单校验，删除不做任何检查。
-     *
-     * <p>蓝图要求「该供应商存在关联订单，不允许删除」。本用例固化当前行为，
-     * 供将来补上该校验时立即变红。注意 `wms_order.supplier_id` 已存在，
-     * 但 `removeSupplier` 未查询它。
-     */
+    /** 预检要一次报全：可删性、数量、订单号样本。 */
     @Test
-    void removeSupplier_shouldNotCheckRelatedOrders() {
-        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
-        doReturn(true).when(service).removeById("1");
+    void checkDelete_shouldReportOrdersWithCountAndSamples() {
+        WmsSupplierServiceImpl service = guardService(3L,
+                Arrays.asList(new WmsOrder().setOrderNo("PO001"), new WmsOrder().setOrderNo("PO002")));
 
-        service.removeSupplier("1");
+        WmsDeleteCheckVO vo = service.checkDelete("S1");
 
-        verify(service).removeById("1");
+        assertEquals(false, vo.isDeletable());
+        assertEquals(1, vo.getBlockers().size());
+        assertEquals("存在关联订单", vo.getBlockers().get(0).getMessage());
+        assertEquals(3L, vo.getBlockers().get(0).getCount());
+        assertEquals(Arrays.asList("PO001", "PO002"), vo.getBlockers().get(0).getSamples());
     }
 
-    /** 空/null 批量删除必须安全返回，不触发任何删除。 */
+    /** 无订单时预检为可删。 */
+    @Test
+    void checkDelete_shouldBeDeletableWhenNoOrders() {
+        WmsSupplierServiceImpl service = guardService(0L, Collections.emptyList());
+
+        assertTrue(service.checkDelete("S1").isDeletable());
+    }
+
+    /** 查不到的 id 预检必须为可删（与现状 removeById 对不存在 id 无操作一致），不得 NPE。 */
+    @Test
+    void checkDelete_shouldBeDeletableForUnknownId() {
+        WmsSupplierServiceImpl service = guardService(0L, Collections.emptyList());
+
+        assertTrue(service.checkDelete("不存在").isDeletable());
+    }
+
+    /** 批量删除复用单条守卫：空入参安全返回（替换原 removeBatch_shouldNoOpOnNullOrEmpty）。 */
     @Test
     void removeBatch_shouldNoOpOnNullOrEmpty() {
         WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doNothing().when(service).removeSupplier(any(String.class));
 
         service.removeBatch(null);
         service.removeBatch(Collections.emptyList());
 
-        verify(service, never()).removeByIds(any(Collection.class));
+        verify(service, never()).removeSupplier(any(String.class));
     }
 
-    /** 批量删除按 id 集合一次删除。 */
+    /** 批量删除逐条走单条守卫（替换原 removeBatch_shouldRemoveAll）。 */
     @Test
-    void removeBatch_shouldRemoveAll() {
+    void removeBatch_shouldLoopSingleGuard() {
         WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
-        doReturn(true).when(service).removeByIds(any(Collection.class));
+        doNothing().when(service).removeSupplier(any(String.class));
 
         service.removeBatch(Arrays.asList("1", "2"));
 
-        verify(service).removeByIds(Arrays.asList("1", "2"));
+        verify(service).removeSupplier("1");
+        verify(service).removeSupplier("2");
+    }
+
+    /** 批量中途遇守卫必须把异常抛出（事务回滚本身无 Spring 上下文不可单测，由端到端验证）。 */
+    @Test
+    void removeBatch_shouldPropagateGuardException() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doNothing().when(service).removeSupplier("1");
+        doThrow(new RuntimeException("该供应商存在关联订单，不允许删除")).when(service).removeSupplier("2");
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.removeBatch(Arrays.asList("1", "2")));
+
+        assertEquals("该供应商存在关联订单，不允许删除", ex.getMessage());
     }
 
     // ============================================================ 查重按 trim 比对

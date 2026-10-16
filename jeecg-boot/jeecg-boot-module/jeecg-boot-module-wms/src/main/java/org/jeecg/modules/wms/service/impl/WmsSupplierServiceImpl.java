@@ -5,13 +5,20 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.entity.WmsOrder;
 import org.jeecg.modules.wms.entity.WmsSupplier;
+import org.jeecg.modules.wms.mapper.WmsOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsSupplierMapper;
 import org.jeecg.modules.wms.service.IWmsSupplierService;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * @Description: 供应商
@@ -21,6 +28,9 @@ import java.util.List;
 @Slf4j
 @Service
 public class WmsSupplierServiceImpl extends ServiceImpl<WmsSupplierMapper, WmsSupplier> implements IWmsSupplierService {
+
+    @Autowired
+    private WmsOrderMapper wmsOrderMapper;
 
     @Override
     public void addSupplier(WmsSupplier supplier) {
@@ -70,14 +80,65 @@ public class WmsSupplierServiceImpl extends ServiceImpl<WmsSupplierMapper, WmsSu
     }
 
     @Override
-    public void removeSupplier(String id) {
-        this.removeById(id);
+    public WmsDeleteCheckVO checkDelete(String id) {
+        WmsDeleteCheckVO vo = new WmsDeleteCheckVO();
+        if (oConvertUtils.isEmpty(id)) {
+            return vo;
+        }
+        long orderCount = wmsOrderMapper.selectCount(
+                new QueryWrapper<WmsOrder>().eq("supplier_id", id));
+        if (orderCount > 0) {
+            // 样本取最近 5 单的订单号，供前端禁止弹窗展示「被哪些单占用」
+            List<WmsOrder> recent = wmsOrderMapper.selectList(new QueryWrapper<WmsOrder>()
+                    .eq("supplier_id", id).orderByDesc("create_time").last("limit 5"));
+            vo.addBlocker("存在关联订单", orderCount,
+                    recent.stream().map(WmsOrder::getOrderNo).collect(Collectors.toList()));
+        }
+        return vo;
     }
 
     @Override
+    public WmsBatchDeleteCheckVO checkDeleteBatch(List<String> ids) {
+        WmsBatchDeleteCheckVO vo = new WmsBatchDeleteCheckVO();
+        if (ids == null || ids.isEmpty()) {
+            return vo;
+        }
+        for (String id : ids) {
+            WmsDeleteCheckVO check = checkDelete(id);
+            if (!check.isDeletable()) {
+                WmsSupplier supplier = this.getById(id);
+                vo.addBlocked(id,
+                        supplier == null ? id : supplier.getSupplierCode(),
+                        check.getBlockers().stream()
+                                .map(WmsDeleteCheckVO.Blocker::getMessage)
+                                .collect(Collectors.joining("；")));
+            }
+        }
+        return vo;
+    }
+
+    @Override
+    public void removeSupplier(String id) {
+        WmsDeleteCheckVO check = checkDelete(id);
+        if (!check.isDeletable()) {
+            // 文案逐字对齐 TC-BD002-006 预期结果，前端与测试都按原文匹配
+            throw new RuntimeException("该供应商存在关联订单，不允许删除");
+        }
+        this.removeById(id);
+    }
+
+    /**
+     * 批量删除必须整体在一个事务里：循环复用单条守卫，第 N 条被拒时前 N-1 条一并回滚——
+     * 否则「部分成功」会让接口报错但数据已删一半（错误的状态结论，与设备 bind 同一个教训）。
+     * 自调用说明：事务注解在本方法上、由 controller 经代理进入，内部 this.removeSupplier 不经过代理无碍。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void removeBatch(List<String> ids) {
         if (ids != null && !ids.isEmpty()) {
-            this.removeByIds(ids);
+            for (String id : ids) {
+                removeSupplier(id);
+            }
         }
     }
 

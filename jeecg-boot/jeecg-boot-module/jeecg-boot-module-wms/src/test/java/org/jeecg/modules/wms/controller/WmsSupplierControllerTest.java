@@ -9,6 +9,8 @@ import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsSupplier;
 import org.jeecg.modules.wms.service.IWmsSupplierService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -18,6 +20,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -295,5 +298,51 @@ class WmsSupplierControllerTest {
 
         assertEquals(200, result.getCode());
         verify(service).removeBatch(Arrays.asList("1", "2"));
+    }
+
+    // ------------------------------------------------------------ 删除预检（TC-BD002-006）
+
+    /** checkDelete 透传 service 的预检结果。 */
+    @Test
+    void checkDelete_shouldReturnServiceResult() {
+        IWmsSupplierService service = mock(IWmsSupplierService.class);
+        WmsDeleteCheckVO vo = new WmsDeleteCheckVO();
+        vo.addBlocker("存在关联订单", 3, Arrays.asList("PO001"));
+        doReturn(vo).when(service).checkDelete("S1");
+
+        Result<WmsDeleteCheckVO> result = controller(service).checkDelete("S1");
+
+        assertTrue(result.isSuccess());
+        assertEquals(false, result.getResult().isDeletable());
+        assertEquals("存在关联订单", result.getResult().getBlockers().get(0).getMessage());
+    }
+
+    /** checkDeleteBatch 透传批量预检结果。 */
+    @Test
+    void checkDeleteBatch_shouldReturnServiceResult() {
+        IWmsSupplierService service = mock(IWmsSupplierService.class);
+        WmsBatchDeleteCheckVO vo = new WmsBatchDeleteCheckVO();
+        vo.addBlocked("S2", "SUP002", "存在关联订单");
+        doReturn(vo).when(service).checkDeleteBatch(Arrays.asList("S1", "S2"));
+
+        Result<WmsBatchDeleteCheckVO> result =
+                controller(service).checkDeleteBatch("S1,S2");
+
+        assertTrue(result.isSuccess());
+        assertEquals(false, result.getResult().isDeletable());
+        assertEquals("SUP002", result.getResult().getBlockedItems().get(0).getCode());
+    }
+
+    /** 删除被守卫拒绝时，文案必须逐字透出（不得被全局异常处理器加前缀）。 */
+    @Test
+    void delete_shouldSurfaceGuardMessageVerbatim() {
+        IWmsSupplierService service = mock(IWmsSupplierService.class);
+        doThrow(new RuntimeException("该供应商存在关联订单，不允许删除"))
+                .when(service).removeSupplier("S1");
+
+        Result<?> result = controller(service).delete("S1");
+
+        assertFalse(result.isSuccess());
+        assertEquals("该供应商存在关联订单，不允许删除", result.getMessage());
     }
 }

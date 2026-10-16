@@ -13,6 +13,8 @@ import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.entity.WmsSupplier;
 import org.jeecg.modules.wms.service.IWmsSupplierService;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -140,18 +142,24 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
     }
 
     /**
-     * 通过id删除
+     * 通过id删除。拒绝原因必须原样透出（JeecgBootExceptionHandler 会给未捕获异常加前缀，
+     * 破坏 TC-BD002-006 的逐字文案），故显式 catch。
      */
     @AutoLog(value = "供应商-删除", operateType = 4)
     @Operation(summary = "供应商-删除")
     @DeleteMapping(value = "/delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
-        service.removeSupplier(id);
-        return Result.OK("删除成功！");
+        try {
+            service.removeSupplier(id);
+            return Result.OK("删除成功！");
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
     }
 
     /**
-     * 批量删除
+     * 批量删除。守卫在 service.removeBatch 的事务内逐条生效，任一条被拒则整体回滚。
      */
     @AutoLog(value = "供应商-批量删除", operateType = 4)
     @Operation(summary = "供应商-批量删除")
@@ -160,7 +168,29 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
         if (oConvertUtils.isEmpty(ids)) {
             return Result.error("参数不识别！");
         }
-        service.removeBatch(Arrays.asList(ids.split(",")));
-        return Result.OK("删除成功！");
+        try {
+            service.removeBatch(Arrays.asList(ids.split(",")));
+            return Result.OK("删除成功！");
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /** 删除预检：前端弹确认框前调用（只读）；后端守卫仍在删除时兜底。 */
+    @Operation(summary = "供应商-删除预检")
+    @GetMapping(value = "/checkDelete")
+    public Result<WmsDeleteCheckVO> checkDelete(@RequestParam(name = "id", required = true) String id) {
+        return Result.OK(service.checkDelete(id));
+    }
+
+    /** 批量删除预检：列出不可删明细。 */
+    @Operation(summary = "供应商-批量删除预检")
+    @GetMapping(value = "/checkDeleteBatch")
+    public Result<WmsBatchDeleteCheckVO> checkDeleteBatch(@RequestParam(name = "ids", required = true) String ids) {
+        if (oConvertUtils.isEmpty(ids)) {
+            return Result.error("参数不识别！");
+        }
+        return Result.OK(service.checkDeleteBatch(Arrays.asList(ids.split(","))));
     }
 }
