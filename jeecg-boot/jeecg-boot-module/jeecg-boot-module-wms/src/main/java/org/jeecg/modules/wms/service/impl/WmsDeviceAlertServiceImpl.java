@@ -5,11 +5,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.dto.message.MessageDTO;
 import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsDevice;
 import org.jeecg.modules.wms.mapper.WmsDeviceMapper;
 import org.jeecg.modules.wms.service.IWmsDeviceAlertService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -43,6 +46,10 @@ public class WmsDeviceAlertServiceImpl implements IWmsDeviceAlertService {
      */
     @Value("${" + WmsConstants.DEVICE_ALERT_TO_USER_KEY + ":" + WmsConstants.ALERT_TO_USER + "}")
     private String alertToUser = WmsConstants.ALERT_TO_USER;
+
+    /** 系统配置（BD-004 §6）：告警节流窗口可配置。测试经 WmsTestSupport 注入替身。 */
+    @Autowired
+    private IWmsSystemConfigService wmsSystemConfigService;
 
     public WmsDeviceAlertServiceImpl(ISysBaseAPI sysBaseAPI, WmsDeviceMapper wmsDeviceMapper) {
         this.sysBaseAPI = sysBaseAPI;
@@ -99,13 +106,21 @@ public class WmsDeviceAlertServiceImpl implements IWmsDeviceAlertService {
         }
     }
 
-    /** 节流窗口是否已过。窗口为 {@code DEVICE_ALERT_THROTTLE_MINUTES} 分钟；从未告警过视为已过。 */
+    /**
+     * 节流窗口是否已过（BD-004 §6 起窗口可配置）。
+     *
+     * <p>窗口优先取系统配置；读不到/非法时 {@code getInt} 内部回落常量
+     * {@code DEVICE_ALERT_THROTTLE_MINUTES}。从未告警过视为已过。
+     */
     private boolean throttleExpired(WmsDevice device, Date now) {
         if (device.getLastAlertTime() == null) {
             return true;
         }
+        int throttleMinutes = wmsSystemConfigService.getInt(
+                WmsConfigKey.DEVICE_ALERT_THROTTLE_MINUTES.getKey(),
+                WmsConstants.DEVICE_ALERT_THROTTLE_MINUTES);
         long silentMs = now.getTime() - device.getLastAlertTime().getTime();
-        return silentMs >= WmsConstants.DEVICE_ALERT_THROTTLE_MINUTES * 60_000L;
+        return silentMs >= throttleMinutes * 60_000L;
     }
 
     /**

@@ -6,6 +6,7 @@ import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsDevice;
 import org.jeecg.modules.wms.mapper.WmsDeviceMapper;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -18,6 +19,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -45,6 +47,10 @@ class WmsDeviceAlertServiceImplTest {
     private static WmsDeviceAlertServiceImpl newService(ISysBaseAPI sysBaseAPI, WmsDeviceMapper mapper) {
         WmsDeviceAlertServiceImpl service = new WmsDeviceAlertServiceImpl(sysBaseAPI, mapper);
         WmsTestSupport.inject(service, "alertToUser", WmsConstants.ALERT_TO_USER);
+        // 节流窗口改由系统配置提供（BD-004）；未特别打桩时一律回落常量，保持既有用例语义不变
+        IWmsSystemConfigService configService = mock(IWmsSystemConfigService.class);
+        when(configService.getInt(any(String.class), anyInt())).thenAnswer(inv -> inv.getArgument(1));
+        WmsTestSupport.inject(service, "wmsSystemConfigService", configService);
         return service;
     }
 

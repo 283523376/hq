@@ -80,7 +80,28 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
 
     @Override
     public int getInt(String key, int fallback) {
-        return fallback;
+        try {
+            WmsConfigKey meta = WmsConfigKey.of(key);
+            WmsSystemConfig stored = this.getOne(new QueryWrapper<WmsSystemConfig>()
+                    .eq("config_key", meta.getKey()), false);
+            if (stored == null || stored.getConfigValue() == null || stored.getConfigValue().trim().isEmpty()) {
+                return fallback;
+            }
+            int parsed = Integer.parseInt(stored.getConfigValue().trim());
+            if (parsed <= 0) {
+                log.warn("系统配置[{}]的值 {} 非正数，改用兜底值 {}", key, parsed, fallback);
+                return fallback;
+            }
+            return parsed;
+        } catch (IllegalArgumentException e) {
+            // 未知键属于编程错误，但读取路径不能因此崩：记 WARN 用兜底
+            log.warn("读取了未知配置键[{}]，改用兜底值 {}", key, fallback);
+            return fallback;
+        } catch (Exception e) {
+            // 配置损坏（非数字等）不得让调用方（离线扫描任务）失败 —— 监控链路断了比阈值不准严重得多
+            log.warn("系统配置[{}]的值不合法（{}），改用兜底值 {}", key, e.getMessage(), fallback);
+            return fallback;
+        }
     }
 
     @Override

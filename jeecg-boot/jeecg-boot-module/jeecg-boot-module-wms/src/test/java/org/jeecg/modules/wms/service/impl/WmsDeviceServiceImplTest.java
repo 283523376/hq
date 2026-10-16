@@ -8,6 +8,7 @@ import org.jeecg.modules.wms.dto.WmsDeviceStatusDTO;
 import org.jeecg.modules.wms.entity.WmsDevice;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.service.IWmsDeviceAlertService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
@@ -26,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doNothing;
@@ -66,6 +69,10 @@ class WmsDeviceServiceImplTest {
         when(warehouseService.requireEnabledWarehouse(any())).thenReturn(warehouse());
         WmsTestSupport.inject(service, "wmsWarehouseService", warehouseService);
         WmsTestSupport.inject(service, "wmsDeviceAlertService", alertService);
+        // 离线阈值改由系统配置提供（BD-004）；未特别打桩时一律回落常量，保持既有用例语义不变
+        IWmsSystemConfigService configService = mock(IWmsSystemConfigService.class);
+        when(configService.getInt(any(String.class), anyInt())).thenAnswer(inv -> inv.getArgument(1));
+        WmsTestSupport.inject(service, "wmsSystemConfigService", configService);
         return service;
     }
 
@@ -362,6 +369,11 @@ class WmsDeviceServiceImplTest {
         WmsDeviceServiceImpl service = spy(new WmsDeviceServiceImpl());
         WmsTestSupport.inject(service, "wmsWarehouseService", warehouseService);
         WmsTestSupport.inject(service, "wmsDeviceAlertService", mock(IWmsDeviceAlertService.class));
+        // 离线阈值改由系统配置提供（BD-004）；未特别打桩时一律回落常量，保持既有用例语义不变
+        IWmsSystemConfigService configService = mock(IWmsSystemConfigService.class);
+        when(configService.getInt(any(String.class), anyInt()))
+                .thenAnswer(inv -> inv.getArgument(1));
+        WmsTestSupport.inject(service, "wmsSystemConfigService", configService);
         return service;
     }
 
@@ -436,5 +448,24 @@ class WmsDeviceServiceImplTest {
 
         verify(service).removeDevice("D1");
         verify(service).removeDevice("D2");
+    }
+
+    // ============================================================ 离线阈值取自系统配置（BD-004 §6）
+
+    /** 离线阈值必须取自系统配置；配置服务缺失时回落常量，不得 NPE。 */
+    @Test
+    void scanOfflineDevices_shouldUseConfiguredThreshold() {
+        IWmsWarehouseService warehouseService = mock(IWmsWarehouseService.class);
+        WmsDeviceServiceImpl service = guardService(warehouseService);
+        IWmsSystemConfigService configService = mock(IWmsSystemConfigService.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigService", configService);
+        when(configService.getInt(eq("device.offline.threshold.seconds"),
+                eq(WmsConstants.DEVICE_OFFLINE_THRESHOLD_SECONDS))).thenReturn(60);
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+
+        service.scanOfflineDevices();
+
+        verify(configService).getInt("device.offline.threshold.seconds",
+                WmsConstants.DEVICE_OFFLINE_THRESHOLD_SECONDS);
     }
 }

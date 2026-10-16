@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -340,5 +341,51 @@ class WmsSystemConfigServiceImplTest {
                 .when(historyMapper).selectList(any(Wrapper.class));
 
         assertEquals(2, service.history("device.offline.threshold.seconds").size());
+    }
+
+    // ------------------------------------------------------------ getInt 兜底（Review Focus 4）
+
+    private WmsSystemConfigServiceImpl intService(String storedValue) {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        doReturn(storedValue == null ? null : row("device.offline.threshold.seconds", storedValue))
+                .when(service).getOne(any(Wrapper.class), anyBoolean());
+        return service;
+    }
+
+    /** 库里有合法值时用它。 */
+    @Test
+    void getInt_shouldUseStoredValue() {
+        assertEquals(60, intService("60").getInt("device.offline.threshold.seconds", 600));
+    }
+
+    /** 行不存在 → 兜底。 */
+    @Test
+    void getInt_shouldFallBackWhenMissing() {
+        assertEquals(600, intService(null).getInt("device.offline.threshold.seconds", 600));
+    }
+
+    /** 空值/空白 → 兜底（不抛）。 */
+    @Test
+    void getInt_shouldFallBackWhenBlank() {
+        assertEquals(600, intService("   ").getInt("device.offline.threshold.seconds", 600));
+    }
+
+    /** 非数字 → 兜底（不抛）。配置写错不能让离线扫描任务崩掉。 */
+    @Test
+    void getInt_shouldFallBackWhenNotNumeric() {
+        assertEquals(600, intService("abc").getInt("device.offline.threshold.seconds", 600));
+    }
+
+    /** 非正数 → 兜底（0 秒阈值会把所有设备判离线）。 */
+    @Test
+    void getInt_shouldFallBackWhenNonPositive() {
+        assertEquals(600, intService("0").getInt("device.offline.threshold.seconds", 600));
+        assertEquals(600, intService("-5").getInt("device.offline.threshold.seconds", 600));
+    }
+
+    /** 未知键 → 兜底（不抛 IllegalArgumentException）。 */
+    @Test
+    void getInt_shouldFallBackOnUnknownKey() {
+        assertEquals(600, intService("60").getInt("no.such.key", 600));
     }
 }

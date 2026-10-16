@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsDeviceBindDTO;
 import org.jeecg.modules.wms.dto.WmsDeviceStatusDTO;
@@ -13,6 +14,7 @@ import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.mapper.WmsDeviceMapper;
 import org.jeecg.modules.wms.service.IWmsDeviceAlertService;
 import org.jeecg.modules.wms.service.IWmsDeviceService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
@@ -40,6 +42,9 @@ public class WmsDeviceServiceImpl extends ServiceImpl<WmsDeviceMapper, WmsDevice
 
     @Autowired
     private IWmsWarehouseService wmsWarehouseService;
+
+    @Autowired
+    private IWmsSystemConfigService wmsSystemConfigService;
 
     @Autowired
     private IWmsDeviceAlertService wmsDeviceAlertService;
@@ -247,8 +252,12 @@ public class WmsDeviceServiceImpl extends ServiceImpl<WmsDeviceMapper, WmsDevice
 
     @Override
     public List<WmsDevice> scanOfflineDevices() {
-        Date threshold = new Date(System.currentTimeMillis()
-                - WmsConstants.DEVICE_OFFLINE_THRESHOLD_SECONDS * 1000L);
+        // 阈值优先取系统配置（BD-004 §6）；读不到/非法时 getInt 内部回落常量 ——
+        // 监控链路不能因配置损坏而失效，那比阈值不准严重得多。
+        int thresholdSeconds = wmsSystemConfigService.getInt(
+                WmsConfigKey.DEVICE_OFFLINE_THRESHOLD_SECONDS.getKey(),
+                WmsConstants.DEVICE_OFFLINE_THRESHOLD_SECONDS);
+        Date threshold = new Date(System.currentTimeMillis() - thresholdSeconds * 1000L);
         List<WmsDevice> candidates = this.list(new QueryWrapper<WmsDevice>()
                 // 只捕捉跃迁：已经是离线的设备不再重复处理
                 .ne("status", WmsConstants.DEVICE_STATUS_OFFLINE)
@@ -268,7 +277,7 @@ public class WmsDeviceServiceImpl extends ServiceImpl<WmsDeviceMapper, WmsDevice
                 this.updateById(update);
                 device.setStatus(WmsConstants.DEVICE_STATUS_OFFLINE);
                 log.warn("设备[{}]心跳静默超过 {} 秒，已置为离线（最近心跳：{}）",
-                        device.getDeviceCode(), WmsConstants.DEVICE_OFFLINE_THRESHOLD_SECONDS,
+                        device.getDeviceCode(), thresholdSeconds,
                         device.getLastHeartbeat());
                 turned.add(device);
             } catch (Exception e) {
