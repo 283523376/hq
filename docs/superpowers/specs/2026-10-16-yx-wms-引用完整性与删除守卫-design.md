@@ -123,6 +123,8 @@ GET /wms/{resource}/checkDeleteBatch?ids={a,b,c}
 ```
 
 - `{resource}` ∈ `supplier | material | materialCategory | warehouse | location | device`；
+  其中 `materialCategory` 仅提供单条 `checkDelete`（分类是树形单节点删除，从无 `deleteBatch` 端点，
+  故也不设批量预检）；`warehouse` 的批量预检暂无前端消费者（库区在树上单删），接口先备以防 API 直调；
 - 单条返回 `Result<WmsDeleteCheckVO>`；
 - 批量返回 `Result<WmsBatchDeleteCheckVO>`：`{ deletable, blockedItems: [{id, code, reason}] }`，
   供前端列出「以下 N 条无法删除」；
