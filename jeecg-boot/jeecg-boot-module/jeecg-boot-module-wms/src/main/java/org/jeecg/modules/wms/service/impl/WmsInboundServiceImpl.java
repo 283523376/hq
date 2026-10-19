@@ -92,6 +92,23 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
         return order;
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void onInspectResult(String inboundId, boolean passed) {
+        WmsInboundOrder order = getById(inboundId);
+        if (order == null) {
+            throw new RuntimeException("单据不存在");
+        }
+        if (!WmsConstants.INBOUND_STATUS_PENDING_INSPECT.equals(order.getInboundStatus())) {
+            throw new RuntimeException("单据状态不允许检验回写");
+        }
+        order.setInboundStatus(passed
+                ? WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE
+                : WmsConstants.INBOUND_STATUS_INSPECT_FAILED);
+        updateById(order);
+        log.info("检验回写：单号={}，状态={}", order.getOrderNo(), order.getInboundStatus());
+    }
+
     /** 保存明细行（校验物料与分类类型，带出冗余信息）。 */
     private void saveDetails(String inboundId, WmsReceiveDTO dto) {
         for (WmsReceiveDTO.Item item : dto.getDetails()) {

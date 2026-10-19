@@ -21,4 +21,13 @@ public interface IWmsInboundService extends JeecgService<WmsInboundOrder> {
      * @throws RuntimeException 校验失败时携带面向用户的中文文案
      */
     WmsInboundOrder receive(WmsReceiveDTO dto);
+
+    /**
+     * 检验结果回写单据状态（检验服务唯一的状态入口，避免跨域直改他人表）。
+     *
+     * @param inboundId 入库单ID
+     * @param passed    true=合格（转待分配）；false=不合格（转检验不合格，终态）
+     * @throws RuntimeException 单据不存在或状态不是待检验
+     */
+    void onInspectResult(String inboundId, boolean passed);
 }
