@@ -4,17 +4,30 @@
       <!-- 左：分组菜单 -->
       <a-col :xl="6" :lg="8" :md="24">
         <a-card :bordered="false" title="配置分组" size="small">
-          <a-menu :selected-keys="[currentGroup]" mode="inline" @click="handleGroupChange">
+          <a-menu
+            v-model:open-keys="openKeys"
+            :selected-keys="[currentGroup]"
+            mode="inline"
+            @click="handleGroupChange"
+          >
             <a-menu-item v-for="g in groups" :key="g.code">
               {{ g.name }}
             </a-menu-item>
+            <!-- 前端本地分组：不来自后端 definitions，切换逻辑与后端分组一致 -->
+            <!-- 注意：不能用 <a-sub-menu>，unplugin 自动导入解析不了它（会拍平成顶级项），须显式 Menu.SubMenu -->
+            <Menu.SubMenu key="fontScale" title="字体缩放">
+              <a-menu-item key="fontScale-text">文字缩放</a-menu-item>
+              <a-menu-item key="fontScale-zoom">界面缩放</a-menu-item>
+            </Menu.SubMenu>
           </a-menu>
         </a-card>
       </a-col>
 
-      <!-- 右：当前分组表单 -->
+      <!-- 右：当前分组表单（字体缩放为前端本地分组，显示专属面板） -->
       <a-col :xl="18" :lg="16" :md="24">
-        <a-card :bordered="false" size="small">
+        <FontScalePanel v-if="currentGroup === 'fontScale-text'" type="text" />
+        <FontScalePanel v-else-if="currentGroup === 'fontScale-zoom'" type="zoom" />
+        <a-card v-else :bordered="false" size="small">
           <template #title>
             <span>{{ currentGroupName }}</span>
             <span v-if="dirty" class="wms-dirty-tip">（有未保存的修改）</span>
@@ -87,12 +100,15 @@
 <script lang="ts" name="wms-system-config" setup>
   import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
   import { onBeforeRouteLeave } from 'vue-router';
-  import { Modal } from 'ant-design-vue';
+  import { Menu, Modal } from 'ant-design-vue';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { getDefinitions, saveGroupConfig, rollbackGroupConfig } from './systemConfig.api';
+  import FontScalePanel from './fontScale/FontScalePanel.vue';
 
   const { createMessage } = useMessage();
 
+  /** 左侧菜单展开的子菜单；「字体缩放」默认展开 */
+  const openKeys = ref<string[]>(['fontScale']);
   const loading = ref(false);
   const saving = ref(false);
   const rolling = ref(false);

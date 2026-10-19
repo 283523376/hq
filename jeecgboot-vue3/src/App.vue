@@ -17,6 +17,7 @@
   import { useRootSetting } from '/@/hooks/setting/useRootSetting';
   import { ThemeEnum } from '/@/enums/appEnum';
   import { changeTheme } from '/@/logics/theme/index';
+  import { calcTextFontSize, getTextScale, initFontScale, textScaleRef } from '/@/hooks/web/useFontScale';
 
   const appStore = useAppStore();
   // 解决日期时间国际化问题
@@ -25,6 +26,8 @@
   const { getAntdLocale } = useLocale();
 
   useTitle();
+  // 恢复上次的字体缩放设置（zoom 落到 body；text 经由下方 watch 联动 token）
+  initFontScale();
   /**
    * 2024-04-07
    * liaozhiyang
@@ -75,7 +78,7 @@
           token: {
             colorPrimary: primary,
             wireframe: true,
-            fontSize: 14,
+            fontSize: calcTextFontSize(getTextScale()),
             colorTextBase: '#333',
             colorSuccess: '#55D187',
             colorInfo: primary,
@@ -94,6 +97,16 @@
     },
     { immediate: true }
   );
+  // 文字缩放比例变化时同步 antd token 基准字号（界面缩放走 body zoom，与此处无关）
+  watch(textScaleRef, (pct) => {
+    appTheme.value = {
+      ...appTheme.value,
+      token: {
+        ...appTheme.value.token,
+        fontSize: calcTextFontSize(pct),
+      },
+    };
+  });
   setTimeout(() => {
     appStore.getProjectConfig?.themeColor && changeTheme(appStore.getProjectConfig.themeColor);
   }, 300);
