@@ -85,7 +85,7 @@
     { title: '库位', key: 'locationId', width: 260 },
   ];
 
-  const [registerModal, { setModalProps }] = useModalInner(async (data) => {
+  const [registerModal, { setModalProps, closeModal }] = useModalInner(async (data) => {
     record.value = data?.record;
     warnings.value = [];
     setModalProps({ confirmLoading: false });
@@ -102,15 +102,24 @@
     loading.value = true;
     try {
       const detail: any = await getInboundDetail(record.value.id);
-      const list = (detail?.details || []).map((d: any) => ({
-        detailId: d.id,
-        materialId: d.materialId,
-        materialName: d.materialName,
-        quantity: d.quantity,
-        actualQuantity: d.actualQuantity ?? d.quantity,
-        locationId: d.locationId || undefined,
-        locationOptions: [],
-      }));
+      // 重载（如点完「自动分配库位」）时保留用户已录入的实收数量与手工选择的库位，
+      // 只对后端新出现的行用默认值——否则用户改过的短装数量会被静默还原成应收数。
+      const previous: Record<string, any> = {};
+      for (const row of rows.value) {
+        previous[row.detailId] = row;
+      }
+      const list = (detail?.details || []).map((d: any) => {
+        const old = previous[d.id];
+        return {
+          detailId: d.id,
+          materialId: d.materialId,
+          materialName: d.materialName,
+          quantity: d.quantity,
+          actualQuantity: old ? old.actualQuantity : d.actualQuantity ?? d.quantity,
+          locationId: (old && old.locationId) || d.locationId || undefined,
+          locationOptions: [],
+        };
+      });
       await Promise.all(
         list.map(async (row: any) => {
           try {
@@ -168,6 +177,7 @@
         })),
       });
       createMessage.success('上架成功，已自动审核并触发 ERP 同步');
+      closeModal();
       emit('success');
       return true;
     } finally {

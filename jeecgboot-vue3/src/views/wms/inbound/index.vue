@@ -205,6 +205,10 @@
 
   /** 提交收料：成功后清空表单（防扫码枪误触双击重复提交） */
   async function handleReceive() {
+    // 扫码枪连按回车 / 用户连点：请求返回前直接忽略后续提交，避免生成两张收料单
+    if (receiving.value) {
+      return;
+    }
     if (!receiveForm.purchaseOrderNo || !receiveForm.purchaseOrderNo.trim()) {
       createMessage.warning('请先扫码或录入采购订单号');
       return;

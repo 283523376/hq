@@ -45,6 +45,9 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
     @Autowired
     private org.jeecg.modules.wms.mapper.WmsInventoryMapper inventoryMapper;
 
+    @Autowired
+    private org.jeecg.modules.wms.mapper.WmsInboundDetailMapper inboundDetailMapper;
+
     @Override
     public WmsLocationGenResultVO generate(WmsLocationGenDTO dto) {
         if (dto == null || oConvertUtils.isEmpty(dto.getWarehouseId())) {
@@ -221,6 +224,12 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
         long inventoryCount = countInventory(location.getId());
         if (inventoryCount > 0) {
             vo.addBlocker("该库位已存在库存记录", inventoryCount,
+                    Collections.singletonList(location.getLocationCode()));
+        }
+        // 已分配但未上架的入库明细也引用该库位：删了会让用户在弹窗里选到不存在的库位
+        long activeInbound = inboundDetailMapper == null ? 0L : inboundDetailMapper.countActiveByLocation(location.getId());
+        if (activeInbound > 0) {
+            vo.addBlocker("该库位存在进行中的入库单引用", activeInbound,
                     Collections.singletonList(location.getLocationCode()));
         }
         return vo;

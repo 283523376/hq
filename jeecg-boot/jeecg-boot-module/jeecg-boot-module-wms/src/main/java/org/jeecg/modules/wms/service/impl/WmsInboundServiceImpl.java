@@ -114,11 +114,19 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
         if (!WmsConstants.INBOUND_STATUS_PENDING_INSPECT.equals(order.getInboundStatus())) {
             throw new RuntimeException("单据状态不允许检验回写");
         }
-        order.setInboundStatus(passed
+        // 条件更新：把「读后写」换成「带当前状态条件的认领」，与作废/上架并发时只有一个能生效
+        String target = passed
                 ? WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE
-                : WmsConstants.INBOUND_STATUS_INSPECT_FAILED);
-        updateById(order);
-        log.info("检验回写：单号={}，状态={}", order.getOrderNo(), order.getInboundStatus());
+                : WmsConstants.INBOUND_STATUS_INSPECT_FAILED;
+        int affected = baseMapper.update(null, com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInboundOrder>update()
+                .set("inbound_status", target)
+                .eq("id", inboundId)
+                .eq("inbound_status", WmsConstants.INBOUND_STATUS_PENDING_INSPECT));
+        if (affected == 0) {
+            throw new RuntimeException("单据状态不允许检验回写");
+        }
+        order.setInboundStatus(target);
+        log.info("检验回写：单号={}，状态={}", order.getOrderNo(), target);
     }
 
     @Override
@@ -136,7 +144,14 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
                 com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInboundDetail>query()
                         .eq("inbound_id", inboundId).orderByAsc("id"));
         org.jeecg.modules.wms.vo.WmsAllocateResultVO vo = new org.jeecg.modules.wms.vo.WmsAllocateResultVO();
-        // 每个库区类型只查一次空闲库位，分配一行消费一个候选（口径 9）
+        // 每个库区类型只查一次空闲库位，分配一行消费一个候选（口径 9）。
+        // 已分配行占用的库位必须先剔除，否则重跑自动分配会把同一库位再分给另一行。
+        java.util.Set<String> used = new java.util.HashSet<>();
+        for (WmsInboundDetail detail : details) {
+            if (oConvertUtils.isNotEmpty(detail.getLocationId())) {
+                used.add(detail.getLocationId());
+            }
+        }
         java.util.Map<String, java.util.Deque<WmsLocation>> freeByType = new java.util.HashMap<>();
         int allocated = 0;
         for (WmsInboundDetail detail : details) {
@@ -150,9 +165,16 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
                 addUnallocated(vo, detail, material == null ? "物料不存在" : "该物料类型不支持自动分配");
                 continue;
             }
-            WmsLocation free = freeByType
-                    .computeIfAbsent(warehouseType, k -> new java.util.ArrayDeque<>(locationService.listFreeByWarehouseType(k)))
-                    .poll();
+            java.util.Deque<WmsLocation> pool = freeByType.computeIfAbsent(warehouseType, k -> {
+                java.util.Deque<WmsLocation> q = new java.util.ArrayDeque<>();
+                for (WmsLocation candidate : locationService.listFreeByWarehouseType(k)) {
+                    if (!used.contains(candidate.getId())) {
+                        q.add(candidate);
+                    }
+                }
+                return q;
+            });
+            WmsLocation free = pool.poll();
             if (free == null) {
                 addUnallocated(vo, detail, "库位不足");
                 if (!vo.getWarnings().contains("库位不足，请人工介入")) {
@@ -167,8 +189,14 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
         vo.setAllocatedCount(allocated);
         boolean allAllocated = !details.isEmpty() && allocated == details.size();
         if (allAllocated && WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE.equals(order.getInboundStatus())) {
-            order.setInboundStatus(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY);
-            updateById(order);
+            // 条件推进：若期间被作废/检验回写抢先，这里影响 0 行即自然放弃推进
+            int advanced = baseMapper.update(null, com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInboundOrder>update()
+                    .set("inbound_status", WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY)
+                    .eq("id", inboundId)
+                    .eq("inbound_status", WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE));
+            if (advanced > 0) {
+                order.setInboundStatus(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY);
+            }
         }
         log.info("自动分配：单号={}，分配 {} / {} 行，告警 {}", order.getOrderNo(), allocated, details.size(), vo.getWarnings().size());
         return vo;
@@ -230,9 +258,20 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
         if (!preStock) {
             throw new RuntimeException("当前状态不可作废");
         }
+        // 条件更新：与检验回写/上架并发时只有一个能生效，避免「已作废单被复活」或反向覆盖
+        int affected = baseMapper.update(null, com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInboundOrder>update()
+                .set("inbound_status", WmsConstants.INBOUND_STATUS_VOIDED)
+                .set("reject_reason", "作废：" + reason.trim())
+                .eq("id", inboundId)
+                .in("inbound_status",
+                        WmsConstants.INBOUND_STATUS_PENDING_INSPECT,
+                        WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE,
+                        WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY));
+        if (affected == 0) {
+            throw new RuntimeException("当前状态不可作废");
+        }
         order.setInboundStatus(WmsConstants.INBOUND_STATUS_VOIDED);
         order.setRejectReason("作废：" + reason.trim());
-        updateById(order);
         log.info("单据作废：单号={}，原因={}", order.getOrderNo(), reason.trim());
     }
 
@@ -272,6 +311,16 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
         return vo;
     }
 
+    /** 截断同步错误到列宽上限，避免超长文案让 updateByid 在严格模式下失败并回滚上架。 */
+    private String truncateSyncError(String text) {
+        if (text == null) {
+            return null;
+        }
+        return text.length() <= WmsConstants.SYNC_ERROR_MAX_LENGTH
+                ? text
+                : text.substring(0, WmsConstants.SYNC_ERROR_MAX_LENGTH);
+    }
+
     /** 分类类型 → 库区类型（半成品→立库、辅料→线边柜、其他→null，口径 10）。 */
     private String toWarehouseType(String categoryType) {
         if (WmsConstants.CATEGORY_TYPE_HALF_FINISHED.equals(categoryType)) {
@@ -304,7 +353,16 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
         for (WmsInboundDetail d : rows) {
             byId.put(d.getId(), d);
         }
-        // 预校验（不做任何写操作）：明细存在、实收非负、整单至少一行 > 0
+        // 预校验（不做任何写操作）：明细不得重复、必须覆盖整单、实收非负、整单至少一行 > 0
+        java.util.Set<String> submitted = new java.util.HashSet<>();
+        for (org.jeecg.modules.wms.dto.WmsPutawayDTO.Item item : dto.getDetails()) {
+            if (!submitted.add(item.getDetailId())) {
+                throw new RuntimeException("上架明细不能重复提交");
+            }
+        }
+        if (!submitted.equals(byId.keySet())) {
+            throw new RuntimeException("上架明细必须覆盖单据全部明细行");
+        }
         for (org.jeecg.modules.wms.dto.WmsPutawayDTO.Item item : dto.getDetails()) {
             if (byId.get(item.getDetailId()) == null) {
                 throw new RuntimeException("上架明细与单据不匹配");
@@ -323,6 +381,24 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
             throw new RuntimeException("整单实收不能全为 0");
         }
 
+        // 条件认领：把状态推进放在事务最前面，并发/重复上架只有一个能拿到（影响 0 行即失败回滚）。
+        // 不能用「读后无条件 updateById」——两个并发请求会都通过状态检查，各写一次库存。
+        int claimed = baseMapper.update(null, com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInboundOrder>update()
+                .set("inbound_status", WmsConstants.INBOUND_STATUS_AUDITED)
+                .set("audit_by", "system")
+                .set("audit_time", new java.util.Date())
+                .eq("id", inboundId)
+                .in("inbound_status",
+                        WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE,
+                        WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY));
+        if (claimed == 0) {
+            throw new RuntimeException("当前状态不允许上架");
+        }
+        // 本地对象同步终态（仅用于后续日志与调用方观察；持久化以条件更新的 SQL 为准）
+        order.setInboundStatus(WmsConstants.INBOUND_STATUS_AUDITED);
+        order.setAuditBy("system");
+        order.setAuditTime(new java.util.Date());
+
         for (org.jeecg.modules.wms.dto.WmsPutawayDTO.Item item : dto.getDetails()) {
             WmsInboundDetail d = byId.get(item.getDetailId());
             if (item.getActualQuantity().signum() > 0) {
@@ -334,7 +410,11 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
                     throw new RuntimeException("库位不空闲或不存在");
                 }
                 org.jeecg.modules.wms.entity.WmsWarehouse warehouse = warehouseService.getById(loc.getWarehouseId());
-                String expectedType = toWarehouseType(resolveCategoryType(materialService.getById(d.getMaterialId())));
+                WmsMaterial material = materialService.getById(d.getMaterialId());
+                if (material == null) {
+                    throw new RuntimeException("物料不存在或已删除，无法上架");
+                }
+                String expectedType = toWarehouseType(resolveCategoryType(material));
                 if (warehouse == null || expectedType == null || !expectedType.equals(warehouse.getWarehouseType())) {
                     throw new RuntimeException("库位类型与物料不匹配");
                 }
@@ -356,22 +436,28 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
             detailMapper.updateById(d);
         }
 
-        // 已入库（未审核）→ 自动审核为已审核：同一事务内的瞬时态，持久化终态为已审核
-        order.setInboundStatus(WmsConstants.INBOUND_STATUS_AUDITED);
-        order.setAuditBy("system");
-        order.setAuditTime(new java.util.Date());
+        // 只更新同步字段（新实体，避免把读到的旧状态/旧字段回写覆盖认领结果）
+        WmsInboundOrder syncUpdate = new WmsInboundOrder();
+        syncUpdate.setId(inboundId);
         try {
             org.jeecg.modules.wms.sync.WmsOrderSyncAttempt attempt = syncService.syncInbound(order, true);
-            order.setSyncStatus(attempt.isSuccess() ? WmsConstants.SYNC_STATUS_SUCCESS : WmsConstants.SYNC_STATUS_FAILED);
-            order.setLastSyncError(attempt.isSuccess() ? null : attempt.getErrorMessage());
+            syncUpdate.setSyncStatus(attempt.isSuccess() ? WmsConstants.SYNC_STATUS_SUCCESS : WmsConstants.SYNC_STATUS_FAILED);
+            syncUpdate.setRetryCount(attempt.getRetryCount());
+            syncUpdate.setLastSyncError(attempt.isSuccess() ? null : truncateSyncError(attempt.getErrorMessage()));
         } catch (Exception e) {
             log.error("入库单[{}]同步 ERP 异常：{}", order.getOrderNo(), e.getMessage(), e);
-            order.setSyncStatus(WmsConstants.SYNC_STATUS_FAILED);
-            order.setLastSyncError(e.getMessage());
+            syncUpdate.setSyncStatus(WmsConstants.SYNC_STATUS_FAILED);
+            syncUpdate.setLastSyncError(truncateSyncError(e.getMessage()));
         }
-        order.setLastSyncTime(new java.util.Date());
-        updateById(order);
-        log.info("上架完成：单号={}，状态={}，同步={}", order.getOrderNo(), order.getInboundStatus(), order.getSyncStatus());
+        syncUpdate.setLastSyncTime(new java.util.Date());
+        // 本地对象同步（仅用于日志与调用方观察；持久化用上面的新实体）
+        order.setSyncStatus(syncUpdate.getSyncStatus());
+        order.setRetryCount(syncUpdate.getRetryCount());
+        order.setLastSyncError(syncUpdate.getLastSyncError());
+        order.setLastSyncTime(syncUpdate.getLastSyncTime());
+        updateById(syncUpdate);
+        log.info("上架完成：单号={}，状态={}，同步={}", order.getOrderNo(),
+                WmsConstants.INBOUND_STATUS_AUDITED, syncUpdate.getSyncStatus());
     }
 
     /** 保存明细行（校验物料与分类类型，带出冗余信息）。 */

@@ -38,6 +38,9 @@ public class WmsMaterialServiceImpl extends ServiceImpl<WmsMaterialMapper, WmsMa
     @Autowired
     private org.jeecg.modules.wms.mapper.WmsInventoryMapper inventoryMapper;
 
+    @Autowired
+    private org.jeecg.modules.wms.mapper.WmsInboundDetailMapper inboundDetailMapper;
+
     @Override
     public void addMaterial(WmsMaterial material) {
         if (checkCodeExists(material.getMaterialCode(), null)) {
@@ -82,6 +85,11 @@ public class WmsMaterialServiceImpl extends ServiceImpl<WmsMaterialMapper, WmsMa
         if (inventoryCount > 0) {
             vo.addBlocker("该物料已存在库存记录", inventoryCount, java.util.Collections.singletonList(id));
         }
+        // 入库流程进行中的明细同样引用该物料：此时删物料会让上架卡死（物料不存在）
+        long activeInbound = inboundDetailMapper == null ? 0L : inboundDetailMapper.countActiveByMaterial(id);
+        if (activeInbound > 0) {
+            vo.addBlocker("该物料存在进行中的入库单引用", activeInbound, java.util.Collections.singletonList(id));
+        }
         return vo;
     }
 
@@ -92,8 +100,16 @@ public class WmsMaterialServiceImpl extends ServiceImpl<WmsMaterialMapper, WmsMa
             return vo;
         }
         for (String id : ids) {
-            // checkDelete 恒可删，循环只为保持与其他资源一致的契约
-            checkDelete(id);
+            WmsDeleteCheckVO check = checkDelete(id);
+            if (!check.isDeletable()) {
+                // 与库位批量预检同契约：逐行报出不可删原因，前端据此列明细
+                WmsMaterial material = this.getById(id);
+                vo.addBlocked(id,
+                        material == null ? id : material.getMaterialCode(),
+                        check.getBlockers().stream()
+                                .map(WmsDeleteCheckVO.Blocker::getMessage)
+                                .collect(java.util.stream.Collectors.joining("；")));
+            }
         }
         return vo;
     }

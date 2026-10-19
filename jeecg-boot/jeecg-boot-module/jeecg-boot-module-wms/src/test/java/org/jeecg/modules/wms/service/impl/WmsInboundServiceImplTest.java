@@ -43,6 +43,7 @@ class WmsInboundServiceImplTest {
     private WmsInboundDetailMapper detailMapper;
     private WmsInspectionTaskMapper inspectionTaskMapper;
     private WmsInboundServiceImpl service;
+    private org.jeecg.modules.wms.mapper.WmsInboundOrderMapper orderMapper;
 
     @BeforeEach
     void setUp() {
@@ -52,8 +53,10 @@ class WmsInboundServiceImplTest {
         detailMapper = mock(WmsInboundDetailMapper.class);
         inspectionTaskMapper = mock(WmsInspectionTaskMapper.class);
 
+        orderMapper = mock(org.jeecg.modules.wms.mapper.WmsInboundOrderMapper.class);
+        when(orderMapper.update(any(), any())).thenReturn(1);
         service = new WmsInboundServiceImpl();
-        WmsTestSupport.inject(service, "baseMapper", mock(org.jeecg.modules.wms.mapper.WmsInboundOrderMapper.class));
+        WmsTestSupport.inject(service, "baseMapper", orderMapper);
         WmsTestSupport.inject(service, "orderService", orderService);
         WmsTestSupport.inject(service, "materialService", materialService);
         WmsTestSupport.inject(service, "categoryService", categoryService);
@@ -504,11 +507,107 @@ class WmsInboundServiceImplTest {
     }
 
     private void copyInjected(WmsInboundServiceImpl target) {
-        WmsTestSupport.inject(target, "baseMapper", mock(org.jeecg.modules.wms.mapper.WmsInboundOrderMapper.class));
+        WmsTestSupport.inject(target, "baseMapper", orderMapper);
         WmsTestSupport.inject(target, "orderService", orderService);
         WmsTestSupport.inject(target, "materialService", materialService);
         WmsTestSupport.inject(target, "categoryService", categoryService);
         WmsTestSupport.inject(target, "detailMapper", detailMapper);
         WmsTestSupport.inject(target, "inspectionTaskMapper", inspectionTaskMapper);
+    }
+
+    // ------------------------------------------------------------ 并发与输入完整性（最终审查修复）
+
+    @Test
+    void putawayRejectsDuplicateDetailIds() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, new java.math.BigDecimal("10"));
+        org.jeecg.modules.wms.dto.WmsPutawayDTO.Item dup = new org.jeecg.modules.wms.dto.WmsPutawayDTO.Item();
+        dup.setDetailId("d1");
+        dup.setActualQuantity(new java.math.BigDecimal("10"));
+        dup.setLocationId("LB-1");
+        java.util.List<org.jeecg.modules.wms.dto.WmsPutawayDTO.Item> items =
+                new java.util.ArrayList<>(putawayDto.getDetails());
+        items.add(dup);
+        putawayDto.setDetails(items);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.putaway("ib1", putawayDto));
+        assertEquals("上架明细不能重复提交", ex.getMessage());
+        org.mockito.Mockito.verify(inventoryMapper, org.mockito.Mockito.never()).upsertInventory(any());
+    }
+
+    @Test
+    void putawayRejectsIncompleteDetailSet() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, new java.math.BigDecimal("10"));
+        putawayDto.setDetails(new java.util.ArrayList<>());
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.putaway("ib1", putawayDto));
+        assertEquals("上架明细不能为空", ex.getMessage());
+    }
+
+    @Test
+    void putawayRejectsWhenClaimFails() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, new java.math.BigDecimal("10"));
+        // 读状态时尚可上架，但条件认领影响 0 行（被并发请求抢先）
+        when(orderMapper.update(any(), any())).thenReturn(0);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.putaway("ib1", putawayDto));
+        assertEquals("当前状态不允许上架", ex.getMessage());
+        org.mockito.Mockito.verify(inventoryMapper, org.mockito.Mockito.never()).upsertInventory(any());
+    }
+
+    @Test
+    void voidRejectsWhenStatusClaimFails() {
+        setOrderStatus(WmsConstants.INBOUND_STATUS_PENDING_INSPECT);
+        when(orderMapper.update(any(), any())).thenReturn(0);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.voidOrder("ib1", "原因"));
+        assertEquals("当前状态不可作废", ex.getMessage());
+    }
+
+    @Test
+    void onInspectResultRejectsWhenClaimFails() {
+        WmsInboundServiceImpl spyService = org.mockito.Mockito.spy(new WmsInboundServiceImpl());
+        copyInjected(spyService);
+        org.jeecg.modules.wms.entity.WmsInboundOrder order = new org.jeecg.modules.wms.entity.WmsInboundOrder();
+        order.setId("ib1");
+        order.setInboundStatus(WmsConstants.INBOUND_STATUS_PENDING_INSPECT);
+        doReturn(order).when(spyService).getById("ib1");
+        when(orderMapper.update(any(), any())).thenReturn(0);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> spyService.onInspectResult("ib1", true));
+        assertEquals("单据状态不允许检验回写", ex.getMessage());
+    }
+
+    @Test
+    void autoAllocateExcludesAlreadyAssignedLocations() {
+        org.jeecg.modules.wms.entity.WmsInboundDetail d1 = row("d1", "电路板", WmsConstants.CATEGORY_TYPE_HALF_FINISHED);
+        d1.setLocationId("LB-1");
+        org.jeecg.modules.wms.entity.WmsInboundDetail d2 = row("d2", "电路板", WmsConstants.CATEGORY_TYPE_HALF_FINISHED);
+        stubAllocateEnv(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE, java.util.Arrays.asList(d1, d2));
+        when(locationService.listFreeByWarehouseType("立库"))
+                .thenReturn(java.util.Arrays.asList(loc("LB-1"), loc("LB-2")));
+
+        org.jeecg.modules.wms.vo.WmsAllocateResultVO vo = service.autoAllocate("ib1");
+
+        assertEquals(2, vo.getAllocatedCount());
+        org.mockito.ArgumentCaptor<org.jeecg.modules.wms.entity.WmsInboundDetail> cap =
+                org.mockito.ArgumentCaptor.forClass(org.jeecg.modules.wms.entity.WmsInboundDetail.class);
+        verify(detailMapper).updateById(cap.capture());
+        assertEquals("LB-2", cap.getValue().getLocationId());
+    }
+
+    @Test
+    void putawayTruncatesLongSyncError() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, new java.math.BigDecimal("10"));
+        StringBuilder longMsg = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            longMsg.append("超长错误信息");
+        }
+        when(syncService.syncInbound(any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenThrow(new RuntimeException(longMsg.toString()));
+
+        service.putaway("ib1", putawayDto);
+
+        String err = service.getById("ib1").getLastSyncError();
+        assertEquals(WmsConstants.SYNC_ERROR_MAX_LENGTH, err.length());
     }
 }

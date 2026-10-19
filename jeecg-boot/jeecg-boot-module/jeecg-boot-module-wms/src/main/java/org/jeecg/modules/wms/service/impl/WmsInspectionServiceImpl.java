@@ -36,12 +36,9 @@ public class WmsInspectionServiceImpl extends ServiceImpl<WmsInspectionTaskMappe
 
     @Override
     public IPage<WmsInspectionTaskVO> listPage(int pageNo, int pageSize, String inspectStatus) {
-        QueryWrapper<WmsInspectionTask> qw = new QueryWrapper<>();
-        if (oConvertUtils.isNotEmpty(inspectStatus)) {
-            qw.eq("inspect_status", inspectStatus);
-        }
-        qw.orderByDesc("create_time");
-        IPage<WmsInspectionTask> page = page(new Page<>(pageNo, pageSize), qw);
+        // 联查入库单：排除已作废/已拒收单据的任务（终态单不可再检验）
+        IPage<WmsInspectionTask> page = baseMapper.selectPageWithOrder(
+                new Page<>(pageNo, pageSize), inspectStatus);
         List<WmsInspectionTaskVO> vos = new ArrayList<>();
         for (WmsInspectionTask task : page.getRecords()) {
             WmsInspectionTaskVO vo = new WmsInspectionTaskVO();
@@ -51,6 +48,7 @@ public class WmsInspectionServiceImpl extends ServiceImpl<WmsInspectionTaskMappe
                 vo.setOrderNo(order.getOrderNo());
                 vo.setPurchaseOrderNo(order.getPurchaseOrderNo());
                 vo.setSupplierName(order.getSupplierName());
+                vo.setInboundStatus(order.getInboundStatus());
             }
             vos.add(vo);
         }

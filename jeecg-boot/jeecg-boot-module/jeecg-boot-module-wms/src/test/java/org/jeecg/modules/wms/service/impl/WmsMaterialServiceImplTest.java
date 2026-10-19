@@ -408,4 +408,48 @@ class WmsMaterialServiceImplTest {
 
         assertTrue(service.checkDelete("m1").isDeletable());
     }
+
+    @Test
+    void materialDeleteBlockedByActiveInboundDetail() {
+        WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
+        org.jeecg.modules.wms.mapper.WmsInventoryMapper inv =
+                mock(org.jeecg.modules.wms.mapper.WmsInventoryMapper.class);
+        org.jeecg.modules.wms.mapper.WmsInboundDetailMapper detail =
+                mock(org.jeecg.modules.wms.mapper.WmsInboundDetailMapper.class);
+        WmsTestSupport.inject(service, "inventoryMapper", inv);
+        WmsTestSupport.inject(service, "inboundDetailMapper", detail);
+        when(inv.selectCount(any())).thenReturn(0L);
+        when(detail.countActiveByMaterial("m1")).thenReturn(1L);
+
+        WmsDeleteCheckVO vo = service.checkDelete("m1");
+
+        assertFalse(vo.isDeletable());
+        assertTrue(vo.getBlockers().get(0).getMessage().contains("入库单"));
+    }
+
+    @Test
+    void materialBatchDeleteReportsBlockedRows() {
+        WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
+        org.jeecg.modules.wms.mapper.WmsInventoryMapper inv =
+                mock(org.jeecg.modules.wms.mapper.WmsInventoryMapper.class);
+        org.jeecg.modules.wms.mapper.WmsInboundDetailMapper detail =
+                mock(org.jeecg.modules.wms.mapper.WmsInboundDetailMapper.class);
+        WmsTestSupport.inject(service, "inventoryMapper", inv);
+        WmsTestSupport.inject(service, "inboundDetailMapper", detail);
+        when(inv.selectCount(any())).thenReturn(2L);
+        when(detail.countActiveByMaterial(any())).thenReturn(0L);
+        WmsMaterial m1 = new WmsMaterial();
+        m1.setId("m1");
+        m1.setMaterialCode("M1");
+        WmsMaterial m2 = new WmsMaterial();
+        m2.setId("m2");
+        m2.setMaterialCode("M2");
+        doReturn(m1).when(service).getById("m1");
+        doReturn(m2).when(service).getById("m2");
+
+        WmsBatchDeleteCheckVO vo = service.checkDeleteBatch(Arrays.asList("m1", "m2"));
+
+        assertFalse(vo.getBlockedItems().isEmpty(), "批量预检必须报出不可删行");
+        assertEquals(2, vo.getBlockedItems().size());
+    }
 }

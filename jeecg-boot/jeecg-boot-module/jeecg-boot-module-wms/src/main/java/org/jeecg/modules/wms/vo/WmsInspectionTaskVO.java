@@ -23,4 +23,7 @@ public class WmsInspectionTaskVO {
 
     /** 供应商名称 */
     private String supplierName;
+
+    /** 单据状态（前端据此禁用已终态单据的操作） */
+    private String inboundStatus;
 }

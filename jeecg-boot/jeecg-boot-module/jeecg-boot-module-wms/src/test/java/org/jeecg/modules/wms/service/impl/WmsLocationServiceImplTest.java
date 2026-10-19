@@ -623,4 +623,23 @@ class WmsLocationServiceImplTest {
         RuntimeException ex = assertThrows(RuntimeException.class, () -> service.release("l1"));
         assertEquals("该库位已有库存，不能释放", ex.getMessage());
     }
+
+    @Test
+    void locationDeleteBlockedByActiveInboundDetail() {
+        WmsLocationServiceImpl service = spy(new WmsLocationServiceImpl());
+        doReturn(idleLocation("l1")).when(service).getById("l1");
+        org.jeecg.modules.wms.mapper.WmsInventoryMapper inv =
+                mock(org.jeecg.modules.wms.mapper.WmsInventoryMapper.class);
+        org.jeecg.modules.wms.mapper.WmsInboundDetailMapper detail =
+                mock(org.jeecg.modules.wms.mapper.WmsInboundDetailMapper.class);
+        WmsTestSupport.inject(service, "inventoryMapper", inv);
+        WmsTestSupport.inject(service, "inboundDetailMapper", detail);
+        when(inv.selectCount(any())).thenReturn(0L);
+        when(detail.countActiveByLocation("l1")).thenReturn(1L);
+
+        WmsDeleteCheckVO vo = service.checkDelete("l1");
+
+        assertFalse(vo.isDeletable());
+        assertTrue(vo.getBlockers().stream().anyMatch(b -> b.getMessage().contains("入库单")));
+    }
 }
