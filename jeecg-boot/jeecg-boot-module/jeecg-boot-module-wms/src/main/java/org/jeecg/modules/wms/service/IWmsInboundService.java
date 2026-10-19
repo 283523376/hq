@@ -50,4 +50,26 @@ public interface IWmsInboundService extends JeecgService<WmsInboundOrder> {
      * @throws RuntimeException 校验失败时携带面向用户的中文文案
      */
     void putaway(String inboundId, org.jeecg.modules.wms.dto.WmsPutawayDTO dto);
+
+    /**
+     * 「同步中」僵死阈值，供补偿任务复用同一口径。
+     */
+    java.util.Date syncStaleBefore();
+
+    /**
+     * 乐观认领：仅已审核且 待同步/同步失败/同步中已僵死 的单据可被认领。
+     *
+     * @return 受影响行数；0 表示已被他人持有
+     */
+    int claimForSync(String id, java.util.Date staleBefore);
+
+    /**
+     * 取待补偿单据（定时任务用），避免定时任务直接操作 Mapper。
+     */
+    java.util.List<WmsInboundOrder> selectSyncCandidates(java.util.Date staleBefore, int limit);
+
+    /**
+     * 写回同步结果。集中在一处，避免服务与定时任务各写一遍。
+     */
+    void persistSyncResult(String id, org.jeecg.modules.wms.sync.WmsOrderSyncAttempt attempt);
 }

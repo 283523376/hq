@@ -73,6 +73,28 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
         }
     }
 
+    @Operation(summary = "入库-手动重试 ERP 同步")
+    @PostMapping(value = "/{id}/sync")
+    public Result<org.jeecg.modules.wms.sync.WmsOrderSyncAttempt> resync(@PathVariable("id") String id) {
+        try {
+            WmsInboundOrder order = service.getById(id);
+            if (order == null) {
+                return Result.error("单据不存在");
+            }
+            org.jeecg.modules.wms.sync.WmsOrderSyncAttempt attempt =
+                    inboundSyncService.syncInbound(order, true);
+            service.persistSyncResult(id, attempt);
+            return attempt.isSuccess()
+                    ? Result.OK("同步成功", attempt)
+                    : Result.error("同步失败：" + attempt.getErrorMessage());
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsInboundSyncService inboundSyncService;
+
     @Autowired
     private org.jeecg.modules.wms.service.IWmsMaterialService materialService;
 

@@ -182,6 +182,37 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
         vo.getUnallocated().add(u);
     }
 
+    // ------------------------------------------------------------ ERP 同步补偿支撑（Task 7）
+
+    @Override
+    public java.util.Date syncStaleBefore() {
+        return new java.util.Date(System.currentTimeMillis()
+                - WmsConstants.INBOUND_SYNC_STALE_MINUTES * 60_000L);
+    }
+
+    @Override
+    public int claimForSync(String id, java.util.Date staleBefore) {
+        return baseMapper.claimForSync(id, staleBefore);
+    }
+
+    @Override
+    public java.util.List<WmsInboundOrder> selectSyncCandidates(java.util.Date staleBefore, int limit) {
+        return baseMapper.selectSyncCandidates(staleBefore, limit);
+    }
+
+    @Override
+    public void persistSyncResult(String id, org.jeecg.modules.wms.sync.WmsOrderSyncAttempt attempt) {
+        WmsInboundOrder result = new WmsInboundOrder();
+        result.setId(id);
+        result.setSyncStatus(attempt.isSuccess()
+                ? WmsConstants.SYNC_STATUS_SUCCESS
+                : WmsConstants.SYNC_STATUS_FAILED);
+        result.setRetryCount(attempt.getRetryCount());
+        result.setLastSyncError(attempt.isSuccess() ? null : attempt.getErrorMessage());
+        result.setLastSyncTime(new java.util.Date());
+        updateById(result);
+    }
+
     /** 分类类型 → 库区类型（半成品→立库、辅料→线边柜、其他→null，口径 10）。 */
     private String toWarehouseType(String categoryType) {
         if (WmsConstants.CATEGORY_TYPE_HALF_FINISHED.equals(categoryType)) {

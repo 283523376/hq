@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsInboundOrderMapper">
+
+    <!--
+      乐观认领（与订单补偿任务同构）。允许来源：
+        1) 待同步            —— 首次同步尚未开始
+        2) 同步失败          —— 需要重新投递
+        3) 同步中 且已僵死    —— 上次进程崩溃留下的残局（超过阈值才回收）
+      仅「已审核」单据参与同步。返回受影响行数，0 即跳过。
+    -->
+    <update id="claimForSync">
+        UPDATE wms_inbound_order
+           SET sync_status    = '同步中',
+               last_sync_time = NOW()
+         WHERE id = #{id}
+           AND inbound_status = '已审核'
+           AND deleted_at = 0
+           AND (
+                 sync_status IN ('待同步', '同步失败')
+                 OR (sync_status = '同步中' AND (last_sync_time IS NULL OR last_sync_time &lt; #{staleBefore}))
+               )
+    </update>
+
+    <!-- 取待补偿单据：每轮限量，按最后尝试时间升序（最久没动的优先）。 -->
+    <select id="selectSyncCandidates" resultType="org.jeecg.modules.wms.entity.WmsInboundOrder">
+        SELECT *
+          FROM wms_inbound_order
+         WHERE deleted_at = 0
+           AND inbound_status = '已审核'
+           AND (
+                 sync_status IN ('待同步', '同步失败')
+                 OR (sync_status = '同步中' AND (last_sync_time IS NULL OR last_sync_time &lt; #{staleBefore}))
+               )
+         ORDER BY last_sync_time IS NULL DESC, last_sync_time ASC
+         LIMIT #{limit}
+    </select>
+
+</mapper>

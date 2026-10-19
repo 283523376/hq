@@ -274,4 +274,6 @@ public final class WmsConstants {
     public static final String INBOUND_SYNC_JOB_CRON = "0 9/5 * * * ? *";
     /** 同步候选的僵死阈值（分钟）：同步中超过该时长视为僵死，允许补偿任务重新认领。 */
     public static final int INBOUND_SYNC_STALE_MINUTES = 10;
+    /** 入库单同步失败告警标题。 */
+    public static final String INBOUND_SYNC_ALERT_TITLE = "WMS入库单ERP同步失败告警";
 }
