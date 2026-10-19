@@ -1,0 +1,203 @@
+package org.jeecg.modules.wms.service.impl;
+
+import org.jeecg.common.system.api.ISysBaseAPI;
+import org.jeecg.modules.wms.dto.WmsProductionSubmitDTO;
+import org.jeecg.modules.wms.entity.WmsInventory;
+import org.jeecg.modules.wms.entity.WmsLocation;
+import org.jeecg.modules.wms.entity.WmsProductionInbound;
+import org.jeecg.modules.wms.entity.WmsWarehouse;
+import org.jeecg.modules.wms.entity.WmsWorkOrder;
+import org.jeecg.modules.wms.mapper.WmsInventoryMapper;
+import org.jeecg.modules.wms.mapper.WmsLocationMapper;
+import org.jeecg.modules.wms.mapper.WmsProductionInboundMapper;
+import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
+import org.jeecg.modules.wms.mapper.WmsWorkOrderMapper;
+import org.jeecg.modules.wms.service.IWmsLocationService;
+import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * @Description: 生产入库提交单测：工单校验、计划量边界、载具占用、废品入库、库位占用。
+ *
+ * @Author: 永鑫WMS
+ * @Date: 2026-10-19
+ */
+class WmsProductionInboundServiceImplTest {
+
+    private WmsWorkOrderMapper workOrderMapper;
+    private WmsProductionInboundMapper inboundMapper;
+    private WmsLocationMapper locationMapper;
+    private WmsWarehouseMapper warehouseMapper;
+    private WmsInventoryMapper inventoryMapper;
+    private IWmsLocationService locationService;
+    private ISysBaseAPI sysBaseAPI;
+    private WmsProductionInboundServiceImpl service;
+
+    @BeforeEach
+    void setUp() {
+        workOrderMapper = mock(WmsWorkOrderMapper.class);
+        inboundMapper = mock(WmsProductionInboundMapper.class);
+        locationMapper = mock(WmsLocationMapper.class);
+        warehouseMapper = mock(WmsWarehouseMapper.class);
+        inventoryMapper = mock(WmsInventoryMapper.class);
+        locationService = mock(IWmsLocationService.class);
+        sysBaseAPI = mock(ISysBaseAPI.class);
+
+        service = new WmsProductionInboundServiceImpl();
+        WmsTestSupport.inject(service, "baseMapper", inboundMapper);
+        WmsTestSupport.inject(service, "workOrderMapper", workOrderMapper);
+        WmsTestSupport.inject(service, "inboundMapper", inboundMapper);
+        WmsTestSupport.inject(service, "locationMapper", locationMapper);
+        WmsTestSupport.inject(service, "warehouseMapper", warehouseMapper);
+        WmsTestSupport.inject(service, "inventoryMapper", inventoryMapper);
+        WmsTestSupport.inject(service, "locationService", locationService);
+        WmsTestSupport.inject(service, "sysBaseAPI", sysBaseAPI);
+    }
+
+    private void stubWorkOrder(String productType, String sum) {
+        WmsWorkOrder wo = new WmsWorkOrder()
+                .setWorkOrderNo("WO1")
+                .setPlanQty(new BigDecimal("100"))
+                .setProductType(productType)
+                .setMaterialId("mat1")
+                .setMaterialCode("M1")
+                .setMaterialName("物料一")
+                .setBatchNo("B1")
+                .setWorkOrderStatus("生产中");
+        when(workOrderMapper.selectByNoForUpdate("WO1")).thenReturn(wo);
+        when(inboundMapper.sumInboundedQty("WO1")).thenReturn(new BigDecimal(sum));
+        when(inboundMapper.insert(any(WmsProductionInbound.class))).thenReturn(1);
+        when(locationMapper.update(any(), any())).thenReturn(1);
+        WmsLocation freeLocation = new WmsLocation();
+        freeLocation.setId("loc1");
+        freeLocation.setStatus("空闲");
+        when(locationService.listFreeByWarehouseType("立库")).thenReturn(List.of(freeLocation));
+        WmsWarehouse warehouse = new WmsWarehouse();
+        warehouse.setId("wh1");
+        when(warehouseMapper.selectOne(org.mockito.ArgumentMatchers
+                .<com.baomidou.mybatisplus.core.conditions.Wrapper<WmsWarehouse>>any()))
+                .thenReturn(warehouse);
+        WmsLocation defaultLocation = new WmsLocation();
+        defaultLocation.setId("default-loc");
+        when(locationMapper.selectOne(org.mockito.ArgumentMatchers
+                .<com.baomidou.mybatisplus.core.conditions.Wrapper<WmsLocation>>any()))
+                .thenReturn(defaultLocation);
+    }
+
+    private WmsProductionSubmitDTO dto(String good, String bad, String carrier) {
+        WmsProductionSubmitDTO dto = new WmsProductionSubmitDTO();
+        dto.setWorkOrderNo("WO1");
+        dto.setGoodQty(new BigDecimal(good));
+        dto.setBadQty(new BigDecimal(bad));
+        dto.setCarrierCode(carrier);
+        dto.setBatchNo("B1");
+        return dto;
+    }
+
+    @Test
+    void submit_exceedsPlan_throwsExactMessage() {
+        stubWorkOrder("半成品", "95");
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.submit(dto("4", "2", "RFID-1")));
+        assertEquals("数量超出工单范围", e.getMessage());
+        verify(inboundMapper, never()).insert(any(WmsProductionInbound.class));
+    }
+
+    @Test
+    void submit_exactRemaining_isAccepted() {
+        stubWorkOrder("半成品", "95");
+        service.submit(dto("4", "1", "RFID-1"));
+        ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
+        verify(inboundMapper).insert(captor.capture());
+        assertEquals(0, captor.getValue().getQuantity().compareTo(new BigDecimal("5")));
+    }
+
+    @Test
+    void submit_activeCarrier_isRejected() {
+        stubWorkOrder("半成品", "0");
+        when(inboundMapper.selectActiveByCarrier("RFID-1")).thenReturn(new WmsProductionInbound());
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.submit(dto("1", "0", "RFID-1")));
+        assertEquals("载具正在使用中", e.getMessage());
+    }
+
+    @Test
+    void submit_badQty_writesScrapInventory() {
+        stubWorkOrder("半成品", "0");
+        service.submit(dto("8", "2", "RFID-1"));
+        ArgumentCaptor<WmsInventory> captor = ArgumentCaptor.forClass(WmsInventory.class);
+        verify(inventoryMapper).upsertInventory(captor.capture());
+        assertEquals("default-loc", captor.getValue().getLocationId());
+        assertEquals(0, captor.getValue().getQuantity().compareTo(new BigDecimal("2")));
+    }
+
+    @Test
+    void submit_semiFinished_locksStereoLocation() {
+        stubWorkOrder("半成品", "0");
+        service.submit(dto("8", "0", "RFID-1"));
+        verify(locationMapper).update(any(), any());
+    }
+
+    @Test
+    void submit_finished_usesAgileDefaultLocation() {
+        stubWorkOrder("成品", "0");
+        service.submit(dto("5", "0", "MITA_00101"));
+        ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
+        verify(inboundMapper).insert(captor.capture());
+        assertEquals("二维码", captor.getValue().getIdentType());
+        assertEquals("default-loc", captor.getValue().getLocationId());
+    }
+
+    @Test
+    void submit_carrierTooLong_isRejected() {
+        stubWorkOrder("半成品", "0");
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.submit(dto("1", "0", "X".repeat(65))));
+        assertEquals("载具码长度不能超过 64", e.getMessage());
+    }
+
+    @Test
+    void submit_quantityScaleTooLarge_isRejected() {
+        stubWorkOrder("半成品", "0");
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.submit(dto("1.0001", "0", "RFID-1")));
+        assertEquals("数量精度不能超过 3 位小数", e.getMessage());
+    }
+
+    @Test
+    void submit_duplicateActiveCarrierKey_mapsToUserMessage() {
+        stubWorkOrder("半成品", "0");
+        when(inboundMapper.insert(any(WmsProductionInbound.class))).thenThrow(
+                new org.springframework.dao.DuplicateKeyException(
+                        "Duplicate entry for key 'uk_wms_prod_inbound_active_carrier'"));
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.submit(dto("1", "0", "RFID-1")));
+        assertEquals("载具正在使用中", e.getMessage());
+    }
+
+    @Test
+    void submit_noGoodQty_isInboundImmediately() {
+        stubWorkOrder("半成品", "0");
+        service.submit(dto("0", "2", "RFID-1"));
+        ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
+        verify(inboundMapper).insert(captor.capture());
+        assertEquals("已入库", captor.getValue().getStatus());
+        assertEquals("待同步", captor.getValue().getSyncStatus());
+        verify(locationService, never()).listFreeByWarehouseType(anyString());
+    }
+}

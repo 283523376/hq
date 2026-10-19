@@ -282,4 +282,91 @@ public final class WmsConstants {
      * 而不是一直停留在「待同步」。
      */
     public static final String SYNC_STATUS_NOT_REQUIRED = "无需同步";
+
+    // ---------------------------------------------------------------- 生产入库域（RK-002）
+
+    /** 产品类型：半成品（立库 + 堆垛机 + 周转盘 RFID）。 */
+    public static final String PRODUCT_TYPE_SEMI = "半成品";
+    /** 产品类型：成品（敏捷仓 + SCR 机器人 + 料箱二维码）。 */
+    public static final String PRODUCT_TYPE_FINISHED = "成品";
+
+    /** 标识类型：RFID（贴在周转盘上）。 */
+    public static final String IDENT_TYPE_RFID = "RFID";
+    /** 标识类型：二维码（贴在料箱上）。 */
+    public static final String IDENT_TYPE_QRCODE = "二维码";
+
+    /** 生产入库状态：待上架。 */
+    public static final String PROD_STATUS_PENDING_PUTAWAY = "待上架";
+    /** 生产入库状态：执行中。 */
+    public static final String PROD_STATUS_EXECUTING = "执行中";
+    /** 生产入库状态：已入库。 */
+    public static final String PROD_STATUS_INBOUND = "已入库";
+    /** 生产入库状态：异常待人工。 */
+    public static final String PROD_STATUS_EXCEPTION = "异常待人工";
+    /** 生产入库状态：已关闭。 */
+    public static final String PROD_STATUS_CLOSED = "已关闭";
+
+    /** 任务状态：未下发。 */
+    public static final String TASK_STATUS_NOT_DISPATCHED = "未下发";
+    /** 任务状态：已受理。 */
+    public static final String TASK_STATUS_ACCEPTED = "已受理";
+    /** 任务状态：执行中。 */
+    public static final String TASK_STATUS_EXECUTING = "执行中";
+    /** 任务状态：已完成。 */
+    public static final String TASK_STATUS_FINISHED = "已完成";
+    /** 任务状态：失败。 */
+    public static final String TASK_STATUS_FAILED = "失败";
+    /** 任务状态：已关闭。 */
+    public static final String TASK_STATUS_CLOSED = "已关闭";
+
+    /** 工单状态：待生产。 */
+    public static final String WORK_ORDER_STATUS_PENDING = "待生产";
+    /** 工单状态：生产中。 */
+    public static final String WORK_ORDER_STATUS_IN_PROGRESS = "生产中";
+    /** 工单状态：已完成。 */
+    public static final String WORK_ORDER_STATUS_FINISHED = "已完成";
+    /** 工单状态：已关闭。 */
+    public static final String WORK_ORDER_STATUS_CLOSED = "已关闭";
+
+    /** 工单来源：MES。 */
+    public static final String WORK_ORDER_SOURCE_MES = "MES";
+    /** 工单来源：手工。 */
+    public static final String WORK_ORDER_SOURCE_MANUAL = "手工";
+
+    /** 库区类型：废品仓（不良品直接写库存，不做库位分配）。 */
+    public static final String WAREHOUSE_TYPE_SCRAP = "废品仓";
+    /** 废品仓默认库位编码。 */
+    public static final String LOCATION_CODE_SCRAP_DEFAULT = "FPC-DEFAULT";
+    /** 敏捷仓在库默认位编码（成品库存聚合位）。 */
+    public static final String LOCATION_CODE_AGILE_DEFAULT = "MJ-DEFAULT";
+
+    /** 生产入库单号前缀。 */
+    public static final String INBOUND_NO_PREFIX_PRODUCTION = "SC";
+    /** 成品任务号前缀（米塔 RMS）。 */
+    public static final String TASK_NO_PREFIX_RMS = "RMS";
+    /** 半成品任务号前缀（堆垛机 WCS）。 */
+    public static final String TASK_NO_PREFIX_WCS = "WCS";
+
+    /** 未下发补偿阈值（分钟）：提交后超过该时长仍「未下发」即重新下发。 */
+    public static final int UNDISPATCHED_TIMEOUT_MINUTES = 2;
+
+    /** RMS 错误码：任务号已存在（重复下发按已受理处理）。 */
+    public static final int RMS_ERROR_TASK_EXISTS = 300001;
+    /** RMS 错误码：容器编码已存在（转人工）。 */
+    public static final int RMS_ERROR_CONTAINER_EXISTS = 300006;
+    /** RMS 错误码：接口调用失败，可重试。 */
+    public static final int RMS_ERROR_RETRYABLE = 300000;
+
+    /** 生产入库同步补偿任务在 sys_quartz_job 中的主键；必须与 Flyway 种子行一致。 */
+    public static final String PRODUCTION_SYNC_JOB_ID = "1920000000000000230";
+    /** 生产入库同步补偿任务类名；必须与 Flyway 种子行一致。 */
+    public static final String PRODUCTION_SYNC_JOB_CLASS = "org.jeecg.modules.wms.job.WmsProductionSyncRetryJob";
+    /** 生产入库补偿 cron：每 5 分钟落在 :13/:18/…，与其它补偿任务错峰。 */
+    public static final String PRODUCTION_SYNC_JOB_CRON = "0 13/5 * * * ? *";
+    /** 生产入库同步失败告警标题。 */
+    public static final String PRODUCTION_SYNC_ALERT_TITLE = "WMS生产入库同步失败告警";
+    /** 生产入库设备异常告警标题。 */
+    public static final String PRODUCTION_DEVICE_ALERT_TITLE = "WMS生产入库设备异常告警";
+    /** 生产入库库位不足告警标题。 */
+    public static final String PRODUCTION_LOCATION_ALERT_TITLE = "WMS生产入库库位不足告警";
 }

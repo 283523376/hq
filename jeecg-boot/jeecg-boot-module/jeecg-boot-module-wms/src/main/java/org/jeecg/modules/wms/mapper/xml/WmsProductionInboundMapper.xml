@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsProductionInboundMapper">
+
+    <!--
+      已占用数量：已关闭记录只释放良品占用的计划量，不良品已实际进入废品仓，
+      继续计入占用，避免关单后重提同一批导致废品库存重复累计。
+    -->
+    <select id="sumInboundedQty" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(CASE WHEN status = '已关闭' THEN bad_qty ELSE quantity END), 0)
+          FROM wms_production_inbound
+         WHERE work_order_no = #{workOrderNo}
+           AND deleted_at = 0
+    </select>
+
+    <!-- 载具未完结占用：同一载具同时只允许一条未完结记录 -->
+    <select id="selectActiveByCarrier" resultType="org.jeecg.modules.wms.entity.WmsProductionInbound">
+        SELECT *
+          FROM wms_production_inbound
+         WHERE carrier_code = #{carrierCode}
+           AND deleted_at = 0
+           AND status IN ('待上架', '执行中', '异常待人工')
+         LIMIT 1
+    </select>
+
+    <!--
+      认领入库完成：允许从 待上架/执行中/异常待人工 收敛
+      （解决「下发 HTTP 超时但设备已实际受理」与重复回执）。
+      影响行数 0 即已被处理，调用方不得再写库存。
+    -->
+    <update id="claimFinished">
+        UPDATE wms_production_inbound
+           SET status        = '已入库',
+               task_status   = '已完成',
+               stack_code    = COALESCE(#{stackCode}, stack_code),
+               complete_time = NOW(),
+               sync_status   = '待同步',
+               update_time   = NOW()
+         WHERE wcs_task_no = #{taskNo}
+           AND deleted_at = 0
+           AND status IN ('待上架', '执行中', '异常待人工')
+    </update>
+
+    <!-- 同步候选：仅已入库单据；同步中超过僵死阈值才回收 -->
+    <select id="selectSyncCandidates" resultType="org.jeecg.modules.wms.entity.WmsProductionInbound">
+        SELECT *
+          FROM wms_production_inbound
+         WHERE deleted_at = 0
+           AND status = '已入库'
+           AND (
+                 sync_status IN ('待同步', '同步失败')
+                 OR (sync_status = '同步中' AND (last_sync_time IS NULL OR last_sync_time &lt; #{staleBefore}))
+               )
+         ORDER BY last_sync_time IS NULL DESC, last_sync_time ASC
+         LIMIT #{limit}
+    </select>
+
+    <update id="claimForSync">
+        UPDATE wms_production_inbound
+           SET sync_status    = '同步中',
+               last_sync_time = NOW()
+         WHERE id = #{id}
+           AND status = '已入库'
+           AND deleted_at = 0
+           AND (
+                 sync_status IN ('待同步', '同步失败')
+                 OR (sync_status = '同步中' AND (last_sync_time IS NULL OR last_sync_time &lt; #{staleBefore}))
+               )
+    </update>
+
+    <!-- 未下发补偿：提交成功但事务提交后 JVM 崩溃/下发前中断 -->
+    <select id="selectUndispatchedBefore" resultType="org.jeecg.modules.wms.entity.WmsProductionInbound">
+        SELECT *
+          FROM wms_production_inbound
+         WHERE deleted_at = 0
+           AND status = '待上架'
+           AND task_status = '未下发'
+           AND submit_time &lt; #{before}
+         ORDER BY submit_time ASC
+         LIMIT #{limit}
+    </select>
+
+</mapper>

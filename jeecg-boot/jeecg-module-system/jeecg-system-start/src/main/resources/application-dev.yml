@@ -438,3 +438,49 @@ justauth:
     type: default
     prefix: 'demo::'
     timeout: 1h
+# ============================================================================
+# 永鑫WMS 外部系统对接占位（YX-WMS-RK-002 生产入库）
+# 说明：
+#   1) 地址为空时各网关走「模拟受理/模拟成功」，保证无外部系统时流程可闭环演示；
+#   2) 拿到 MES/ERP 地址、报文最终版与测试账号后，只改本段配置，不改业务代码；
+#   3) 开发令牌仅用于本机联调，生产环境必须替换。
+# ============================================================================
+wms:
+  sync:
+    mes:
+      # MES 工单查询地址（占位）；未配置时只查本地 wms_work_order
+      work-order-url: ""
+      # MES 测试账号（占位）
+      username: ""
+      password: ""
+      # MES 推送工单到 WMS 的令牌（开发占位，生产必须替换）
+      push-token: "dev-mes-token"
+      # 生产入库同步 MES 地址（占位）
+      production-inbound-url: ""
+    rms:
+      # 米塔 RMS 根地址（占位），例如 http://192.168.x.x:8080；未配置走模拟受理
+      url: ""
+      # 入库工作站编码（占位）
+      station-code: ""
+      warehouse: "MITA"
+      priority: 1
+      timeout-ms: 60000
+      # RMS 回调令牌（开发占位，生产必须替换）
+      callback-token: "dev-rms-token"
+    wcs:
+      # 堆垛机 WCS 入库下发地址（占位，协议待对方提供）
+      inbound-url: ""
+      # 堆垛机 WCS 任务取消地址（占位）
+      cancel-url: ""
+      username: ""
+      password: ""
+      # WCS 回执令牌（开发占位，生产必须替换）
+      callback-token: "dev-wcs-token"
+    erp:
+      # 生产入库同步 ERP 地址（占位）
+      production-inbound-url: ""
+      username: ""
+      password: ""
+    # 同步上级 WMS 地址（占位）
+    wms:
+      production-inbound-url: ""
