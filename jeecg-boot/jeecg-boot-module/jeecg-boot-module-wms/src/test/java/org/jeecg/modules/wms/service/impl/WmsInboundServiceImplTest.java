@@ -440,4 +440,75 @@ class WmsInboundServiceImplTest {
         assertEquals(WmsConstants.SYNC_STATUS_FAILED, service.getById("ib1").getSyncStatus());
         assertTrue(service.getById("ib1").getLastSyncError().contains("ERP 连接失败"));
     }
+
+    // ------------------------------------------------------------ 作废（口径 7）
+
+    @Test
+    void voidSetsTerminalStateFromPendingInspect() {
+        inspectMapperStub();
+        setOrderStatus(WmsConstants.INBOUND_STATUS_PENDING_INSPECT);
+
+        service.voidOrder("ib1", "物料录错");
+
+        assertEquals(WmsConstants.INBOUND_STATUS_VOIDED, service.getById("ib1").getInboundStatus());
+        assertTrue(service.getById("ib1").getRejectReason().contains("物料录错"));
+    }
+
+    @Test
+    void voidRejectsAuditedOrder() {
+        inspectMapperStub();
+        setOrderStatus(WmsConstants.INBOUND_STATUS_AUDITED);
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.voidOrder("ib1", "试图作废已入库单"));
+        assertEquals("当前状态不可作废", ex.getMessage());
+    }
+
+    @Test
+    void voidRejectsBlankReason() {
+        inspectMapperStub();
+        setOrderStatus(WmsConstants.INBOUND_STATUS_PENDING_INSPECT);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.voidOrder("ib1", "  "));
+        assertEquals("作废原因不能为空", ex.getMessage());
+    }
+
+    /** 允许作废的三个状态；其余状态必须拒绝。 */
+    @Test
+    void voidAllowsAllThreePreStockStates() {
+        for (String status : new String[] {WmsConstants.INBOUND_STATUS_PENDING_INSPECT,
+                WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE, WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY}) {
+            inspectMapperStub();
+            setOrderStatus(status);
+            service.voidOrder("ib1", "测试");
+            assertEquals(WmsConstants.INBOUND_STATUS_VOIDED, service.getById("ib1").getInboundStatus(), status);
+        }
+    }
+
+    private org.jeecg.modules.wms.entity.WmsInboundOrder currentOrder;
+
+    private void setOrderStatus(String status) {
+        currentOrder = new org.jeecg.modules.wms.entity.WmsInboundOrder();
+        currentOrder.setId("ib1");
+        currentOrder.setOrderNo("SL001");
+        currentOrder.setInboundStatus(status);
+        WmsInboundServiceImpl spyService = org.mockito.Mockito.spy(new WmsInboundServiceImpl());
+        copyInjected(spyService);
+        doReturn(currentOrder).when(spyService).getById("ib1");
+        doReturn(true).when(spyService).updateById(any(org.jeecg.modules.wms.entity.WmsInboundOrder.class));
+        service = spyService;
+    }
+
+    private void inspectMapperStub() {
+        // 仅确保 baseMapper 等依赖存在（setUp 已注入）
+    }
+
+    private void copyInjected(WmsInboundServiceImpl target) {
+        WmsTestSupport.inject(target, "baseMapper", mock(org.jeecg.modules.wms.mapper.WmsInboundOrderMapper.class));
+        WmsTestSupport.inject(target, "orderService", orderService);
+        WmsTestSupport.inject(target, "materialService", materialService);
+        WmsTestSupport.inject(target, "categoryService", categoryService);
+        WmsTestSupport.inject(target, "detailMapper", detailMapper);
+        WmsTestSupport.inject(target, "inspectionTaskMapper", inspectionTaskMapper);
+    }
 }

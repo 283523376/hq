@@ -72,4 +72,26 @@ public interface IWmsInboundService extends JeecgService<WmsInboundOrder> {
      * 写回同步结果。集中在一处，避免服务与定时任务各写一遍。
      */
     void persistSyncResult(String id, org.jeecg.modules.wms.sync.WmsOrderSyncAttempt attempt);
+
+    /**
+     * 作废（口径 7）：仅「待检验/待分配/待上架」可作废——此时尚未产生库存，作废是安全的。
+     *
+     * @param inboundId 入库单ID
+     * @param reason    作废原因（必填）
+     * @throws RuntimeException 状态不允许或原因为空
+     */
+    void voidOrder(String inboundId, String reason);
+
+    /**
+     * 分页查询（按单据状态 / 单号 / 供应商名称模糊）。
+     */
+    com.baomidou.mybatisplus.core.metadata.IPage<WmsInboundOrder> listPage(
+            int pageNo, int pageSize, String inboundStatus, String orderNo, String supplierName);
+
+    /**
+     * 单据详情（单据 + 明细 + 检验任务）。
+     *
+     * @throws RuntimeException 单据不存在
+     */
+    org.jeecg.modules.wms.vo.WmsInboundDetailVO detail(String id);
 }

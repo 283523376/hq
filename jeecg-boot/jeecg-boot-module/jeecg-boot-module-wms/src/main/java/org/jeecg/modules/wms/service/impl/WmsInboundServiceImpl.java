@@ -213,6 +213,65 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
         updateById(result);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void voidOrder(String inboundId, String reason) {
+        if (oConvertUtils.isEmpty(reason == null ? null : reason.trim())) {
+            throw new RuntimeException("作废原因不能为空");
+        }
+        WmsInboundOrder order = getById(inboundId);
+        if (order == null) {
+            throw new RuntimeException("单据不存在");
+        }
+        String status = order.getInboundStatus();
+        boolean preStock = WmsConstants.INBOUND_STATUS_PENDING_INSPECT.equals(status)
+                || WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE.equals(status)
+                || WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY.equals(status);
+        if (!preStock) {
+            throw new RuntimeException("当前状态不可作废");
+        }
+        order.setInboundStatus(WmsConstants.INBOUND_STATUS_VOIDED);
+        order.setRejectReason("作废：" + reason.trim());
+        updateById(order);
+        log.info("单据作废：单号={}，原因={}", order.getOrderNo(), reason.trim());
+    }
+
+    @Override
+    public com.baomidou.mybatisplus.core.metadata.IPage<WmsInboundOrder> listPage(
+            int pageNo, int pageSize, String inboundStatus, String orderNo, String supplierName) {
+        com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<WmsInboundOrder> qw =
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<>();
+        if (oConvertUtils.isNotEmpty(inboundStatus)) {
+            qw.eq("inbound_status", inboundStatus);
+        }
+        if (oConvertUtils.isNotEmpty(orderNo)) {
+            qw.like("order_no", orderNo.trim());
+        }
+        if (oConvertUtils.isNotEmpty(supplierName)) {
+            qw.like("supplier_name", supplierName.trim());
+        }
+        qw.orderByDesc("create_time");
+        return page(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNo, pageSize), qw);
+    }
+
+    @Override
+    public org.jeecg.modules.wms.vo.WmsInboundDetailVO detail(String id) {
+        WmsInboundOrder order = getById(id);
+        if (order == null) {
+            throw new RuntimeException("单据不存在");
+        }
+        org.jeecg.modules.wms.vo.WmsInboundDetailVO vo = new org.jeecg.modules.wms.vo.WmsInboundDetailVO();
+        vo.setOrder(order);
+        vo.setDetails(detailMapper.selectList(
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInboundDetail>query()
+                        .eq("inbound_id", id).orderByAsc("id")));
+        java.util.List<WmsInspectionTask> tasks = inspectionTaskMapper.selectList(
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInspectionTask>query()
+                        .eq("inbound_id", id).last("LIMIT 1"));
+        vo.setInspection(tasks == null || tasks.isEmpty() ? null : tasks.get(0));
+        return vo;
+    }
+
     /** 分类类型 → 库区类型（半成品→立库、辅料→线边柜、其他→null，口径 10）。 */
     private String toWarehouseType(String categoryType) {
         if (WmsConstants.CATEGORY_TYPE_HALF_FINISHED.equals(categoryType)) {

@@ -92,6 +92,39 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
         }
     }
 
+    @Operation(summary = "入库-分页列表")
+    @GetMapping(value = "/list")
+    public Result<com.baomidou.mybatisplus.core.metadata.IPage<WmsInboundOrder>> list(
+            @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
+            @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
+            @RequestParam(name = "inboundStatus", required = false) String inboundStatus,
+            @RequestParam(name = "orderNo", required = false) String orderNo,
+            @RequestParam(name = "supplierName", required = false) String supplierName) {
+        return Result.OK(service.listPage(pageNo, pageSize, inboundStatus, orderNo, supplierName));
+    }
+
+    @Operation(summary = "入库-单据详情")
+    @GetMapping(value = "/{id}")
+    public Result<org.jeecg.modules.wms.vo.WmsInboundDetailVO> detail(@PathVariable("id") String id) {
+        try {
+            return Result.OK(service.detail(id));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @Operation(summary = "入库-作废")
+    @PostMapping(value = "/{id}/void")
+    public Result<Void> voidOrder(@PathVariable("id") String id,
+                                  @RequestBody java.util.Map<String, String> body) {
+        try {
+            service.voidOrder(id, body == null ? null : body.get("reason"));
+            return Result.OK("作废成功", null);
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
     @Autowired
     private org.jeecg.modules.wms.service.IWmsInboundSyncService inboundSyncService;
 
