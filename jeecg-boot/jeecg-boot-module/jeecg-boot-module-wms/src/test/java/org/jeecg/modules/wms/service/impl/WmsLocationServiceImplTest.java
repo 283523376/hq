@@ -582,4 +582,45 @@ class WmsLocationServiceImplTest {
 
         verify(service, times(1)).getById("L1");
     }
+
+    // ------------------------------------------------------------ 库存引用守卫（RK-001）
+
+    private static WmsLocation idleLocation(String id) {
+        WmsLocation l = new WmsLocation();
+        l.setId(id);
+        l.setLocationCode("LB-1");
+        l.setStatus(WmsConstants.LOCATION_STATUS_IDLE);
+        return l;
+    }
+
+    @Test
+    void locationDeleteBlockedByInventory() {
+        WmsLocationServiceImpl service = spy(new WmsLocationServiceImpl());
+        doReturn(idleLocation("l1")).when(service).getById("l1");
+        org.jeecg.modules.wms.mapper.WmsInventoryMapper inv =
+                mock(org.jeecg.modules.wms.mapper.WmsInventoryMapper.class);
+        WmsTestSupport.inject(service, "inventoryMapper", inv);
+        when(inv.selectCount(any())).thenReturn(2L);
+
+        WmsDeleteCheckVO vo = service.checkDelete("l1");
+
+        assertFalse(vo.isDeletable());
+        assertTrue(vo.getBlockers().stream()
+                .anyMatch(b -> b.getMessage().contains("库存记录")));
+    }
+
+    @Test
+    void locationReleaseBlockedByInventory() {
+        WmsLocationServiceImpl service = spy(new WmsLocationServiceImpl());
+        WmsLocation occupied = idleLocation("l1");
+        occupied.setStatus(WmsConstants.LOCATION_STATUS_OCCUPIED);
+        doReturn(occupied).when(service).getById("l1");
+        org.jeecg.modules.wms.mapper.WmsInventoryMapper inv =
+                mock(org.jeecg.modules.wms.mapper.WmsInventoryMapper.class);
+        WmsTestSupport.inject(service, "inventoryMapper", inv);
+        when(inv.selectCount(any())).thenReturn(1L);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.release("l1"));
+        assertEquals("该库位已有库存，不能释放", ex.getMessage());
+    }
 }

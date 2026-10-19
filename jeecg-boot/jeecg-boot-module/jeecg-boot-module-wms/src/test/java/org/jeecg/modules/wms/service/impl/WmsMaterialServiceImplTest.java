@@ -380,4 +380,32 @@ class WmsMaterialServiceImplTest {
 
         assertNull(service.resolveCategoryIdByCode("NO_SUCH_CAT"));
     }
+
+    // ------------------------------------------------------------ 库存引用守卫（RK-001）
+
+    @Test
+    void materialDeleteBlockedByInventory() {
+        WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
+        org.jeecg.modules.wms.mapper.WmsInventoryMapper inv =
+                mock(org.jeecg.modules.wms.mapper.WmsInventoryMapper.class);
+        WmsTestSupport.inject(service, "inventoryMapper", inv);
+        when(inv.selectCount(any())).thenReturn(3L);
+
+        WmsDeleteCheckVO vo = service.checkDelete("m1");
+
+        assertFalse(vo.isDeletable());
+        assertTrue(vo.getBlockers().get(0).getMessage().contains("库存记录"));
+        assertEquals(3, vo.getBlockers().get(0).getCount());
+    }
+
+    @Test
+    void materialDeleteAllowedWhenNoInventory() {
+        WmsMaterialServiceImpl service = serviceWithCategoryMapper(mock(WmsMaterialCategoryMapper.class));
+        org.jeecg.modules.wms.mapper.WmsInventoryMapper inv =
+                mock(org.jeecg.modules.wms.mapper.WmsInventoryMapper.class);
+        WmsTestSupport.inject(service, "inventoryMapper", inv);
+        when(inv.selectCount(any())).thenReturn(0L);
+
+        assertTrue(service.checkDelete("m1").isDeletable());
+    }
 }

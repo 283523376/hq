@@ -42,6 +42,9 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
     @Autowired
     private IWmsWarehouseService wmsWarehouseService;
 
+    @Autowired
+    private org.jeecg.modules.wms.mapper.WmsInventoryMapper inventoryMapper;
+
     @Override
     public WmsLocationGenResultVO generate(WmsLocationGenDTO dto) {
         if (dto == null || oConvertUtils.isEmpty(dto.getWarehouseId())) {
@@ -149,6 +152,10 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
         if (!WmsConstants.LOCATION_STATUS_OCCUPIED.equals(existing.getStatus())) {
             throw new RuntimeException("仅占用状态的库位可释放");
         }
+        // RK-001：有库存不许释放（本期无出库流程，释放前必须先清库存）
+        if (countInventory(id) > 0) {
+            throw new RuntimeException("该库位已有库存，不能释放");
+        }
         WmsLocation update = new WmsLocation();
         update.setId(id);
         update.setStatus(WmsConstants.LOCATION_STATUS_IDLE);
@@ -210,7 +217,26 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
             vo.addBlocker("库位已占用或有故障", 1,
                     Collections.singletonList(location.getLocationCode()));
         }
+        // RK-001：有库存记录的库位不可删（防止「库存行还在、库位被删」的孤儿数据）
+        long inventoryCount = countInventory(location.getId());
+        if (inventoryCount > 0) {
+            vo.addBlocker("该库位已存在库存记录", inventoryCount,
+                    Collections.singletonList(location.getLocationCode()));
+        }
         return vo;
+    }
+
+    /**
+     * 该库位上的库存行数。
+     *
+     * <p>mapper 为 null 只会出现在单测裸构造场景（生产缺 bean 时 Spring 启动即失败）。
+     */
+    private long countInventory(String locationId) {
+        if (inventoryMapper == null) {
+            return 0L;
+        }
+        return inventoryMapper.selectCount(
+                new QueryWrapper<org.jeecg.modules.wms.entity.WmsInventory>().eq("location_id", locationId));
     }
 
     /** 批量删除整体在一个事务里（原 controller 循环逐条、无事务，遇守卫会部分成功）。 */

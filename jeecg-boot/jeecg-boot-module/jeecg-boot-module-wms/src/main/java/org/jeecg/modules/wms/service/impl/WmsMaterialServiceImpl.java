@@ -35,6 +35,9 @@ public class WmsMaterialServiceImpl extends ServiceImpl<WmsMaterialMapper, WmsMa
     @Autowired
     private WmsMaterialCategoryMapper wmsMaterialCategoryMapper;
 
+    @Autowired
+    private org.jeecg.modules.wms.mapper.WmsInventoryMapper inventoryMapper;
+
     @Override
     public void addMaterial(WmsMaterial material) {
         if (checkCodeExists(material.getMaterialCode(), null)) {
@@ -67,9 +70,19 @@ public class WmsMaterialServiceImpl extends ServiceImpl<WmsMaterialMapper, WmsMa
 
     @Override
     public WmsDeleteCheckVO checkDelete(String id) {
-        // 物料当前没有子表引用（尚无库存表/订单明细表），故恒可删。
-        // 这是删除时间戳方案下的软删，数据可恢复；未来库存表接入时在此追加 blocker 即可。
-        return new WmsDeleteCheckVO();
+        WmsDeleteCheckVO vo = new WmsDeleteCheckVO();
+        if (oConvertUtils.isEmpty(id)) {
+            return vo;
+        }
+        // RK-001：库存表接入后，有库存记录的物料不可删（否则留下孤儿库存）
+        // mapper 为 null 只会出现在单测裸构造场景（生产缺 bean 时 Spring 启动即失败）
+        long inventoryCount = inventoryMapper == null ? 0L : inventoryMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<org.jeecg.modules.wms.entity.WmsInventory>()
+                        .eq("material_id", id));
+        if (inventoryCount > 0) {
+            vo.addBlocker("该物料已存在库存记录", inventoryCount, java.util.Collections.singletonList(id));
+        }
+        return vo;
     }
 
     @Override
