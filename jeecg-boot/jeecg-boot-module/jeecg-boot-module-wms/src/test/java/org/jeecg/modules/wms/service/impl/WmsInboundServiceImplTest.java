@@ -159,4 +159,125 @@ class WmsInboundServiceImplTest {
         RuntimeException ex = assertThrows(RuntimeException.class, () -> service.receive(dto));
         assertEquals("收料明细不能为空", ex.getMessage());
     }
+
+    // ------------------------------------------------------------ 自动分配（RK-001 step5）
+
+    private org.jeecg.modules.wms.service.IWmsLocationService locationService;
+
+    private void stubAllocateEnv(String orderStatus,
+                                 java.util.List<org.jeecg.modules.wms.entity.WmsInboundDetail> rows) {
+        locationService = mock(org.jeecg.modules.wms.service.IWmsLocationService.class);
+        WmsTestSupport.inject(service, "locationService", locationService);
+        WmsInboundServiceImpl spyService = org.mockito.Mockito.spy(service);
+        org.jeecg.modules.wms.entity.WmsInboundOrder order = new org.jeecg.modules.wms.entity.WmsInboundOrder();
+        order.setId("ib1");
+        order.setInboundStatus(orderStatus);
+        doReturn(order).when(spyService).getById("ib1");
+        doReturn(true).when(spyService).updateById(any(org.jeecg.modules.wms.entity.WmsInboundOrder.class));
+        when(detailMapper.selectList(any())).thenReturn(rows);
+        service = spyService;
+    }
+
+    private org.jeecg.modules.wms.entity.WmsInboundDetail row(String id, String matName, String categoryType) {
+        org.jeecg.modules.wms.entity.WmsInboundDetail d = new org.jeecg.modules.wms.entity.WmsInboundDetail();
+        d.setId(id);
+        d.setMaterialId("m-" + id);
+        d.setMaterialName(matName);
+        if (categoryType != null) {
+            WmsMaterial m = new WmsMaterial();
+            m.setId("m-" + id);
+            m.setMaterialName(matName);
+            m.setCategoryId("c-" + id);
+            when(materialService.getById("m-" + id)).thenReturn(m);
+            WmsMaterialCategory c = new WmsMaterialCategory();
+            c.setId("c-" + id);
+            c.setCategoryType(categoryType);
+            when(categoryService.getById("c-" + id)).thenReturn(c);
+        } else {
+            // 口径 10 的「其他」：有物料但分类缺失/无类型
+            WmsMaterial m = new WmsMaterial();
+            m.setId("m-" + id);
+            m.setMaterialName(matName);
+            when(materialService.getById("m-" + id)).thenReturn(m);
+        }
+        return d;
+    }
+
+    private org.jeecg.modules.wms.entity.WmsLocation loc(String id) {
+        org.jeecg.modules.wms.entity.WmsLocation l = new org.jeecg.modules.wms.entity.WmsLocation();
+        l.setId(id);
+        l.setLocationCode(id);
+        l.setStatus("空闲");
+        return l;
+    }
+
+    @Test
+    void autoAllocateMapsHalfFinishedToStereo() {
+        stubAllocateEnv(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE,
+                java.util.Collections.singletonList(row("d1", "电路板", WmsConstants.CATEGORY_TYPE_HALF_FINISHED)));
+        when(locationService.listFreeByWarehouseType("立库"))
+                .thenReturn(java.util.Collections.singletonList(loc("LB-1")));
+
+        org.jeecg.modules.wms.vo.WmsAllocateResultVO vo = service.autoAllocate("ib1");
+
+        assertEquals(1, vo.getAllocatedCount());
+        org.mockito.ArgumentCaptor<org.jeecg.modules.wms.entity.WmsInboundDetail> cap =
+                org.mockito.ArgumentCaptor.forClass(org.jeecg.modules.wms.entity.WmsInboundDetail.class);
+        verify(detailMapper).updateById(cap.capture());
+        assertEquals("LB-1", cap.getValue().getLocationId());
+        assertEquals(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, service.getById("ib1").getInboundStatus());
+    }
+
+    @Test
+    void autoAllocateMapsAuxiliaryToLineSide() {
+        stubAllocateEnv(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE,
+                java.util.Collections.singletonList(row("d1", "原材料", WmsConstants.CATEGORY_TYPE_AUXILIARY)));
+        when(locationService.listFreeByWarehouseType("线边柜"))
+                .thenReturn(java.util.Collections.singletonList(loc("XB-1")));
+
+        org.jeecg.modules.wms.vo.WmsAllocateResultVO vo = service.autoAllocate("ib1");
+
+        assertEquals(1, vo.getAllocatedCount());
+        org.mockito.ArgumentCaptor<org.jeecg.modules.wms.entity.WmsInboundDetail> cap =
+                org.mockito.ArgumentCaptor.forClass(org.jeecg.modules.wms.entity.WmsInboundDetail.class);
+        verify(detailMapper).updateById(cap.capture());
+        assertEquals("XB-1", cap.getValue().getLocationId());
+    }
+
+    @Test
+    void autoAllocateReturnsWarningsWhenInsufficient() {
+        org.jeecg.modules.wms.entity.WmsInboundDetail d1 = row("d1", "电路板", WmsConstants.CATEGORY_TYPE_HALF_FINISHED);
+        org.jeecg.modules.wms.entity.WmsInboundDetail d2 = row("d2", "电路板", WmsConstants.CATEGORY_TYPE_HALF_FINISHED);
+        stubAllocateEnv(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE, java.util.Arrays.asList(d1, d2));
+        when(locationService.listFreeByWarehouseType("立库"))
+                .thenReturn(java.util.Collections.singletonList(loc("LB-1")));
+
+        org.jeecg.modules.wms.vo.WmsAllocateResultVO vo = service.autoAllocate("ib1");
+
+        assertEquals(1, vo.getAllocatedCount());
+        assertEquals(1, vo.getUnallocated().size());
+        assertEquals("库位不足", vo.getUnallocated().get(0).getReason());
+        assertTrue(vo.getWarnings().size() > 0);
+        assertEquals(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE, service.getById("ib1").getInboundStatus());
+    }
+
+    @Test
+    void autoAllocateSkipsUnknownCategoryType() {
+        stubAllocateEnv(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE,
+                java.util.Collections.singletonList(row("d1", "神秘物料", null)));
+
+        org.jeecg.modules.wms.vo.WmsAllocateResultVO vo = service.autoAllocate("ib1");
+
+        assertEquals(0, vo.getAllocatedCount());
+        assertEquals("该物料类型不支持自动分配", vo.getUnallocated().get(0).getReason());
+        verify(detailMapper, never()).updateById(any(org.jeecg.modules.wms.entity.WmsInboundDetail.class));
+    }
+
+    @Test
+    void autoAllocateRejectsWrongState() {
+        stubAllocateEnv(WmsConstants.INBOUND_STATUS_PENDING_INSPECT, java.util.Collections.emptyList());
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.autoAllocate("ib1"));
+        assertEquals("当前状态不允许自动分配", ex.getMessage());
+    }
 }

@@ -8,6 +8,7 @@ import org.jeecg.modules.wms.dto.WmsReceiveDTO;
 import org.jeecg.modules.wms.entity.WmsInboundDetail;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.entity.WmsInspectionTask;
+import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.entity.WmsOrder;
@@ -43,6 +44,8 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
     private IWmsMaterialService materialService;
     @Autowired
     private IWmsMaterialCategoryService categoryService;
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsLocationService locationService;
     @Autowired
     private WmsInboundDetailMapper detailMapper;
     @Autowired
@@ -107,6 +110,78 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
                 : WmsConstants.INBOUND_STATUS_INSPECT_FAILED);
         updateById(order);
         log.info("检验回写：单号={}，状态={}", order.getOrderNo(), order.getInboundStatus());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public org.jeecg.modules.wms.vo.WmsAllocateResultVO autoAllocate(String inboundId) {
+        WmsInboundOrder order = getById(inboundId);
+        if (order == null) {
+            throw new RuntimeException("单据不存在");
+        }
+        if (!WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE.equals(order.getInboundStatus())
+                && !WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY.equals(order.getInboundStatus())) {
+            throw new RuntimeException("当前状态不允许自动分配");
+        }
+        java.util.List<WmsInboundDetail> details = detailMapper.selectList(
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInboundDetail>query()
+                        .eq("inbound_id", inboundId).orderByAsc("id"));
+        org.jeecg.modules.wms.vo.WmsAllocateResultVO vo = new org.jeecg.modules.wms.vo.WmsAllocateResultVO();
+        // 每个库区类型只查一次空闲库位，分配一行消费一个候选（口径 9）
+        java.util.Map<String, java.util.Deque<WmsLocation>> freeByType = new java.util.HashMap<>();
+        int allocated = 0;
+        for (WmsInboundDetail detail : details) {
+            if (oConvertUtils.isNotEmpty(detail.getLocationId())) {
+                allocated++;
+                continue;
+            }
+            WmsMaterial material = materialService.getById(detail.getMaterialId());
+            String warehouseType = material == null ? null : toWarehouseType(resolveCategoryType(material));
+            if (warehouseType == null) {
+                addUnallocated(vo, detail, material == null ? "物料不存在" : "该物料类型不支持自动分配");
+                continue;
+            }
+            WmsLocation free = freeByType
+                    .computeIfAbsent(warehouseType, k -> new java.util.ArrayDeque<>(locationService.listFreeByWarehouseType(k)))
+                    .poll();
+            if (free == null) {
+                addUnallocated(vo, detail, "库位不足");
+                if (!vo.getWarnings().contains("库位不足，请人工介入")) {
+                    vo.getWarnings().add("库位不足，请人工介入");
+                }
+                continue;
+            }
+            detail.setLocationId(free.getId());
+            detailMapper.updateById(detail);
+            allocated++;
+        }
+        vo.setAllocatedCount(allocated);
+        boolean allAllocated = !details.isEmpty() && allocated == details.size();
+        if (allAllocated && WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE.equals(order.getInboundStatus())) {
+            order.setInboundStatus(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY);
+            updateById(order);
+        }
+        log.info("自动分配：单号={}，分配 {} / {} 行，告警 {}", order.getOrderNo(), allocated, details.size(), vo.getWarnings().size());
+        return vo;
+    }
+
+    private void addUnallocated(org.jeecg.modules.wms.vo.WmsAllocateResultVO vo, WmsInboundDetail detail, String reason) {
+        org.jeecg.modules.wms.vo.WmsAllocateResultVO.Unallocated u = new org.jeecg.modules.wms.vo.WmsAllocateResultVO.Unallocated();
+        u.setDetailId(detail.getId());
+        u.setMaterialName(detail.getMaterialName());
+        u.setReason(reason);
+        vo.getUnallocated().add(u);
+    }
+
+    /** 分类类型 → 库区类型（半成品→立库、辅料→线边柜、其他→null，口径 10）。 */
+    private String toWarehouseType(String categoryType) {
+        if (WmsConstants.CATEGORY_TYPE_HALF_FINISHED.equals(categoryType)) {
+            return WmsConstants.WAREHOUSE_TYPE_STEREO;
+        }
+        if (WmsConstants.CATEGORY_TYPE_AUXILIARY.equals(categoryType)) {
+            return WmsConstants.WAREHOUSE_TYPE_LINE_SIDE;
+        }
+        return null;
     }
 
     /** 保存明细行（校验物料与分类类型，带出冗余信息）。 */

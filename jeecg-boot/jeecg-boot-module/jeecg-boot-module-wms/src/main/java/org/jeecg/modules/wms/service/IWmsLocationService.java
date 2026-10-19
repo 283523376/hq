@@ -88,4 +88,11 @@ public interface IWmsLocationService extends IService<WmsLocation> {
 
     /** 位于库区当前维度之外的库位数。缩维后不为 0，用于提示而非拦截。 */
     long countOutOfEnvelope(String warehouseId);
+
+    /**
+     * 按库区类型列「空闲」库位（RK-001 分配与分配弹窗的数据源），按 location_code 升序。
+     *
+     * @param warehouseType 库区类型（立库/线边柜 等）；空返回空列表
+     */
+    List<org.jeecg.modules.wms.entity.WmsLocation> listFreeByWarehouseType(String warehouseType);
 }

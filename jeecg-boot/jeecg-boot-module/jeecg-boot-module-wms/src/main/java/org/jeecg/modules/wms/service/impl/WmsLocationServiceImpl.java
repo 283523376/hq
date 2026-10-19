@@ -374,4 +374,24 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
         location.setUpdateTime(now);
         return location;
     }
+
+    @Override
+    public java.util.List<WmsLocation> listFreeByWarehouseType(String warehouseType) {
+        if (oConvertUtils.isEmpty(warehouseType)) {
+            return java.util.Collections.emptyList();
+        }
+        java.util.List<WmsWarehouse> warehouses = wmsWarehouseService.list(
+                new QueryWrapper<WmsWarehouse>().eq("warehouse_type", warehouseType));
+        if (warehouses == null || warehouses.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (WmsWarehouse w : warehouses) {
+            ids.add(w.getId());
+        }
+        return baseMapper.selectList(new QueryWrapper<WmsLocation>()
+                .eq("status", WmsConstants.LOCATION_STATUS_IDLE)
+                .in("warehouse_id", ids)
+                .orderByAsc("location_code"));
+    }
 }

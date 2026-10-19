@@ -30,4 +30,14 @@ public interface IWmsInboundService extends JeecgService<WmsInboundOrder> {
      * @throws RuntimeException 单据不存在或状态不是待检验
      */
     void onInspectResult(String inboundId, boolean passed);
+
+    /**
+     * 自动分配库位：按明细物料的分类类型映射库区（半成品→立库、辅料→线边柜，
+     * 其他→不自动分配；口径 9/10）。库位不足时已分配部分生效并返回告警。
+     *
+     * @param inboundId 入库单ID
+     * @return 分配结果（含告警与未分配明细）
+     * @throws RuntimeException 单据不存在或状态不允许分配
+     */
+    org.jeecg.modules.wms.vo.WmsAllocateResultVO autoAllocate(String inboundId);
 }
