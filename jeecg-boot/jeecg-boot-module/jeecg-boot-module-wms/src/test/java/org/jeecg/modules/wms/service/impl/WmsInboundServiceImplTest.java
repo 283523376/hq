@@ -280,4 +280,164 @@ class WmsInboundServiceImplTest {
         RuntimeException ex = assertThrows(RuntimeException.class, () -> service.autoAllocate("ib1"));
         assertEquals("当前状态不允许自动分配", ex.getMessage());
     }
+
+    // ------------------------------------------------------------ 上架确认（RK-001 step6）
+
+    private org.jeecg.modules.wms.service.IWmsInboundSyncService syncService;
+    private org.jeecg.modules.wms.mapper.WmsLocationMapper locationMapper;
+    private org.jeecg.modules.wms.service.IWmsWarehouseService warehouseService;
+    private org.jeecg.modules.wms.mapper.WmsInventoryMapper inventoryMapper;
+
+    /** 构造待上架环境：1 行半成品明细、立库库位 LB-1、同步服务 mock。 */
+    private void stubPutawayEnv(String orderStatus, java.math.BigDecimal actual) {
+        syncService = mock(org.jeecg.modules.wms.service.IWmsInboundSyncService.class);
+        locationMapper = mock(org.jeecg.modules.wms.mapper.WmsLocationMapper.class);
+        warehouseService = mock(org.jeecg.modules.wms.service.IWmsWarehouseService.class);
+        inventoryMapper = mock(org.jeecg.modules.wms.mapper.WmsInventoryMapper.class);
+        WmsTestSupport.inject(service, "syncService", syncService);
+        WmsTestSupport.inject(service, "locationMapper", locationMapper);
+        WmsTestSupport.inject(service, "warehouseService", warehouseService);
+        WmsTestSupport.inject(service, "inventoryMapper", inventoryMapper);
+
+        WmsInboundServiceImpl spyService = org.mockito.Mockito.spy(service);
+        org.jeecg.modules.wms.entity.WmsInboundOrder order = new org.jeecg.modules.wms.entity.WmsInboundOrder();
+        order.setId("ib1");
+        order.setInboundStatus(orderStatus);
+        doReturn(order).when(spyService).getById("ib1");
+        doReturn(true).when(spyService).updateById(any(org.jeecg.modules.wms.entity.WmsInboundOrder.class));
+
+        org.jeecg.modules.wms.entity.WmsInboundDetail d = row("d1", "电路板", WmsConstants.CATEGORY_TYPE_HALF_FINISHED);
+        d.setInboundId("ib1");
+        d.setQuantity(new java.math.BigDecimal("10"));
+        d.setBatchNo("B001");
+        when(detailMapper.selectList(any())).thenReturn(java.util.Collections.singletonList(d));
+        putawayRow1 = d;
+
+        org.jeecg.modules.wms.entity.WmsLocation lb = loc("LB-1");
+        lb.setWarehouseId("wh1");
+        doReturn(lb).when(locationMapper).selectById("LB-1");
+        when(warehouseService.getById("wh1")).thenReturn(wh("wh1", "立库"));
+        when(locationMapper.update(any(), any())).thenReturn(1);
+
+        org.jeecg.modules.wms.dto.WmsPutawayDTO dto = new org.jeecg.modules.wms.dto.WmsPutawayDTO();
+        org.jeecg.modules.wms.dto.WmsPutawayDTO.Item item = new org.jeecg.modules.wms.dto.WmsPutawayDTO.Item();
+        item.setDetailId("d1");
+        item.setActualQuantity(actual);
+        item.setLocationId("LB-1");
+        dto.setDetails(java.util.Collections.singletonList(item));
+
+        service = spyService;
+        putawayDto = dto;
+    }
+
+    private org.jeecg.modules.wms.dto.WmsPutawayDTO putawayDto;
+    private org.jeecg.modules.wms.entity.WmsInboundDetail putawayRow1;
+
+    private org.jeecg.modules.wms.entity.WmsWarehouse wh(String id, String type) {
+        org.jeecg.modules.wms.entity.WmsWarehouse w = new org.jeecg.modules.wms.entity.WmsWarehouse();
+        w.setId(id);
+        w.setWarehouseType(type);
+        return w;
+    }
+
+    @Test
+    void putawayWritesInventoryAndAudits() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, new java.math.BigDecimal("10"));
+        when(syncService.syncInbound(any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(new org.jeecg.modules.wms.sync.WmsOrderSyncAttempt(true, null, 0));
+
+        service.putaway("ib1", putawayDto);
+
+        verify(detailMapper).updateById(any(org.jeecg.modules.wms.entity.WmsInboundDetail.class));
+        org.mockito.ArgumentCaptor<org.jeecg.modules.wms.entity.WmsInventory> invCap =
+                org.mockito.ArgumentCaptor.forClass(org.jeecg.modules.wms.entity.WmsInventory.class);
+        org.mockito.Mockito.verify(inventoryMapper).upsertInventory(invCap.capture());
+        assertEquals("m-d1", invCap.getValue().getMaterialId());
+        assertEquals(new java.math.BigDecimal("10"), invCap.getValue().getQuantity());
+        assertEquals(WmsConstants.INBOUND_STATUS_AUDITED, service.getById("ib1").getInboundStatus());
+        assertEquals("system", service.getById("ib1").getAuditBy());
+    }
+
+    @Test
+    void putawaySkipsZeroActualRows() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, new java.math.BigDecimal("10"));
+        // 追加一行实收 0 的 d2（有物料、半成品）
+        org.jeecg.modules.wms.entity.WmsInboundDetail d2 = row("d2", "电路板2", WmsConstants.CATEGORY_TYPE_HALF_FINISHED);
+        d2.setInboundId("ib1");
+        d2.setQuantity(new java.math.BigDecimal("5"));
+        d2.setBatchNo("B002");
+        when(detailMapper.selectList(any()))
+                .thenReturn(java.util.Arrays.asList(putawayRow1, d2));
+        org.jeecg.modules.wms.dto.WmsPutawayDTO.Item zeroItem = new org.jeecg.modules.wms.dto.WmsPutawayDTO.Item();
+        zeroItem.setDetailId("d2");
+        zeroItem.setActualQuantity(java.math.BigDecimal.ZERO);
+        java.util.List<org.jeecg.modules.wms.dto.WmsPutawayDTO.Item> items = new java.util.ArrayList<>(putawayDto.getDetails());
+        items.add(zeroItem);
+        putawayDto.setDetails(items);
+        when(syncService.syncInbound(any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(new org.jeecg.modules.wms.sync.WmsOrderSyncAttempt(true, null, 0));
+
+        service.putaway("ib1", putawayDto);
+
+        org.mockito.Mockito.verify(inventoryMapper, org.mockito.Mockito.times(1))
+                .upsertInventory(any(org.jeecg.modules.wms.entity.WmsInventory.class));
+        org.mockito.Mockito.verify(locationMapper, org.mockito.Mockito.times(1))
+                .update(any(), any());
+        org.mockito.ArgumentCaptor<org.jeecg.modules.wms.entity.WmsInboundDetail> cap =
+                org.mockito.ArgumentCaptor.forClass(org.jeecg.modules.wms.entity.WmsInboundDetail.class);
+        org.mockito.Mockito.verify(detailMapper, org.mockito.Mockito.times(2)).updateById(cap.capture());
+        assertEquals(java.math.BigDecimal.ZERO, cap.getAllValues().get(1).getActualQuantity());
+        assertEquals(WmsConstants.INBOUND_STATUS_AUDITED, service.getById("ib1").getInboundStatus());
+    }
+
+    @Test
+    void putawayRejectsAllZeroRows() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, java.math.BigDecimal.ZERO);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.putaway("ib1", putawayDto));
+        assertEquals("整单实收不能全为 0", ex.getMessage());
+    }
+
+    @Test
+    void putawayRejectsNonPendingState() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_AUDITED, new java.math.BigDecimal("10"));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.putaway("ib1", putawayDto));
+        assertEquals("当前状态不允许上架", ex.getMessage());
+    }
+
+    @Test
+    void putawayFailsWhenLocationOccupiedConcurrently() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, new java.math.BigDecimal("10"));
+        when(locationMapper.update(any(), any())).thenReturn(0);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.putaway("ib1", putawayDto));
+        assertEquals("库位已被占用，请重新分配", ex.getMessage());
+    }
+
+    @Test
+    void putawayRejectsWarehouseTypeMismatch() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, new java.math.BigDecimal("10"));
+        // 库位挂在敏捷仓（成品）下，与半成品物料不匹配
+        org.jeecg.modules.wms.entity.WmsLocation wrong = loc("LB-1");
+        wrong.setWarehouseId("wh1");
+        doReturn(wrong).when(locationMapper).selectById("LB-1");
+        when(warehouseService.getById("wh1")).thenReturn(wh("wh1", "敏捷仓"));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.putaway("ib1", putawayDto));
+        assertEquals("库位类型与物料不匹配", ex.getMessage());
+    }
+
+    @Test
+    void syncFailureDoesNotRollbackAudit() {
+        stubPutawayEnv(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY, new java.math.BigDecimal("10"));
+        when(syncService.syncInbound(any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenThrow(new RuntimeException("ERP 连接失败"));
+
+        service.putaway("ib1", putawayDto);
+
+        assertEquals(WmsConstants.INBOUND_STATUS_AUDITED, service.getById("ib1").getInboundStatus());
+        assertEquals(WmsConstants.SYNC_STATUS_FAILED, service.getById("ib1").getSyncStatus());
+        assertTrue(service.getById("ib1").getLastSyncError().contains("ERP 连接失败"));
+    }
 }

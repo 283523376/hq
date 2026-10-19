@@ -62,6 +62,17 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
         return Result.OK(locationService.listFreeByWarehouseType(type));
     }
 
+    @Operation(summary = "入库-上架确认（库存/占用/自动审核/触发同步）")
+    @PostMapping(value = "/{id}/putaway")
+    public Result<Void> putaway(@PathVariable("id") String id, @RequestBody org.jeecg.modules.wms.dto.WmsPutawayDTO dto) {
+        try {
+            service.putaway(id, dto);
+            return Result.OK("上架成功", null);
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
     @Autowired
     private org.jeecg.modules.wms.service.IWmsMaterialService materialService;
 

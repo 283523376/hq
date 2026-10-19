@@ -40,4 +40,14 @@ public interface IWmsInboundService extends JeecgService<WmsInboundOrder> {
      * @throws RuntimeException 单据不存在或状态不允许分配
      */
     org.jeecg.modules.wms.vo.WmsAllocateResultVO autoAllocate(String inboundId);
+
+    /**
+     * 上架确认（同一事务内）：写实收/库位 → 库存聚合 upsert → 库位翻「占用」→
+     * 单据转已入库 → 自动审核（system）→ 触发 ERP 同步（失败不回滚审核，落同步失败）。
+     *
+     * @param inboundId 入库单ID
+     * @param dto       上架明细（实收数量、库位）
+     * @throws RuntimeException 校验失败时携带面向用户的中文文案
+     */
+    void putaway(String inboundId, org.jeecg.modules.wms.dto.WmsPutawayDTO dto);
 }

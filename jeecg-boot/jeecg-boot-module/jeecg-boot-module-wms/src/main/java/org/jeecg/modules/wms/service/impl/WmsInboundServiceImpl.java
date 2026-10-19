@@ -8,6 +8,7 @@ import org.jeecg.modules.wms.dto.WmsReceiveDTO;
 import org.jeecg.modules.wms.entity.WmsInboundDetail;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.entity.WmsInspectionTask;
+import org.jeecg.modules.wms.entity.WmsInventory;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
@@ -50,6 +51,14 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
     private WmsInboundDetailMapper detailMapper;
     @Autowired
     private WmsInspectionTaskMapper inspectionTaskMapper;
+    @Autowired
+    private org.jeecg.modules.wms.mapper.WmsInventoryMapper inventoryMapper;
+    @Autowired
+    private org.jeecg.modules.wms.mapper.WmsLocationMapper locationMapper;
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsWarehouseService warehouseService;
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsInboundSyncService syncService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -182,6 +191,97 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
             return WmsConstants.WAREHOUSE_TYPE_LINE_SIDE;
         }
         return null;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void putaway(String inboundId, org.jeecg.modules.wms.dto.WmsPutawayDTO dto) {
+        WmsInboundOrder order = getById(inboundId);
+        if (order == null) {
+            throw new RuntimeException("单据不存在");
+        }
+        if (!WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE.equals(order.getInboundStatus())
+                && !WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY.equals(order.getInboundStatus())) {
+            throw new RuntimeException("当前状态不允许上架");
+        }
+        if (dto == null || dto.getDetails() == null || dto.getDetails().isEmpty()) {
+            throw new RuntimeException("上架明细不能为空");
+        }
+        java.util.List<WmsInboundDetail> rows = detailMapper.selectList(
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInboundDetail>query()
+                        .eq("inbound_id", inboundId));
+        java.util.Map<String, WmsInboundDetail> byId = new java.util.HashMap<>();
+        for (WmsInboundDetail d : rows) {
+            byId.put(d.getId(), d);
+        }
+        // 预校验（不做任何写操作）：明细存在、实收非负、整单至少一行 > 0
+        for (org.jeecg.modules.wms.dto.WmsPutawayDTO.Item item : dto.getDetails()) {
+            if (byId.get(item.getDetailId()) == null) {
+                throw new RuntimeException("上架明细与单据不匹配");
+            }
+            if (item.getActualQuantity() == null || item.getActualQuantity().signum() < 0) {
+                throw new RuntimeException("实收数量不能为负");
+            }
+        }
+        int positiveRows = 0;
+        for (org.jeecg.modules.wms.dto.WmsPutawayDTO.Item item : dto.getDetails()) {
+            if (item.getActualQuantity().signum() > 0) {
+                positiveRows++;
+            }
+        }
+        if (positiveRows == 0) {
+            throw new RuntimeException("整单实收不能全为 0");
+        }
+
+        for (org.jeecg.modules.wms.dto.WmsPutawayDTO.Item item : dto.getDetails()) {
+            WmsInboundDetail d = byId.get(item.getDetailId());
+            if (item.getActualQuantity().signum() > 0) {
+                if (oConvertUtils.isEmpty(item.getLocationId())) {
+                    throw new RuntimeException("实收大于 0 的行必须指定库位");
+                }
+                WmsLocation loc = locationMapper.selectById(item.getLocationId());
+                if (loc == null || !WmsConstants.LOCATION_STATUS_IDLE.equals(loc.getStatus())) {
+                    throw new RuntimeException("库位不空闲或不存在");
+                }
+                org.jeecg.modules.wms.entity.WmsWarehouse warehouse = warehouseService.getById(loc.getWarehouseId());
+                String expectedType = toWarehouseType(resolveCategoryType(materialService.getById(d.getMaterialId())));
+                if (warehouse == null || expectedType == null || !expectedType.equals(warehouse.getWarehouseType())) {
+                    throw new RuntimeException("库位类型与物料不匹配");
+                }
+                int affected = locationMapper.update(null,
+                        new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<WmsLocation>()
+                                .set("status", WmsConstants.LOCATION_STATUS_OCCUPIED)
+                                .eq("id", loc.getId())
+                                .eq("status", WmsConstants.LOCATION_STATUS_IDLE));
+                if (affected == 0) {
+                    throw new RuntimeException("库位已被占用，请重新分配");
+                }
+                inventoryMapper.upsertInventory(new WmsInventory()
+                        .setMaterialId(d.getMaterialId())
+                        .setLocationId(loc.getId())
+                        .setBatchNo(d.getBatchNo())
+                        .setQuantity(item.getActualQuantity()));
+            }
+            d.setActualQuantity(item.getActualQuantity());
+            detailMapper.updateById(d);
+        }
+
+        // 已入库（未审核）→ 自动审核为已审核：同一事务内的瞬时态，持久化终态为已审核
+        order.setInboundStatus(WmsConstants.INBOUND_STATUS_AUDITED);
+        order.setAuditBy("system");
+        order.setAuditTime(new java.util.Date());
+        try {
+            org.jeecg.modules.wms.sync.WmsOrderSyncAttempt attempt = syncService.syncInbound(order, true);
+            order.setSyncStatus(attempt.isSuccess() ? WmsConstants.SYNC_STATUS_SUCCESS : WmsConstants.SYNC_STATUS_FAILED);
+            order.setLastSyncError(attempt.isSuccess() ? null : attempt.getErrorMessage());
+        } catch (Exception e) {
+            log.error("入库单[{}]同步 ERP 异常：{}", order.getOrderNo(), e.getMessage(), e);
+            order.setSyncStatus(WmsConstants.SYNC_STATUS_FAILED);
+            order.setLastSyncError(e.getMessage());
+        }
+        order.setLastSyncTime(new java.util.Date());
+        updateById(order);
+        log.info("上架完成：单号={}，状态={}，同步={}", order.getOrderNo(), order.getInboundStatus(), order.getSyncStatus());
     }
 
     /** 保存明细行（校验物料与分类类型，带出冗余信息）。 */
