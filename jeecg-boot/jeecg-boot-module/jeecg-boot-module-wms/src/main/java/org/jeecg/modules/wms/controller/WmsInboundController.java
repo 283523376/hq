@@ -81,6 +81,14 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
             if (order == null) {
                 return Result.error("单据不存在");
             }
+            if (!org.jeecg.modules.wms.constant.WmsConstants.INBOUND_STATUS_AUDITED
+                    .equals(order.getInboundStatus())) {
+                return Result.error("仅已审核单据可同步 ERP");
+            }
+            // 与补偿任务共用乐观认领：避免用户点「重试同步」时定时任务同时向 ERP 重复投递
+            if (service.claimForSync(id, service.syncStaleBefore()) == 0) {
+                return Result.error("单据正在同步中，请稍后重试");
+            }
             org.jeecg.modules.wms.sync.WmsOrderSyncAttempt attempt =
                     inboundSyncService.syncInbound(order, true);
             service.persistSyncResult(id, attempt);
@@ -116,9 +124,9 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
     @Operation(summary = "入库-作废")
     @PostMapping(value = "/{id}/void")
     public Result<Void> voidOrder(@PathVariable("id") String id,
-                                  @RequestBody java.util.Map<String, String> body) {
+                                  @RequestBody org.jeecg.modules.wms.dto.WmsVoidDTO body) {
         try {
-            service.voidOrder(id, body == null ? null : body.get("reason"));
+            service.voidOrder(id, body == null ? null : body.getReason());
             return Result.OK("作废成功", null);
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
@@ -137,17 +145,11 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
     @Autowired
     private org.jeecg.modules.wms.service.IWmsMaterialCategoryService categoryService;
 
-    /** 物料分类类型 → 库区类型（与 service 层同一映射，供弹窗按物料过滤）。 */
+    /** 物料 → 目标库区类型（统一走 {@link org.jeecg.modules.wms.util.WmsInboundRouting}）。 */
     private String resolveWarehouseTypeForMaterial(org.jeecg.modules.wms.entity.WmsMaterial material) {
         org.jeecg.modules.wms.entity.WmsMaterialCategory category =
                 oConvertUtils.isEmpty(material.getCategoryId()) ? null : categoryService.getById(material.getCategoryId());
         String categoryType = category == null ? null : category.getCategoryType();
-        if (org.jeecg.modules.wms.constant.WmsConstants.CATEGORY_TYPE_HALF_FINISHED.equals(categoryType)) {
-            return org.jeecg.modules.wms.constant.WmsConstants.WAREHOUSE_TYPE_STEREO;
-        }
-        if (org.jeecg.modules.wms.constant.WmsConstants.CATEGORY_TYPE_AUXILIARY.equals(categoryType)) {
-            return org.jeecg.modules.wms.constant.WmsConstants.WAREHOUSE_TYPE_LINE_SIDE;
-        }
-        return null;
+        return org.jeecg.modules.wms.util.WmsInboundRouting.toWarehouseType(categoryType);
     }
 }

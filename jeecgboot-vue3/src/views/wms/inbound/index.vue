@@ -43,10 +43,12 @@
               v-model:value="record.materialId"
               show-search
               allow-clear
-              placeholder="选择物料（可按编码/名称搜索）"
+              :filter-option="false"
+              placeholder="选择物料（输入编码/名称远程搜索）"
               :options="materialOptions"
-              option-filter-prop="label"
+              :not-found-content="materialSearching ? '搜索中…' : undefined"
               style="width: 100%"
+              @search="handleMaterialSearch"
             />
           </template>
           <template v-else-if="column.key === 'quantity'">
@@ -82,7 +84,7 @@
           <a-tag color="red">同步失败</a-tag>
         </a-tooltip>
         <a-tag v-else :color="record.syncStatus === '同步成功' ? 'green' : 'default'">
-          {{ record.syncStatus }}
+          {{ record.syncStatus === '无需同步' ? '无需同步' : record.syncStatus }}
         </a-tag>
       </template>
       <template #action="{ record }">
@@ -184,6 +186,10 @@
   ];
 
   const materialOptions = ref<{ label: string; value: string }[]>([]);
+  const materialSearching = ref(false);
+  /** 已选物料的标签缓存：远程搜索结果变化后，已选项仍能显示正确名称 */
+  const materialLabelMap = ref<Record<string, string>>({});
+  let materialSearchTimer: any = null;
   /** 库位 id → 库位编码（详情抽屉展示用） */
   const locationMap = ref<Record<string, string>>({});
 
@@ -233,7 +239,14 @@
           batchNo: d.batchNo.trim(),
         })),
       });
-      createMessage.success(`收料成功，已生成收料通知单 ${res.orderNo}，检验任务已通知检验员`);
+      if (res?.inboundStatus === '已拒收') {
+        createMessage.warning(
+          `已生成拒收单 ${res.orderNo}：外包装损坏，请联系采购业务员安排供应商退货。`,
+          8
+        );
+      } else {
+        createMessage.success(`收料成功，已生成收料通知单 ${res.orderNo}，检验任务已通知检验员`);
+      }
       resetReceiveForm();
       reload();
     } finally {
@@ -381,18 +394,48 @@
 
   // ------------------------------------------------------------ 初始化
 
-  onMounted(async () => {
-    resetReceiveForm();
+  /** 物料远程搜索（首次加载 50 条；输入关键字后按名称/编码模糊查询，避免 500 条上限） */
+  async function loadMaterialOptions(keyword?: string) {
+    materialSearching.value = true;
     try {
-      const res: any = await defHttp.get({ url: '/wms/material/list', params: { pageNo: 1, pageSize: 500 } });
-      const records = res?.records || [];
-      materialOptions.value = records.map((m: any) => ({
+      const params: any = { pageNo: 1, pageSize: 50 };
+      if (keyword && keyword.trim()) {
+        // QueryGenerator 约定：值两侧带 * 表示 LIKE
+        params.materialName = `*${keyword.trim()}*`;
+      }
+      const res: any = await defHttp.get({ url: '/wms/material/list', params });
+      const options = (res?.records || []).map((m: any) => ({
         label: `${m.materialCode} ${m.materialName}`,
         value: m.id,
       }));
+      // 合并已选项，避免搜索后已选物料在下拉里显示为原始 ID
+      const selected = receiveForm.details
+        .map((d) => d.materialId)
+        .filter(Boolean)
+        .map((id: string) => ({ value: id, label: materialLabelMap.value[id] || id }));
+      const merged: Record<string, any> = {};
+      [...selected, ...options].forEach((o) => (merged[o.value] = o));
+      materialOptions.value = Object.values(merged);
+      for (const o of options) {
+        materialLabelMap.value[o.value] = o.label;
+      }
     } catch (e) {
       // 物料加载失败不阻塞页面，收料时由后端返回文案
+    } finally {
+      materialSearching.value = false;
     }
+  }
+
+  function handleMaterialSearch(keyword: string) {
+    if (materialSearchTimer) {
+      clearTimeout(materialSearchTimer);
+    }
+    materialSearchTimer = setTimeout(() => loadMaterialOptions(keyword), 300);
+  }
+
+  onMounted(async () => {
+    resetReceiveForm();
+    await loadMaterialOptions();
     try {
       const res: any = await defHttp.get({ url: '/wms/location/list', params: { pageNo: 1, pageSize: 2000 } });
       const map: Record<string, string> = {};

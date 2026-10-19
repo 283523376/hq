@@ -243,8 +243,6 @@ public final class WmsConstants {
     public static final String INBOUND_STATUS_PENDING_ALLOCATE = "待分配";
     /** 单据状态：待上架（分配完成或有部分分配后可上架）。 */
     public static final String INBOUND_STATUS_PENDING_PUTAWAY = "待上架";
-    /** 单据状态：已入库（上架完成、尚未审核）。 */
-    public static final String INBOUND_STATUS_PUTAWAY = "已入库";
     /** 单据状态：已审核（putaway 自动审核后的终态）。 */
     public static final String INBOUND_STATUS_AUDITED = "已审核";
     /** 单据状态：已拒收（外包装损坏等收料即拒的终态）。 */
@@ -276,4 +274,12 @@ public final class WmsConstants {
     public static final int INBOUND_SYNC_STALE_MINUTES = 10;
     /** 入库单同步失败告警标题。 */
     public static final String INBOUND_SYNC_ALERT_TITLE = "WMS入库单ERP同步失败告警";
+
+    /**
+     * 同步状态：无需同步。
+     *
+     * <p>已拒收 / 检验不合格 / 作废 的入库单不会同步 ERP，界面应显示「无需同步」
+     * 而不是一直停留在「待同步」。
+     */
+    public static final String SYNC_STATUS_NOT_REQUIRED = "无需同步";
 }

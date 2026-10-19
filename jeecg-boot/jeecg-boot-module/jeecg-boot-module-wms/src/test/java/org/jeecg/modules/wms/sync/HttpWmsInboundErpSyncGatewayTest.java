@@ -44,8 +44,8 @@ class HttpWmsInboundErpSyncGatewayTest {
         WmsOrderSyncResult result = gateway.sync(order(), Collections.singletonList(detail()));
 
         assertTrue(result.isSuccess());
-        assertTrue(result.getErrorMessage() == null || result.getErrorMessage().contains("mock")
-                        || result.getErrorMessage().isEmpty(),
+        assertTrue(result.isMocked(), "未配置地址时必须显式标注为模拟成功");
+        assertTrue(result.getErrorMessage() == null || result.getErrorMessage().isEmpty(),
                 "模拟成功不应携带失败原因：" + result.getErrorMessage());
     }
 

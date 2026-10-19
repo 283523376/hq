@@ -99,7 +99,8 @@ class WmsInspectionServiceImplTest {
         order.setId("ib1");
         order.setInboundStatus(WmsConstants.INBOUND_STATUS_PENDING_INSPECT);
         order.setOrderNo("SL001");
-        when(inboundService.getById("ib1")).thenReturn(order);
+        when(inboundService.listByIds(any(java.util.Collection.class)))
+                .thenReturn(java.util.Collections.singletonList(order));
 
         com.baomidou.mybatisplus.core.metadata.IPage<org.jeecg.modules.wms.vo.WmsInspectionTaskVO> result =
                 service.listPage(1, 10, WmsConstants.INSPECT_STATUS_PENDING);

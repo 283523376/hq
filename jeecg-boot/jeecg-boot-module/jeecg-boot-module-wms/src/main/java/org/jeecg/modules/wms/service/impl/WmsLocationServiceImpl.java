@@ -198,8 +198,13 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
     @Override
     public void removeLocation(String id) {
         WmsLocation existing = requireExisting(id);
-        if (!checkLocation(existing).isDeletable()) {
-            throw new RuntimeException("库位已占用或有故障，不允许删除");
+        WmsDeleteCheckVO check = checkLocation(existing);
+        if (!check.isDeletable()) {
+            // 逐字透出真实原因（库位状态 / 库存记录 / 进行中入库单），而不是固定文案
+            String reason = check.getBlockers().stream()
+                    .map(WmsDeleteCheckVO.Blocker::getMessage)
+                    .collect(Collectors.joining("；"));
+            throw new RuntimeException(reason + "，不允许删除");
         }
         this.removeById(id);
     }

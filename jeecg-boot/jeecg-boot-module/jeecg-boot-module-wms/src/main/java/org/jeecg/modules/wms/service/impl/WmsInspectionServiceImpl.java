@@ -39,11 +39,22 @@ public class WmsInspectionServiceImpl extends ServiceImpl<WmsInspectionTaskMappe
         // 联查入库单：排除已作废/已拒收单据的任务（终态单不可再检验）
         IPage<WmsInspectionTask> page = baseMapper.selectPageWithOrder(
                 new Page<>(pageNo, pageSize), inspectStatus);
+        // 批量取单据，避免逐行 getById 的 N+1 查询
         List<WmsInspectionTaskVO> vos = new ArrayList<>();
+        java.util.Set<String> inboundIds = new java.util.HashSet<>();
+        for (WmsInspectionTask task : page.getRecords()) {
+            inboundIds.add(task.getInboundId());
+        }
+        java.util.Map<String, WmsInboundOrder> orderMap = new java.util.HashMap<>();
+        if (!inboundIds.isEmpty()) {
+            for (WmsInboundOrder o : inboundService.listByIds(inboundIds)) {
+                orderMap.put(o.getId(), o);
+            }
+        }
         for (WmsInspectionTask task : page.getRecords()) {
             WmsInspectionTaskVO vo = new WmsInspectionTaskVO();
             vo.setTask(task);
-            WmsInboundOrder order = inboundService.getById(task.getInboundId());
+            WmsInboundOrder order = orderMap.get(task.getInboundId());
             if (order != null) {
                 vo.setOrderNo(order.getOrderNo());
                 vo.setPurchaseOrderNo(order.getPurchaseOrderNo());

@@ -24,9 +24,21 @@ public class WmsOrderSyncResult implements Serializable {
     @Schema(description = "失败原因；成功时为 null")
     private String errorMessage;
 
+    /** 是否为模拟成功（未配置真实 ERP 地址时）；调用方可据此区分「真同步」与「演示态」 */
+    @Schema(description = "是否为模拟成功")
+    private boolean mocked;
+
     public static WmsOrderSyncResult ok() {
         WmsOrderSyncResult result = new WmsOrderSyncResult();
         result.setSuccess(true);
+        return result;
+    }
+
+    /** 模拟成功：未接入真实 ERP 时用于闭环演示，并把「这是模拟」显式带出。 */
+    public static WmsOrderSyncResult okMock() {
+        WmsOrderSyncResult result = new WmsOrderSyncResult();
+        result.setSuccess(true);
+        result.setMocked(true);
         return result;
     }
 

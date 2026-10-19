@@ -65,11 +65,13 @@
   import { ref } from 'vue';
   import { BasicModal, useModalInner } from '/@/components/Modal';
   import { useMessage } from '/@/hooks/web/useMessage';
+  import { usePermission } from '/@/hooks/web/usePermission';
   import { Modal } from 'ant-design-vue';
   import { autoAllocate, getInboundDetail, listFreeLocations, putaway } from './inbound.api';
 
   const emit = defineEmits(['success', 'register']);
   const { createMessage } = useMessage();
+  const { hasPermission } = usePermission();
 
   const loading = ref(false);
   const allocating = ref(false);
@@ -186,6 +188,11 @@
   }
 
   function handlePutaway() {
+    // 入口按钮只控制「分配」权限；上架需要独立的 putaway 权限
+    if (!hasPermission('wms:inbound:putaway')) {
+      createMessage.warning('没有上架确认权限，请联系管理员授权');
+      return;
+    }
     const missing = rows.value.filter((r) => Number(r.actualQuantity) > 0 && !r.locationId);
     if (missing.length) {
       createMessage.warning(`还有 ${missing.length} 行未选择库位`);

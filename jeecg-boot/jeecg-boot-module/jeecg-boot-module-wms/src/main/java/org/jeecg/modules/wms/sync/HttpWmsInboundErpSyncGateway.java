@@ -50,7 +50,7 @@ public class HttpWmsInboundErpSyncGateway implements WmsInboundErpSyncGateway {
         if (syncUrl.isEmpty()) {
             log.info("入库单[{}]未配置 ERP 入库同步地址（wms.sync.erp.inbound-url），按模拟成功处理",
                     order.getOrderNo());
-            return WmsOrderSyncResult.ok();
+            return WmsOrderSyncResult.okMock();
         }
         try {
             HttpHeaders headers = new HttpHeaders();
