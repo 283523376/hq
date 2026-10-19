@@ -32,7 +32,10 @@ import java.util.List;
  * @Description: 供应商
  * @Author: 永鑫WMS
  * @Date: 2026-10-14
+ * @deprecated 方案 A（原材料+焊接线边仓）已移出项目范围；菜单已收回，
+ *             保留代码与数据用于历史查询与回滚，不再新增入口。
  */
+@Deprecated
 @Tag(name = "WMS-供应商")
 @RestController
 @RequestMapping("/wms/supplier")

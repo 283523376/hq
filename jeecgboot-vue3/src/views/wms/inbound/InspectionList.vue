@@ -1,5 +1,12 @@
 <template>
   <div class="wms-inspection">
+    <a-alert
+      type="warning"
+      show-icon
+      banner
+      style="margin-bottom: 12px"
+      message="该功能已因项目范围调整停用（原材料/焊接线边仓已移出范围），仅保留历史数据查询。"
+    />
     <BasicTable @register="registerTable">
       <template #tableTitle>
         <span class="wms-inspection__title">来料检验任务</span>

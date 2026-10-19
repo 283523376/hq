@@ -51,7 +51,7 @@ jeecg-boot-parent (root pom)
 ├── jeecg-boot-module              # Business feature modules
 │   ├── jeecg-module-demo          # Demo/example code
 │   ├── jeecg-boot-module-airag    # AI/RAG integration
-│   ├── jeecg-boot-module-wms      # 永鑫WMS 业务模块（半成品立体仓 / 成品敏捷仓 / 线边柜）
+│   ├── jeecg-boot-module-wms      # 永鑫WMS 业务模块（半成品立体仓 / 成品敏捷仓；线边柜已停用）
 │   ├── jeecg-boot-module-easyoa   # Simple OA module
 │   ├── jeecg-boot-module-joa-flowable  # OA + Flowable workflow
 │   ├── jeecg-boot-module-pay      # Payment module
@@ -136,7 +136,10 @@ Online 模块采用**元数据驱动**架构，通过数据库配置表（`onl_c
 
 ### 项目概述
 
-永鑫WMS（Yongxin WMS）覆盖三类仓储场景：**半成品立体仓**、**成品敏捷仓**、**线边柜**。
+永鑫WMS（Yongxin WMS）当前范围覆盖两类仓储场景：**半成品立体仓**、**成品敏捷仓**。
+原材料线边柜 / 焊接线边仓（方案 A）已于 2026-10-19 移出项目范围：相关菜单与入口已收回，
+采购入库/检验/供应商/订单代码与历史数据保留、标记停用、可回滚。详见
+`docs/superpowers/specs/2026-10-19-yx-wms-scope-reduction-line-side-design.md`。
 需求来源为工作区 `wms-blueprint/`（《永鑫WMS软件蓝图》中的 `YX-WMS-*` 流程即本模块要实现的需求集合；
 速查见 `wms-blueprint/WMS蓝图关键信息.md`）。业务代码统一写在 `org.jeecg.modules.wms` 包下。
 

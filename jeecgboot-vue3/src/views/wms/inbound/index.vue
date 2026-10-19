@@ -1,5 +1,12 @@
 <template>
   <div class="wms-inbound">
+    <a-alert
+      type="warning"
+      show-icon
+      banner
+      class="wms-inbound__alert"
+      message="该功能已因项目范围调整停用（原材料/焊接线边仓已移出范围），仅保留历史数据查询。"
+    />
     <!-- 收料台：扫码/录入采购订单号，生成收料通知单 -->
     <a-card :bordered="false" size="small" title="收料台" class="wms-inbound__receive">
       <a-form layout="inline" class="wms-inbound__form">
