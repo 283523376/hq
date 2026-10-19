@@ -333,4 +333,14 @@ public class WmsOrderServiceImpl extends ServiceImpl<WmsOrderMapper, WmsOrder> i
     private String trim(String value) {
         return value == null ? null : value.trim();
     }
+
+    @Override
+    public WmsOrder getPurchaseOrder(String orderNo) {
+        if (oConvertUtils.isEmpty(orderNo)) {
+            return null;
+        }
+        return getOne(new QueryWrapper<WmsOrder>()
+                .eq("order_no", orderNo.trim())
+                .eq("order_type", WmsConstants.ORDER_TYPE_PURCHASE), false);
+    }
 }

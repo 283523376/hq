@@ -70,4 +70,12 @@ public interface IWmsOrderService extends JeecgService<WmsOrder> {
      * 「同步中」僵死阈值，供定时任务复用同一口径。
      */
     Date syncStaleBefore();
+
+    /**
+     * 按采购订单号取采购订单（RK-001 收料的存在性校验与供应商带出）。
+     *
+     * @param orderNo 采购订单号（wms_order.order_no）
+     * @return 采购订单；不存在或类型不是「采购订单」时返回 null
+     */
+    WmsOrder getPurchaseOrder(String orderNo);
 }
