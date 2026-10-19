@@ -150,5 +150,5 @@ INSERT IGNORE INTO `wms_location` (`id`,`location_code`,`warehouse_id`,`row_no`,
 -- 实际调度由 WmsInboundSyncJobRegistrar 负责——本行不会被平台自动加载。
 -- id 必须与 WmsConstants.INBOUND_SYNC_JOB_ID 同值；cron 与订单补偿任务（0 3/5）错峰。
 INSERT IGNORE INTO `sys_quartz_job` (`id`,`create_by`,`create_time`,`del_flag`,`update_by`,`update_time`,`job_class_name`,`cron_expression`,`parameter`,`description`,`status`) VALUES
-('1920000000000000160','admin',NOW(),0,NULL,NULL,'org.jeecg.modules.wms.job.WmsInboundSyncRetryJob','0 8/5 * * * ? *',NULL,'WMS入库单ERP同步补偿任务',0);
+('1920000000000000160','admin',NOW(),0,NULL,NULL,'org.jeecg.modules.wms.job.WmsInboundSyncRetryJob','0 9/5 * * * ? *',NULL,'WMS入库单ERP同步补偿任务',0);
 

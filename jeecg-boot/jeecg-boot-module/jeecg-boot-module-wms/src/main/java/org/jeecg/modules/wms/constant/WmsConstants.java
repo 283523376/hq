@@ -231,4 +231,47 @@ public final class WmsConstants {
 
     /** 设备离线扫描任务启停开关的配置键；默认 true。 */
     public static final String DEVICE_SCAN_JOB_ENABLED_KEY = "wms.device.job.enabled";
+
+    // ---------------------------------------------------------------- 入库域（RK-001）
+
+    /** 入库类型：采购入库。 */
+    public static final String INBOUND_TYPE_PURCHASE = "采购入库";
+
+    /** 单据状态：待检验（收料后的初始状态）。 */
+    public static final String INBOUND_STATUS_PENDING_INSPECT = "待检验";
+    /** 单据状态：待分配（检验合格后）。 */
+    public static final String INBOUND_STATUS_PENDING_ALLOCATE = "待分配";
+    /** 单据状态：待上架（分配完成或有部分分配后可上架）。 */
+    public static final String INBOUND_STATUS_PENDING_PUTAWAY = "待上架";
+    /** 单据状态：已入库（上架完成、尚未审核）。 */
+    public static final String INBOUND_STATUS_PUTAWAY = "已入库";
+    /** 单据状态：已审核（putaway 自动审核后的终态）。 */
+    public static final String INBOUND_STATUS_AUDITED = "已审核";
+    /** 单据状态：已拒收（外包装损坏等收料即拒的终态）。 */
+    public static final String INBOUND_STATUS_REJECTED = "已拒收";
+    /** 单据状态：检验不合格（转 YX-WMS-RK-005 的终态）。 */
+    public static final String INBOUND_STATUS_INSPECT_FAILED = "检验不合格";
+    /** 单据状态：作废（录错单补救的终态，仅未产生库存的单据可进入）。 */
+    public static final String INBOUND_STATUS_VOIDED = "作废";
+
+    /** 物料分类类型：半成品（自动分配到立库）。 */
+    public static final String CATEGORY_TYPE_HALF_FINISHED = "半成品";
+    /** 物料分类类型：辅料（自动分配到线边柜）。 */
+    public static final String CATEGORY_TYPE_AUXILIARY = "辅料";
+
+    /** 检验状态：待检验。 */
+    public static final String INSPECT_STATUS_PENDING = "待检验";
+    /** 检验状态：合格。 */
+    public static final String INSPECT_STATUS_PASSED = "合格";
+    /** 检验状态：不合格。 */
+    public static final String INSPECT_STATUS_FAILED = "不合格";
+
+    /** 入库 ERP 同步补偿任务在 sys_quartz_job 中的主键；必须与 Flyway 种子行（V3.9.5_11）一致。 */
+    public static final String INBOUND_SYNC_JOB_ID = "1920000000000000160";
+    /** 入库 ERP 同步补偿任务类名；必须与 Flyway 种子行的 job_class_name 一致。 */
+    public static final String INBOUND_SYNC_JOB_CLASS = "org.jeecg.modules.wms.job.WmsInboundSyncRetryJob";
+    /** 入库同步任务 cron：每 5 分钟落在 :09/:14/…，与订单补偿（3/5）、设备扫描（7/5）错峰。 */
+    public static final String INBOUND_SYNC_JOB_CRON = "0 9/5 * * * ? *";
+    /** 同步候选的僵死阈值（分钟）：同步中超过该时长视为僵死，允许补偿任务重新认领。 */
+    public static final int INBOUND_SYNC_STALE_MINUTES = 10;
 }
