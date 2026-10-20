@@ -51,4 +51,9 @@ public interface IWmsSystemConfigService extends IService<WmsSystemConfig> {
      * 配置写坏不能让调用方（设备离线扫描任务）跟着失败：监控链路断了比阈值不准严重得多。
      */
     int getInt(String key, int fallback);
+
+    /**
+     * 只读字符串配置。读不到 / 值为空 / 键未知一律返回 fallback 并打 WARN，绝不抛异常。
+     */
+    String getString(String key, String fallback);
 }

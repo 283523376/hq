@@ -122,6 +122,34 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
     }
 
     @Override
+    public String getString(String key, String fallback) {
+        WmsConfigKey meta;
+        try {
+            meta = WmsConfigKey.of(key);
+        } catch (IllegalArgumentException e) {
+            log.warn("读取了未知配置键[{}]，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        WmsSystemConfig stored;
+        try {
+            stored = this.getOne(new QueryWrapper<WmsSystemConfig>().eq("config_key", meta.getKey()), false);
+        } catch (Exception e) {
+            log.warn("读取系统配置[{}]失败（{}），改用兜底值 {}", key, e.getMessage(), fallback);
+            return fallback;
+        }
+        if (stored == null) {
+            log.warn("系统配置[{}]尚未设置，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        String rawValue = stored.getConfigValue();
+        if (rawValue == null || rawValue.trim().isEmpty()) {
+            log.warn("系统配置[{}]的值为空，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        return rawValue.trim();
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void saveGroup(WmsConfigSaveDTO dto) {
         if (dto == null || dto.getGroup() == null) {

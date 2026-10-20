@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.dto.message.MessageDTO;
 import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsProductionManualCompleteDTO;
 import org.jeecg.modules.wms.dto.WmsProductionSubmitDTO;
@@ -61,6 +62,9 @@ public class WmsProductionInboundServiceImpl
 
     @Autowired
     private IWmsLocationService locationService;
+
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsSystemConfigService systemConfigService;
 
     @Autowired
     private ISysBaseAPI sysBaseAPI;
@@ -132,10 +136,7 @@ public class WmsProductionInboundServiceImpl
         }
         String scrapLocationId = null;
         if (bad.signum() > 0) {
-            scrapLocationId = requireDefaultLocation(
-                    WmsConstants.WAREHOUSE_TYPE_SCRAP,
-                    WmsConstants.LOCATION_CODE_SCRAP_DEFAULT,
-                    "废品仓未配置，请联系管理员");
+            scrapLocationId = resolveScrapLocationId();
         }
 
         String batchNo = oConvertUtils.isEmpty(dto.getBatchNo()) ? order.getBatchNo() : dto.getBatchNo().trim();
@@ -501,6 +502,34 @@ public class WmsProductionInboundServiceImpl
         alert(WmsConstants.PRODUCTION_LOCATION_ALERT_TITLE,
                 "立库无空闲库位，生产入库提交被拒绝，请人工介入");
         throw new RuntimeException("立库库位不足，已告警");
+    }
+
+    /**
+     * 不良品默认仓：优先读系统配置 {@code defect.warehouse.code}（BD-004），
+     * 未配置或配置的库区/默认位不存在时回退到「废品仓 + FPC-DEFAULT」。
+     */
+    private String resolveScrapLocationId() {
+        String configuredCode = systemConfigService.getString(
+                WmsConfigKey.DEFECT_WAREHOUSE_CODE.getKey(), "");
+        if (oConvertUtils.isNotEmpty(configuredCode)) {
+            WmsWarehouse warehouse = warehouseMapper.selectOne(Wrappers.<WmsWarehouse>query()
+                    .eq("warehouse_code", configuredCode.trim()).last("LIMIT 1"));
+            if (warehouse != null) {
+                WmsLocation location = locationMapper.selectOne(Wrappers.<WmsLocation>query()
+                        .eq("warehouse_id", warehouse.getId())
+                        .eq("location_code", WmsConstants.LOCATION_CODE_SCRAP_DEFAULT)
+                        .last("LIMIT 1"));
+                if (location != null) {
+                    return location.getId();
+                }
+            }
+            log.warn("系统配置 defect.warehouse.code={} 未找到对应库区或默认位，回退到废品仓默认位",
+                    configuredCode);
+        }
+        return requireDefaultLocation(
+                WmsConstants.WAREHOUSE_TYPE_SCRAP,
+                WmsConstants.LOCATION_CODE_SCRAP_DEFAULT,
+                "废品仓未配置，请联系管理员");
     }
 
     /** 按库区类型 + 默认库位编码取库位；缺失时抛业务异常。 */

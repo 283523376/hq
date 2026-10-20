@@ -394,6 +394,23 @@ class WmsSystemConfigServiceImplTest {
         assertEquals(600, intService("60").getInt("no.such.key", 600));
     }
 
+    // ------------------------------------------------------------ getString 兜底
+
+    @Test
+    void getString_shouldUseStoredValue() {
+        assertEquals("FPC01", intService("FPC01").getString("defect.warehouse.code", ""));
+    }
+
+    @Test
+    void getString_shouldFallBackWhenBlank() {
+        assertEquals("fallback", intService("   ").getString("defect.warehouse.code", "fallback"));
+    }
+
+    @Test
+    void getString_shouldFallBackOnUnknownKey() {
+        assertEquals("fallback", intService("FPC01").getString("no.such.key", "fallback"));
+    }
+
     /**
      * 组内只有部分键有上一版本时：**跳过没有的那个**，其余照常回滚——
      * 不能因为「有一个键没有上一版本」就把整组判成冲突（评审 I2）。

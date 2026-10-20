@@ -13,6 +13,7 @@ import org.jeecg.modules.wms.mapper.WmsProductionInboundMapper;
 import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
 import org.jeecg.modules.wms.mapper.WmsWorkOrderMapper;
 import org.jeecg.modules.wms.service.IWmsLocationService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,6 +46,7 @@ class WmsProductionInboundServiceImplTest {
     private WmsWarehouseMapper warehouseMapper;
     private WmsInventoryMapper inventoryMapper;
     private IWmsLocationService locationService;
+    private IWmsSystemConfigService systemConfigService;
     private ISysBaseAPI sysBaseAPI;
     private WmsProductionInboundServiceImpl service;
 
@@ -55,6 +58,7 @@ class WmsProductionInboundServiceImplTest {
         warehouseMapper = mock(WmsWarehouseMapper.class);
         inventoryMapper = mock(WmsInventoryMapper.class);
         locationService = mock(IWmsLocationService.class);
+        systemConfigService = mock(IWmsSystemConfigService.class);
         sysBaseAPI = mock(ISysBaseAPI.class);
 
         service = new WmsProductionInboundServiceImpl();
@@ -65,6 +69,7 @@ class WmsProductionInboundServiceImplTest {
         WmsTestSupport.inject(service, "warehouseMapper", warehouseMapper);
         WmsTestSupport.inject(service, "inventoryMapper", inventoryMapper);
         WmsTestSupport.inject(service, "locationService", locationService);
+        WmsTestSupport.inject(service, "systemConfigService", systemConfigService);
         WmsTestSupport.inject(service, "sysBaseAPI", sysBaseAPI);
     }
 
@@ -176,6 +181,23 @@ class WmsProductionInboundServiceImplTest {
         RuntimeException e = assertThrows(RuntimeException.class,
                 () -> service.submit(dto("1.0001", "0", "RFID-1")));
         assertEquals("数量精度不能超过 3 位小数", e.getMessage());
+    }
+
+    @Test
+    void submit_badQty_usesConfiguredScrapWarehouse() {
+        stubWorkOrder("半成品", "0");
+        when(systemConfigService.getString(eq("defect.warehouse.code"), anyString())).thenReturn("FPC01");
+        WmsLocation configured = new WmsLocation();
+        configured.setId("scrap-cfg");
+        when(locationMapper.selectOne(org.mockito.ArgumentMatchers
+                .<com.baomidou.mybatisplus.core.conditions.Wrapper<WmsLocation>>any()))
+                .thenReturn(configured);
+
+        service.submit(dto("0", "2", "RFID-1"));
+
+        ArgumentCaptor<WmsInventory> captor = ArgumentCaptor.forClass(WmsInventory.class);
+        verify(inventoryMapper).upsertInventory(captor.capture());
+        assertEquals("scrap-cfg", captor.getValue().getLocationId());
     }
 
     @Test

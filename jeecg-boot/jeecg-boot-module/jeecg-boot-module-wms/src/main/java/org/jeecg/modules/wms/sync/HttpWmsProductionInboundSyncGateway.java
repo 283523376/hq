@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.text.SimpleDateFormat;
@@ -53,6 +54,11 @@ public class HttpWmsProductionInboundSyncGateway implements IWmsProductionInboun
     @Autowired
     private WmsWarehouseMapper warehouseMapper;
 
+    /** 金蝶云星空第三方登录会话；未配置时 applyAuth 直接放行。 */
+    @Autowired
+    private IWmsKingdeeAuthService kingdeeAuthService;
+
+    @Autowired
     public HttpWmsProductionInboundSyncGateway(
             @Value("${wms.sync.erp.production-inbound-url:}") String erpUrl,
             @Value("${wms.sync.erp.username:}") String erpUsername,
@@ -68,23 +74,42 @@ public class HttpWmsProductionInboundSyncGateway implements IWmsProductionInboun
         this.mesUsername = trim(mesUsername);
         this.mesPassword = mesPassword == null ? "" : mesPassword;
         this.wmsUrl = trim(wmsUrl);
+        this.restTemplate = buildRestTemplate();
+    }
+
+    /** 仅供单测注入 MockRestServiceServer 绑定的 RestTemplate。 */
+    HttpWmsProductionInboundSyncGateway(String erpUrl, String erpUsername, String erpPassword,
+                                        String mesUrl, String mesUsername, String mesPassword,
+                                        String wmsUrl, RestTemplate restTemplate) {
+        this.erpUrl = trim(erpUrl);
+        this.erpUsername = trim(erpUsername);
+        this.erpPassword = erpPassword == null ? "" : erpPassword;
+        this.mesUrl = trim(mesUrl);
+        this.mesUsername = trim(mesUsername);
+        this.mesPassword = mesPassword == null ? "" : mesPassword;
+        this.wmsUrl = trim(wmsUrl);
+        this.restTemplate = restTemplate;
+    }
+
+    private static RestTemplate buildRestTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(TIMEOUT_MS);
         factory.setReadTimeout(TIMEOUT_MS);
-        this.restTemplate = new RestTemplate(factory);
+        return new RestTemplate(factory);
     }
 
     @Override
     public WmsOrderSyncResult sync(WmsProductionInbound inbound) {
         List<Target> targets = new ArrayList<>();
         if (!erpUrl.isEmpty()) {
-            targets.add(new Target("ERP", erpUrl, erpUsername, erpPassword));
+            targets.add(new Target("ERP", erpUrl, erpUsername, erpPassword, true));
         }
         if (!mesUrl.isEmpty()) {
-            targets.add(new Target("MES", mesUrl, mesUsername, mesPassword));
+            // MES 是金蝶云星空 ERP 的下属子模块，同样使用金蝶会话
+            targets.add(new Target("MES", mesUrl, mesUsername, mesPassword, true));
         }
         if (!wmsUrl.isEmpty()) {
-            targets.add(new Target("WMS", wmsUrl, "", ""));
+            targets.add(new Target("WMS", wmsUrl, "", "", false));
         }
         if (targets.isEmpty()) {
             log.info("生产入库[{}]未配置任何同步地址，按模拟成功处理", inbound.getInboundNo());
@@ -94,21 +119,7 @@ public class HttpWmsProductionInboundSyncGateway implements IWmsProductionInboun
         Map<String, Object> payload = buildPayload(inbound);
         List<String> errors = new ArrayList<>();
         for (Target target : targets) {
-            try {
-                HttpHeaders headers = new HttpHeaders();
-                headers.setContentType(MediaType.APPLICATION_JSON);
-                if (!target.username.isEmpty()) {
-                    headers.setBasicAuth(target.username, target.password);
-                }
-                ResponseEntity<String> response = restTemplate.postForEntity(target.url,
-                        new HttpEntity<>(payload, headers), String.class);
-                if (!response.getStatusCode().is2xxSuccessful()) {
-                    errors.add(target.name + " 返回 " + response.getStatusCode());
-                }
-            } catch (Exception e) {
-                log.warn("生产入库[{}]同步 {} 异常：{}", inbound.getInboundNo(), target.name, e.getMessage());
-                errors.add(target.name + " 调用异常：" + e.getMessage());
-            }
+            postTarget(target, payload, errors, inbound.getInboundNo());
         }
         if (errors.isEmpty()) {
             return WmsOrderSyncResult.ok();
@@ -116,7 +127,59 @@ public class HttpWmsProductionInboundSyncGateway implements IWmsProductionInboun
         return WmsOrderSyncResult.fail(String.join("；", errors));
     }
 
-    private Map<String, Object> buildPayload(WmsProductionInbound inbound) {
+    /** 投递单个目标；金蝶目标带会话，401/403 时重新登录并重试一次。 */
+    private void postTarget(Target target, Map<String, Object> payload,
+                            List<String> errors, String inboundNo) {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            if (!target.username.isEmpty()) {
+                headers.setBasicAuth(target.username, target.password);
+            }
+            if (target.kingdee && kingdeeAuthService != null) {
+                if (!kingdeeAuthService.applyAuth(headers)) {
+                    errors.add(target.name + " 金蝶鉴权失败");
+                    return;
+                }
+            }
+            try {
+                ResponseEntity<String> response = restTemplate.postForEntity(target.url,
+                        new HttpEntity<>(payload, headers), String.class);
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    return;
+                }
+                if (target.kingdee && isAuthError(response.getStatusCode().value()) && attempt == 0) {
+                    if (kingdeeAuthService != null) {
+                        kingdeeAuthService.invalidate();
+                    }
+                    continue;
+                }
+                errors.add(target.name + " 返回 " + response.getStatusCode());
+                return;
+            } catch (HttpStatusCodeException e) {
+                if (target.kingdee && isAuthError(e.getStatusCode().value()) && attempt == 0) {
+                    if (kingdeeAuthService != null) {
+                        kingdeeAuthService.invalidate();
+                    }
+                    continue;
+                }
+                log.warn("生产入库[{}]同步 {} 异常：{}", inboundNo, target.name, e.getMessage());
+                errors.add(target.name + " 调用异常：" + e.getMessage());
+                return;
+            } catch (Exception e) {
+                log.warn("生产入库[{}]同步 {} 异常：{}", inboundNo, target.name, e.getMessage());
+                errors.add(target.name + " 调用异常：" + e.getMessage());
+                return;
+            }
+        }
+    }
+
+    private boolean isAuthError(int status) {
+        return status == 401 || status == 403;
+    }
+
+    /** 组装同步报文；包级可见便于单测直接断言字段（尤其是不良品相关字段）。 */
+    Map<String, Object> buildPayload(WmsProductionInbound inbound) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("inboundNo", inbound.getInboundNo());
         payload.put("workOrderNo", inbound.getWorkOrderNo());
@@ -129,6 +192,8 @@ public class HttpWmsProductionInboundSyncGateway implements IWmsProductionInboun
         payload.put("badQty", inbound.getBadQty());
         payload.put("warehouseType", resolveWarehouseType(inbound.getLocationId()));
         payload.put("locationCode", resolveLocationCode(inbound.getLocationId()));
+        payload.put("scrapLocationCode", resolveLocationCode(inbound.getScrapLocationId()));
+        payload.put("defectRemark", inbound.getDefectRemark());
         payload.put("carrierCode", inbound.getCarrierCode());
         payload.put("identType", inbound.getIdentType());
         payload.put("completedAt", inbound.getCompleteTime() == null ? null
@@ -165,12 +230,14 @@ public class HttpWmsProductionInboundSyncGateway implements IWmsProductionInboun
         private final String url;
         private final String username;
         private final String password;
+        private final boolean kingdee;
 
-        private Target(String name, String url, String username, String password) {
+        private Target(String name, String url, String username, String password, boolean kingdee) {
             this.name = name;
             this.url = url;
             this.username = username;
             this.password = password;
+            this.kingdee = kingdee;
         }
     }
 }

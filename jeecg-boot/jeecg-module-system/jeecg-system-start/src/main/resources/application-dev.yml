@@ -482,6 +482,20 @@ wms:
       production-inbound-url: ""
       username: ""
       password: ""
+      # 金蝶云星空第三方系统登录授权（LoginByAppSecret）
+      # 凭据只从环境变量读取，禁止写入仓库；启动前设置：
+      #   KINGDEE_ERP_BASE_URL / KINGDEE_ERP_ACCT_ID / KINGDEE_ERP_USERNAME
+      #   KINGDEE_ERP_APP_ID / KINGDEE_ERP_APP_SECRET
+      kingdee:
+        base-url: "${KINGDEE_ERP_BASE_URL:}"
+        acct-id: "${KINGDEE_ERP_ACCT_ID:}"
+        username: "${KINGDEE_ERP_USERNAME:}"
+        app-id: "${KINGDEE_ERP_APP_ID:}"
+        app-secret: "${KINGDEE_ERP_APP_SECRET:}"
+        lcid: 2052
+        # 仅测试环境可显式允许 HTTP；生产必须 HTTPS（默认 false）
+        allow-http: "${KINGDEE_ERP_ALLOW_HTTP:false}"
+        timeout-ms: 30000
     # 同步上级 WMS 地址（占位）
     wms:
       production-inbound-url: ""
