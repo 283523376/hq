@@ -1,5 +1,7 @@
 package org.jeecg.modules.wms.service;
 
+import org.jeecg.modules.wms.sync.WmsTaskDispatchResult;
+
 /**
  * 生产入库设备任务下发/取消（外部调用，必须在事务外执行）。
  *
@@ -23,4 +25,12 @@ public interface IWmsProductionTaskService {
      * 关单时尽力取消设备任务，失败只记日志。
      */
     void cancelInbound(String inboundId);
+
+    /**
+     * 工作站强制入库：对已进入工作站的容器调用 RMS 强制入库接口。
+     *
+     * @return 下发结果；失败原因原样返回给调用方
+     * @throws RuntimeException 记录不存在或状态不允许
+     */
+    WmsTaskDispatchResult forceInbound(String inboundId);
 }

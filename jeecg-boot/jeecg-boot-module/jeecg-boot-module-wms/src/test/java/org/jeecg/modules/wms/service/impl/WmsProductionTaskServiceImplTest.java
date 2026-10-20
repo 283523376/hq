@@ -210,6 +210,35 @@ class WmsProductionTaskServiceImplTest {
     }
 
     @Test
+    void forceInbound_fromException_acceptedAndUpdatesStatus() {
+        when(inboundMapper.selectById("id1")).thenReturn(record("成品", "异常待人工", "失败"));
+        when(rmsGateway.forceInbound("T1", "C1")).thenReturn(WmsTaskDispatchResult.ok());
+        when(inboundMapper.update(any(), any())).thenReturn(1);
+
+        assertTrue(service.forceInbound("id1").isSuccess());
+
+        verify(rmsGateway).forceInbound("T1", "C1");
+        verify(inboundMapper).update(any(), ArgumentMatchers.<Wrapper<WmsProductionInbound>>argThat(
+                w -> ((UpdateWrapper<?>) w).getParamNameValuePairs().containsValue("已受理")));
+    }
+
+    @Test
+    void forceInbound_semiFinished_isRejected() {
+        when(inboundMapper.selectById("id1")).thenReturn(record("半成品", "待上架", "未下发"));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.forceInbound("id1"));
+        assertEquals("仅成品（RMS）支持强制入库", e.getMessage());
+    }
+
+    @Test
+    void forceInbound_inboundState_throws() {
+        when(inboundMapper.selectById("id1")).thenReturn(record("成品", "已入库", "已完成"));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.forceInbound("id1"));
+        assertEquals("当前状态不允许强制入库", e.getMessage());
+    }
+
+    @Test
     void cancel_failure_persistsTaskError() {
         when(inboundMapper.selectById("id1")).thenReturn(record("半成品", "异常待人工", "失败"));
         WmsLocation location = new WmsLocation();

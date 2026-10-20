@@ -143,6 +143,38 @@ public class WmsProductionTaskServiceImpl implements IWmsProductionTaskService {
     }
 
     @Override
+    public WmsTaskDispatchResult forceInbound(String inboundId) {
+        WmsProductionInbound record = inboundMapper.selectById(inboundId);
+        if (record == null) {
+            throw new RuntimeException("生产入库记录不存在");
+        }
+        // 强制入库是 RMS（成品敏捷仓）语义；半成品走 WCS，不适用
+        if (!WmsConstants.PRODUCT_TYPE_FINISHED.equals(record.getProductType())) {
+            throw new RuntimeException("仅成品（RMS）支持强制入库");
+        }
+        boolean allowed = WmsConstants.PROD_STATUS_PENDING_PUTAWAY.equals(record.getStatus())
+                || WmsConstants.PROD_STATUS_EXECUTING.equals(record.getStatus())
+                || WmsConstants.PROD_STATUS_EXCEPTION.equals(record.getStatus());
+        if (!allowed) {
+            throw new RuntimeException("当前状态不允许强制入库");
+        }
+        WmsTaskDispatchResult result = rmsGateway.forceInbound(record.getWcsTaskNo(), record.getCarrierCode());
+        if (result.isSuccess()) {
+            inboundMapper.update(null, new UpdateWrapper<WmsProductionInbound>()
+                    .set("status", WmsConstants.PROD_STATUS_PENDING_PUTAWAY)
+                    .set("task_status", WmsConstants.TASK_STATUS_ACCEPTED)
+                    .setSql("task_error = NULL")
+                    .set("update_time", new Date())
+                    .eq("id", record.getId())
+                    .in("status", WmsConstants.PROD_STATUS_PENDING_PUTAWAY,
+                            WmsConstants.PROD_STATUS_EXECUTING, WmsConstants.PROD_STATUS_EXCEPTION));
+            log.info("生产入库强制入库已受理：单号={}，任务号={}",
+                    record.getInboundNo(), record.getWcsTaskNo());
+        }
+        return result;
+    }
+
+    @Override
     public void cancelInbound(String inboundId) {
         WmsProductionInbound record = inboundMapper.selectById(inboundId);
         if (record == null) {

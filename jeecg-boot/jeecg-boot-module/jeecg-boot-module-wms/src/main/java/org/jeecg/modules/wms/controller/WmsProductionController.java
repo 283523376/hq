@@ -17,6 +17,7 @@ import org.jeecg.modules.wms.service.IWmsProductionSyncService;
 import org.jeecg.modules.wms.service.IWmsProductionTaskService;
 import org.jeecg.modules.wms.service.IWmsWorkOrderService;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
+import org.jeecg.modules.wms.sync.WmsTaskDispatchResult;
 import org.jeecg.modules.wms.vo.WmsWorkOrderInfoVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -96,6 +97,20 @@ public class WmsProductionController {
             // 人工触发的重新下发保持同步：状态不允许时要把错误明确返回给用户
             taskService.dispatchInbound(id);
             return Result.OK("已重新下发", service.getById(id));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @RequiresPermissions("wms:production:dispatch")
+    @Operation(summary = "生产入库-工作站强制入库（RMS /api/v2/task/inbound/force）")
+    @PostMapping(value = "/{id}/force-inbound")
+    public Result<WmsTaskDispatchResult> forceInbound(@PathVariable("id") String id) {
+        try {
+            WmsTaskDispatchResult result = taskService.forceInbound(id);
+            return result.isSuccess()
+                    ? Result.OK("强制入库已受理", result)
+                    : Result.error("强制入库失败：" + result.getErrorMessage());
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }

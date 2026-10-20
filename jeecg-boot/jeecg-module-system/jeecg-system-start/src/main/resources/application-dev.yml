@@ -464,7 +464,8 @@ wms:
       station-code: ""
       warehouse: "MITA"
       priority: 1
-      timeout-ms: 60000
+      # 连接/读取超时（毫秒）：需求方口径 30 秒
+      timeout-ms: 30000
       # RMS 回调令牌（开发占位，生产必须替换）
       callback-token: "dev-rms-token"
     wcs:

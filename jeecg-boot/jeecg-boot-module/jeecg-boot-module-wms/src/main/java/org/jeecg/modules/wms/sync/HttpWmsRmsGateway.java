@@ -3,23 +3,19 @@ package org.jeecg.modules.wms.sync;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * @Description: 米塔 RMS 入库任务网关（RMS任务接口文档 V1.6）。
  *
- * <p>配置 {@code wms.sync.rms.url}；未配置时模拟受理，保证无设备环境可闭环演示。
- * 错误码 300000（可重试）在网关内退避重试，其余错误码原样返回给业务层分类处理。
+ * <p>协议与超时由 {@link WmsRmsClient} 负责（默认 30s）；本类负责：
+ * <ul>
+ *   <li>未配置地址时模拟受理（无设备环境可闭环演示）；</li>
+ *   <li>300000 退避重试；300001（入库）/300012（强制入库）按幂等成功处理；</li>
+ *   <li>其余错误码带中文描述返回，由调用方转人工。</li>
+ * </ul>
  *
  * @Author: 永鑫WMS
  * @Date: 2026-10-19
@@ -28,27 +24,21 @@ import java.util.Map;
 @Component
 public class HttpWmsRmsGateway implements IWmsRmsGateway {
 
-    private final String baseUrl;
+    private final WmsRmsClient client;
     private final String stationCode;
     private final String warehouse;
     private final int priority;
-    private final RestTemplate restTemplate;
 
     private long[] backoffMs = WmsConstants.SYNC_RETRY_BACKOFF_MS;
 
-    public HttpWmsRmsGateway(@Value("${wms.sync.rms.url:}") String baseUrl,
+    public HttpWmsRmsGateway(WmsRmsClient client,
                              @Value("${wms.sync.rms.station-code:}") String stationCode,
                              @Value("${wms.sync.rms.warehouse:MITA}") String warehouse,
-                             @Value("${wms.sync.rms.priority:1}") int priority,
-                             @Value("${wms.sync.rms.timeout-ms:60000}") int timeoutMs) {
-        this.baseUrl = baseUrl == null ? "" : baseUrl.trim();
+                             @Value("${wms.sync.rms.priority:1}") int priority) {
+        this.client = client;
         this.stationCode = stationCode == null ? "" : stationCode.trim();
         this.warehouse = warehouse == null || warehouse.trim().isEmpty() ? "MITA" : warehouse.trim();
         this.priority = priority;
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(timeoutMs);
-        factory.setReadTimeout(timeoutMs);
-        this.restTemplate = new RestTemplate(factory);
     }
 
     void setBackoffMsForTest(long[] backoffMs) {
@@ -57,13 +47,14 @@ public class HttpWmsRmsGateway implements IWmsRmsGateway {
 
     @Override
     public WmsTaskDispatchResult dispatchInbound(String taskNo, String carrierCode) {
-        if (baseUrl.isEmpty()) {
+        if (!client.isConfigured()) {
             log.info("未配置 RMS 地址（wms.sync.rms.url），任务[{}]按模拟受理处理", taskNo);
             return WmsTaskDispatchResult.okMock();
         }
         WmsTaskDispatchResult last = null;
         for (int i = 0; i <= WmsConstants.SYNC_MAX_RETRY; i++) {
-            last = callInbound(taskNo, carrierCode);
+            WmsRmsResponse response = client.inbound(taskNo, carrierCode, stationCode, warehouse, priority);
+            last = toResult(response, false);
             if (last.isSuccess() || !last.isRetryable() || i == WmsConstants.SYNC_MAX_RETRY) {
                 return last;
             }
@@ -72,57 +63,53 @@ public class HttpWmsRmsGateway implements IWmsRmsGateway {
         return last;
     }
 
-    private WmsTaskDispatchResult callInbound(String taskNo, String carrierCode) {
-        try {
-            Map<String, Object> container = new LinkedHashMap<>();
-            container.put("containerCode", carrierCode);
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("warehouse", warehouse);
-            payload.put("taskNo", taskNo);
-            payload.put("stationCode", stationCode);
-            payload.put("container", container);
-            payload.put("priority", priority);
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            ResponseEntity<Map> response = restTemplate.postForEntity(
-                    join(baseUrl, "/api/v2/task/inbound"), new HttpEntity<>(payload, headers), Map.class);
-            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-                return WmsTaskDispatchResult.fail(null,
-                        "RMS 返回非成功状态：" + response.getStatusCode(), true);
-            }
-            Map<String, Object> body = response.getBody();
-            int code = toInt(body.get("code"), -1);
-            String msg = body.get("msg") == null ? "" : String.valueOf(body.get("msg"));
-            if (code == 0) {
-                return WmsTaskDispatchResult.ok();
-            }
-            return WmsTaskDispatchResult.fail(code, msg, code == WmsConstants.RMS_ERROR_RETRYABLE);
-        } catch (Exception e) {
-            log.warn("任务[{}]下发 RMS 异常：{}", taskNo, e.getMessage());
-            return WmsTaskDispatchResult.fail(null, "调用 RMS 异常：" + e.getMessage(), true);
+    @Override
+    public WmsTaskDispatchResult forceInbound(String taskNo, String carrierCode) {
+        if (!client.isConfigured()) {
+            log.info("未配置 RMS 地址（wms.sync.rms.url），任务[{}]强制入库按模拟受理处理", taskNo);
+            return WmsTaskDispatchResult.okMock();
         }
+        WmsRmsResponse response = client.inboundForce(stationCode, taskNo, List.of(carrierCode));
+        return toResult(response, true);
     }
 
     @Override
     public void cancelInbound(String taskNo, String carrierCode) {
-        if (baseUrl.isEmpty()) {
+        if (!client.isConfigured()) {
             return;
         }
         try {
-            Map<String, Object> detail = new LinkedHashMap<>();
-            detail.put("containerCode", carrierCode);
-            detail.put("taskNo", taskNo);
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("type", "INBOUND");
-            payload.put("details", List.of(detail));
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            restTemplate.postForEntity(join(baseUrl, "/api/v2/task/cancel"),
-                    new HttpEntity<>(payload, headers), Map.class);
+            WmsRmsResponse response = client.cancel(taskNo, carrierCode);
+            if (!response.isSuccess()) {
+                log.warn("任务[{}]取消 RMS 任务失败：{}", taskNo, response.getMessage());
+            }
         } catch (Exception e) {
-            log.warn("任务[{}]取消 RMS 任务失败（不阻塞关单）：{}", taskNo, e.getMessage());
+            log.warn("任务[{}]取消 RMS 任务异常（不阻塞关单）：{}", taskNo, e.getMessage());
         }
+    }
+
+    /** RMS 响应 → 业务结果：区分幂等成功、可重试失败与需转人工的业务错误。 */
+    private WmsTaskDispatchResult toResult(WmsRmsResponse response, boolean force) {
+        if (response.isTransportError()) {
+            return WmsTaskDispatchResult.fail(null, response.getMessage(), true);
+        }
+        int httpStatus = response.getHttpStatus();
+        if (httpStatus < 200 || httpStatus >= 300) {
+            return WmsTaskDispatchResult.fail(null, response.getMessage(), httpStatus >= 500);
+        }
+        int code = response.getCode();
+        boolean idempotent = force
+                ? WmsRmsErrorCode.isForceIdempotentSuccess(code)
+                : WmsRmsErrorCode.isInboundIdempotentSuccess(code);
+        if (idempotent) {
+            return WmsTaskDispatchResult.ok();
+        }
+        String description = WmsRmsErrorCode.describe(code);
+        String base = response.getMessage() == null ? "" : response.getMessage();
+        String message = base.contains(description)
+                ? base
+                : base + "（" + code + " " + description + "）";
+        return WmsTaskDispatchResult.fail(code, message, WmsRmsErrorCode.isRetryable(code));
     }
 
     private void sleepBeforeRetry(int index, String taskNo) {
@@ -135,21 +122,6 @@ public class HttpWmsRmsGateway implements IWmsRmsGateway {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("任务[{}]RMS 重试等待被中断", taskNo);
-        }
-    }
-
-    private String join(String base, String path) {
-        return base.endsWith("/") ? base.substring(0, base.length() - 1) + path : base + path;
-    }
-
-    private int toInt(Object value, int defaultValue) {
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        }
-        try {
-            return value == null ? defaultValue : Integer.parseInt(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return defaultValue;
         }
     }
 }

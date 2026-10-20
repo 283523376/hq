@@ -8,10 +8,13 @@ import org.jeecg.modules.wms.service.IWmsProductionTaskService;
 import org.jeecg.modules.wms.service.IWmsWorkOrderService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
+import org.jeecg.modules.wms.sync.WmsTaskDispatchResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -87,5 +90,15 @@ class WmsProductionControllerTest {
 
         verify(taskService).dispatchInboundAsync("id1");
         verify(syncService, never()).syncInbound(anyString(), anyBoolean());
+    }
+
+    @Test
+    void forceInbound_delegatesAndReturnsResult() {
+        when(taskService.forceInbound("id1")).thenReturn(WmsTaskDispatchResult.ok());
+
+        org.jeecg.common.api.vo.Result<WmsTaskDispatchResult> result = controller.forceInbound("id1");
+
+        assertEquals(200, result.getCode());
+        verify(taskService).forceInbound("id1");
     }
 }

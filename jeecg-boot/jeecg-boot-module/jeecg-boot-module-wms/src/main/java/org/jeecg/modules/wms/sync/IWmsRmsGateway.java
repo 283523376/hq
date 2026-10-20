@@ -14,6 +14,12 @@ public interface IWmsRmsGateway {
     WmsTaskDispatchResult dispatchInbound(String taskNo, String carrierCode);
 
     /**
+     * 工作站强制入库：POST /api/v2/task/inbound/force。
+     * 工作站内的容器锁定并呼叫机器人前往对接；300012（已在呼叫）按幂等成功处理。
+     */
+    WmsTaskDispatchResult forceInbound(String taskNo, String carrierCode);
+
+    /**
      * 任务取消：POST /api/v2/task/cancel。尽力而为，异常不向上抛。
      */
     void cancelInbound(String taskNo, String carrierCode);
