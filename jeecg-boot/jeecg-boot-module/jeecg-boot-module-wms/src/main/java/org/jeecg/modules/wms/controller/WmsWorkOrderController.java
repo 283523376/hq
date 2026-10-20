@@ -12,7 +12,10 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.config.shiro.IgnoreAuth;
 import org.jeecg.modules.wms.dto.WmsWorkOrderPushDTO;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
+import org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService;
 import org.jeecg.modules.wms.service.IWmsWorkOrderService;
+import org.jeecg.modules.wms.vo.WmsKingdeeWorkOrderSyncResultVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,6 +43,9 @@ public class WmsWorkOrderController extends JeecgController<WmsWorkOrder, IWmsWo
     @Value("${wms.sync.mes.push-token:}")
     private String pushToken;
 
+    @Autowired
+    private IWmsKingdeeWorkOrderSyncService kingdeeSyncService;
+
     @Operation(summary = "生产工单-分页列表")
     @GetMapping(value = "/list")
     public Result<IPage<WmsWorkOrder>> list(
@@ -49,6 +55,19 @@ public class WmsWorkOrderController extends JeecgController<WmsWorkOrder, IWmsWo
             @RequestParam(name = "productType", required = false) String productType,
             @RequestParam(name = "workOrderStatus", required = false) String workOrderStatus) {
         return Result.OK(service.listPage(pageNo, pageSize, workOrderNo, productType, workOrderStatus));
+    }
+
+    @RequiresPermissions("wms:work-order:edit")
+    @Operation(summary = "生产工单-从金蝶 PRD_MO 同步")
+    @PostMapping(value = "/sync-kingdee")
+    public Result<WmsKingdeeWorkOrderSyncResultVO> syncKingdee(
+            @RequestParam(name = "billNo", required = false) String billNo,
+            @RequestParam(name = "top", defaultValue = "50") Integer top) {
+        try {
+            return Result.OK("同步完成", kingdeeSyncService.syncFromKingdee(billNo, top));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
     }
 
     @RequiresPermissions("wms:work-order:add")

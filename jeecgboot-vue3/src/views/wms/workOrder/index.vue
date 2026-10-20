@@ -5,6 +5,17 @@
         <a-button type="primary" preIcon="ant-design:plus-outlined" v-auth="'wms:work-order:add'" @click="handleCreate">
           新增
         </a-button>
+        <a-button
+          type="primary"
+          ghost
+          preIcon="ant-design:sync-outlined"
+          :loading="syncing"
+          v-auth="'wms:work-order:edit'"
+          style="margin-left: 8px"
+          @click="handleSyncKingdee"
+        >
+          从金蝶同步
+        </a-button>
       </template>
       <template #action="{ record }">
         <TableAction :actions="getTableAction(record)" />
@@ -15,14 +26,18 @@
 </template>
 
 <script lang="ts" name="wms-work-order" setup>
+  import { ref } from 'vue';
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useModal } from '/@/components/Modal';
   import { useListPage } from '/@/hooks/system/useListPage';
+  import { useMessage } from '/@/hooks/web/useMessage';
   import WorkOrderModal from './components/WorkOrderModal.vue';
   import { columns, searchFormSchema } from './workOrder.data';
-  import { deleteWorkOrder, listWorkOrder } from './workOrder.api';
+  import { deleteWorkOrder, listWorkOrder, syncKingdeeWorkOrder } from './workOrder.api';
 
   const [registerModal, { openModal }] = useModal();
+  const { createMessage } = useMessage();
+  const syncing = ref(false);
 
   const { tableContext } = useListPage({
     tableProps: {
@@ -50,6 +65,24 @@
 
   function handleSuccess() {
     reload();
+  }
+
+  async function handleSyncKingdee() {
+    syncing.value = true;
+    try {
+      const res: any = await syncKingdeeWorkOrder({ top: 50 });
+      const summary = `同步完成：新增 ${res.imported}，更新 ${res.updated}，跳过 ${res.skipped}`;
+      if (res.skipped > 0 && res.messages?.length) {
+        createMessage.warning(`${summary}；${res.messages.slice(0, 3).join('；')}`, 8);
+      } else {
+        createMessage.success(summary);
+      }
+      reload();
+    } catch (e) {
+      createMessage.error('金蝶工单同步失败，请检查金蝶配置或后端日志');
+    } finally {
+      syncing.value = false;
+    }
   }
 
   function getTableAction(record: any) {

@@ -1,5 +1,7 @@
 package org.jeecg.modules.wms.sync;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +52,7 @@ public class WmsKingdeeAuthServiceImpl implements IWmsKingdeeAuthService {
     /** 仅测试环境：显式允许 HTTP（默认 false，生产必须 HTTPS）。 */
     private final boolean allowHttp;
     private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private volatile String cookie;
     private volatile long expiresAt;
@@ -139,14 +142,22 @@ public class WmsKingdeeAuthServiceImpl implements IWmsKingdeeAuthService {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            ResponseEntity<Map> response = restTemplate.postForEntity(
-                    join(baseUrl, LOGIN_PATH), new HttpEntity<>(body, headers), Map.class);
-            Map<String, Object> result = response.getBody();
-            int resultType = result == null ? -1 : toInt(result.get("LoginResultType"), -1);
+            // 金蝶登录响应可能是 text/plain；按字符串接收再解析，避免 Map 转换器因 Content-Type 失败
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    join(baseUrl, LOGIN_PATH), new HttpEntity<>(body, headers), String.class);
+            String raw = response.getBody() == null ? "" : response.getBody();
+            Map<String, Object> result;
+            try {
+                result = objectMapper.readValue(raw, new TypeReference<Map<String, Object>>() { });
+            } catch (Exception parseError) {
+                log.warn("金蝶登录返回无法解析：appId={}，响应={}", maskedAppId(), abbreviate(raw));
+                return null;
+            }
+            int resultType = toInt(result.get("LoginResultType"), -1);
             if (resultType != 1) {
                 // 只记录结果与对方 Message，绝不回显 appSecret/请求体
                 log.warn("金蝶登录失败：appId={}，LoginResultType={}，Message={}",
-                        maskedAppId(), resultType, result == null ? "" : result.get("Message"));
+                        maskedAppId(), resultType, result.get("Message"));
                 return null;
             }
             String sessionCookie = extractCookie(response.getHeaders(), result);
@@ -197,6 +208,13 @@ public class WmsKingdeeAuthServiceImpl implements IWmsKingdeeAuthService {
             normalized = normalized.substring(0, normalized.length() - "/k3cloud".length());
         }
         return normalized + path;
+    }
+
+    private String abbreviate(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= 200 ? text : text.substring(0, 200) + "...(已截断)";
     }
 
     private int toInt(Object value, int defaultValue) {

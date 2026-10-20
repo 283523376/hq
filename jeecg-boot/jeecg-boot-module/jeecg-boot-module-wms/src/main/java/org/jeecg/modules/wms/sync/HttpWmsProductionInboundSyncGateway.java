@@ -58,6 +58,13 @@ public class HttpWmsProductionInboundSyncGateway implements IWmsProductionInboun
     @Autowired
     private IWmsKingdeeAuthService kingdeeAuthService;
 
+    /** 金蝶业务同步配置；enabled=true 时 ERP 目标改为 PRD_INSTOCK Save/Submit。 */
+    @Autowired
+    private WmsKingdeeProperties kingdeeProperties;
+
+    @Autowired
+    private IWmsKingdeeInboundWriter kingdeeInboundWriter;
+
     @Autowired
     public HttpWmsProductionInboundSyncGateway(
             @Value("${wms.sync.erp.production-inbound-url:}") String erpUrl,
@@ -100,8 +107,22 @@ public class HttpWmsProductionInboundSyncGateway implements IWmsProductionInboun
 
     @Override
     public WmsOrderSyncResult sync(WmsProductionInbound inbound) {
+        boolean kingdeeEnabled = kingdeeProperties != null && kingdeeProperties.isEnabled();
+        List<String> errors = new ArrayList<>();
+        if (kingdeeEnabled) {
+            if (kingdeeInboundWriter == null) {
+                errors.add("ERP(金蝶)：未注入回写器");
+            } else {
+                WmsOrderSyncResult erpResult = kingdeeInboundWriter.write(inbound);
+                if (!erpResult.isSuccess()) {
+                    errors.add("ERP(金蝶)：" + erpResult.getErrorMessage());
+                }
+            }
+        }
+
         List<Target> targets = new ArrayList<>();
-        if (!erpUrl.isEmpty()) {
+        // 启用金蝶时 ERP 由 PRD_INSTOCK 回写器负责，不再走通用 HTTP 地址，避免重复
+        if (!kingdeeEnabled && !erpUrl.isEmpty()) {
             targets.add(new Target("ERP", erpUrl, erpUsername, erpPassword, true));
         }
         if (!mesUrl.isEmpty()) {
@@ -111,13 +132,12 @@ public class HttpWmsProductionInboundSyncGateway implements IWmsProductionInboun
         if (!wmsUrl.isEmpty()) {
             targets.add(new Target("WMS", wmsUrl, "", "", false));
         }
-        if (targets.isEmpty()) {
+        if (targets.isEmpty() && !kingdeeEnabled) {
             log.info("生产入库[{}]未配置任何同步地址，按模拟成功处理", inbound.getInboundNo());
             return WmsOrderSyncResult.okMock();
         }
 
         Map<String, Object> payload = buildPayload(inbound);
-        List<String> errors = new ArrayList<>();
         for (Target target : targets) {
             postTarget(target, payload, errors, inbound.getInboundNo());
         }
