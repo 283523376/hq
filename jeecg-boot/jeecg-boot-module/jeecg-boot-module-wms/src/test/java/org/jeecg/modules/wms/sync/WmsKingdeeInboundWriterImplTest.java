@@ -82,7 +82,7 @@ class WmsKingdeeInboundWriterImplTest {
         when(formClient.executeBillQuery(eq("BD_UNIT"), anyString(), anyString(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101588, "zhi", "支")), null, null));
         when(formClient.executeBillQuery(eq("BD_STOCK"), anyString(), anyString(), anyInt()))
-                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101933, "02.002")), null, null));
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101933, "02.002", 0)), null, null));
         when(formClient.save(eq("PRD_INSTOCK"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "SCRK999", "id1"));
         when(formClient.submit(eq("PRD_INSTOCK"), eq(List.of("SCRK999"))))
@@ -175,7 +175,7 @@ class WmsKingdeeInboundWriterImplTest {
         when(formClient.executeBillQuery(eq("BD_UNIT"), anyString(), anyString(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101589, "zhi100", "支100")), null, null));
         when(formClient.executeBillQuery(eq("BD_STOCK"), anyString(), anyString(), anyInt()))
-                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101933, "02.002")), null, null));
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101933, "02.002", 0)), null, null));
         when(formClient.save(eq("PRD_INSTOCK"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "SCRK998", "id2"));
         when(formClient.submit(eq("PRD_INSTOCK"), any()))
@@ -222,5 +222,72 @@ class WmsKingdeeInboundWriterImplTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.getErrorMessage().contains("未找到物料编码"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void write_locationWarehouse_resolvesStockLocId() {
+        // 仓库启用仓位管理（FFlexId>0）：按 stock-loc 配置的仓位编号解析分录内码传 FStockLocId
+        properties.setStockLoc(Map.of("02.002", "01"));
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        List.of(List.of(100007, "WORK00072", 101487, "201011", 2000, 1, 100006, 1)),
+                        null, null));
+        when(formClient.executeBillQuery(eq("BD_MATERIAL"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        List.of(List.of(575219, "WA.2206.2201.02000430.A003", "半成品", 101588, 1, 209624)),
+                        null, null));
+        when(formClient.executeBillQuery(eq("BD_UNIT"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101588, "zhi", "支")), null, null));
+        when(formClient.executeBillQuery(eq("BD_STOCK"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101933, "02.002", 100001)), null, null));
+        // 值集编号查询 + View 分录
+        when(formClient.executeBillQuery(eq("BD_FLEXVALUES"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(100001, "001")), null, null));
+        when(formClient.view(eq("BD_FLEXVALUES"), eq("001")))
+                .thenReturn(WmsKingdeeResult.ok(
+                        "{\"Result\":{\"ResponseStatus\":{\"IsSuccess\":true},"
+                                + "\"Result\":{\"FLEXVALUESENTRY\":["
+                                + "{\"Id\":100001,\"Number\":\"01\"},{\"Id\":100002,\"Number\":\"02\"}]}}}",
+                        null, null, null));
+        when(formClient.save(eq("PRD_INSTOCK"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "SCRK997", "id3"));
+        when(formClient.submit(eq("PRD_INSTOCK"), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
+
+        assertTrue(writer.write(inbound("1", "0")).isSuccess());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(formClient).save(eq("PRD_INSTOCK"), captor.capture());
+        List<Map<String, Object>> entries = (List<Map<String, Object>>) captor.getValue().get("FEntity");
+        // 仓位传分录内码（数值），仓库 02.002 → 值集 001 → 编号 01 → 内码 100001
+        assertEquals(100001L, entries.get(0).get("FStockLocId"));
+    }
+
+    @Test
+    void write_locationWarehouseWithoutConfig_fails() {
+        // 启用仓位但未配置 stock-loc：明确报错而不是静默丢字段
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        List.of(List.of(100007, "WORK00072", 101487, "201011", 2000, 1, 100006, 1)),
+                        null, null));
+        when(formClient.executeBillQuery(eq("BD_MATERIAL"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        List.of(List.of(575219, "WA.2206.2201.02000430.A003", "半成品", 101588, 1, 209624)),
+                        null, null));
+        when(formClient.executeBillQuery(eq("BD_UNIT"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101588, "zhi", "支")), null, null));
+        when(formClient.executeBillQuery(eq("BD_STOCK"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101933, "02.002", 100001)), null, null));
+
+        WmsOrderSyncResult result = writer.write(inbound("1", "0"));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("启用仓位管理"));
+        verify(formClient, never()).save(anyString(), any());
     }
 }

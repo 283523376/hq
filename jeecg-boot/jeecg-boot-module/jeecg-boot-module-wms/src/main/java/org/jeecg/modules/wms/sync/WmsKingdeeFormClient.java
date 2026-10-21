@@ -37,6 +37,8 @@ public class WmsKingdeeFormClient {
             "/k3cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Submit.common.kdsvc";
     static final String DELETE_PATH =
             "/k3cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Delete.common.kdsvc";
+    static final String VIEW_PATH =
+            "/k3cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.View.common.kdsvc";
 
     private final WmsKingdeeProperties properties;
     private final IWmsKingdeeAuthService authService;
@@ -94,6 +96,17 @@ public class WmsKingdeeFormClient {
         body.put("FormId", formId);
         body.put("data", Map.of("Numbers", numbers));
         return post(DELETE_PATH, body, false);
+    }
+
+    /**
+     * 查看单据（含基础资料）。报文与 Submit 同构：顶层 FormId + data.Number。
+     * 成功时 raw 为完整单据 JSON（Result.Result 节点），供调用方解析弹性域等复杂字段。
+     */
+    public WmsKingdeeResult view(String formId, String number) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("FormId", formId);
+        body.put("data", Map.of("Number", number));
+        return post(VIEW_PATH, body, false);
     }
 
     @SuppressWarnings("unchecked")

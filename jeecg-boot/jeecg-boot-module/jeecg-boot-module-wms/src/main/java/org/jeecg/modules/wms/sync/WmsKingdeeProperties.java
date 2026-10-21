@@ -54,6 +54,12 @@ public class WmsKingdeeProperties {
      */
     private Map<String, Map<String, String>> stockCodeByOrg = new LinkedHashMap<>();
 
+    /**
+     * 仓库编码 → 仓位编号（BD_FLEXVALUES 分录 FFlexValueNumber，如 01）。
+     * 仅启用仓位管理的仓库需要配置；回写时按仓库的仓位值集解析为分录内码传 FStockLocId。
+     */
+    private Map<String, String> stockLoc = new LinkedHashMap<>();
+
     /** WMS 物料编码 → 金蝶物料编码；为空时按相同编码查询。 */
     private Map<String, String> materialMap = new LinkedHashMap<>();
 

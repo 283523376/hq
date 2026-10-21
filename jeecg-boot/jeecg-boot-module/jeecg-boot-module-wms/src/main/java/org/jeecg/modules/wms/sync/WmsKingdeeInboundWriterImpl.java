@@ -155,11 +155,22 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
                         + "，组织 " + moOrgNumber + "）");
             }
             WmsKingdeeResult stockResult = formClient.executeBillQuery("BD_STOCK",
-                    "FStockId,FNumber", "FNumber='" + stockCode.replace("'", "''") + "'", 1);
+                    "FStockId,FNumber,FFlexId", "FNumber='" + stockCode.replace("'", "''") + "'", 1);
             if (!stockResult.isSuccess() || stockResult.getRows().isEmpty()) {
                 return WmsOrderSyncResult.fail("金蝶未找到仓库编码：" + stockCode);
             }
-            Object stockId = stockResult.getRows().get(0).get(0);
+            List<Object> stockRow = stockResult.getRows().get(0);
+            Object stockId = stockRow.get(0);
+            // 启用仓位管理的仓库（FFlexId>0）必须带 FStockLocId，否则 Save 报「仓位不能为空」
+            Long flexId = stockRow.size() > 2 ? toLong(stockRow.get(2)) : null;
+            Long stockLocId = null;
+            if (flexId != null && flexId > 0) {
+                stockLocId = resolveStockLocId(stockCode, flexId);
+                if (stockLocId == null) {
+                    return WmsOrderSyncResult.fail("仓库[" + stockCode + "]启用仓位管理："
+                            + "请配置 stock-loc[" + stockCode + "]=仓位编号");
+                }
+            }
 
             // 4) 组装 Model
             Map<String, Object> model = new LinkedHashMap<>();
@@ -202,6 +213,10 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             entry.put("FOwnerTypeId", properties.getOwnerType());
             entry.put("FOwnerId", dict(moOrgNumber));
             entry.put("FStockId", dict(stockCode));
+            // 仓位：标量传分录内码（FStockLocId 嵌套字典格式金蝶不解析，实测标量可用）
+            if (stockLocId != null) {
+                entry.put("FStockLocId", stockLocId);
+            }
             // 批号：物料启用批号时必填；WMS 批次号需在 BD_BatchMainFile 中存在
             if (oConvertUtils.isNotEmpty(inbound.getBatchNo())) {
                 entry.put("FLot", dict(inbound.getBatchNo()));
@@ -233,6 +248,55 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
         }
         log.info("生产入库回写金蝶成功：FBillNo={}", number);
         return WmsOrderSyncResult.ok();
+    }
+
+    /**
+     * 解析仓库的仓位分录内码：stock-loc 配置仓位编号（FFlexValueNumber，如 01），
+     * 经 BD_FLEXVALUES 值集（FFlexId→值集编号）View 出 FLEXVALUESENTRY 匹配分录 Id。
+     * 找不到配置或分录时返回 null。
+     */
+    private Long resolveStockLocId(String stockCode, long flexId) {
+        String locNumber = properties.getStockLoc().get(stockCode);
+        if (oConvertUtils.isEmpty(locNumber)) {
+            return null;
+        }
+        try {
+            WmsKingdeeResult setResult = formClient.executeBillQuery("BD_FLEXVALUES",
+                    "FID,FNUMBER", "FID=" + flexId, 1);
+            if (!setResult.isSuccess() || setResult.getRows().isEmpty()) {
+                log.warn("金蝶仓位值集未找到：FFlexId={}", flexId);
+                return null;
+            }
+            String setNumber = str(setResult.getRows().get(0).get(1));
+            WmsKingdeeResult viewResult = formClient.view("BD_FLEXVALUES", setNumber);
+            if (!viewResult.isSuccess()) {
+                log.warn("金蝶仓位值集[{}]查看失败：{}", setNumber, viewResult.getMessage());
+                return null;
+            }
+            Map<String, Object> root = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readValue(viewResult.getRaw(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { });
+            Map<String, Object> result = root.get("Result") instanceof Map
+                    ? (Map<String, Object>) root.get("Result") : null;
+            Object model = result == null ? null : result.get("Result");
+            Object entries = model instanceof Map ? ((Map<?, ?>) model).get("FLEXVALUESENTRY") : null;
+            if (!(entries instanceof List)) {
+                return null;
+            }
+            for (Object item : (List<?>) entries) {
+                if (!(item instanceof Map)) {
+                    continue;
+                }
+                Map<?, ?> row = (Map<?, ?>) item;
+                if (locNumber.equals(str(row.get("Number")))) {
+                    return toLong(row.get("Id"));
+                }
+            }
+            log.warn("金蝶仓位值集[{}]中没有仓位编号[{}]", setNumber, locNumber);
+            return null;
+        } catch (Exception e) {
+            log.warn("解析仓库[{}]仓位失败：{}", stockCode, e.getMessage());
+            return null;
+        }
     }
 
     private String note(WmsProductionInbound inbound) {
