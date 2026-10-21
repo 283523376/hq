@@ -155,6 +155,51 @@ class WmsKingdeeInboundWriterImplTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void write_orgFollowsMo_notDefaultConfig() {
+        // 生产订单属于 100 组织（内码 100000）：入库单组织/货主/保管者必须跟随订单，
+        // 物料取 FUseOrgId=100000 的记录，仓库用该组织的覆盖配置，而不是默认组织 101
+        properties.setStockCodeByOrg(Map.of("100", Map.of("stereo", "99.001")));
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        List.of(List.of(100007, "WORK00072", 101487, "201011", 2000, 1, 100006, 1, 100000, "100")),
+                        null, null));
+        when(formClient.executeBillQuery(eq("BD_MATERIAL"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        List.of(
+                                List.of(575219, "WA.2206.2201.02000430.A003", "半成品", 101588, 1, 209624),
+                                List.of(999001, "WA.2206.2201.02000430.A003", "半成品", 101589, 1, 100000)),
+                        null, null));
+        when(formClient.executeBillQuery(eq("BD_UNIT"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101589, "zhi100", "支100")), null, null));
+        when(formClient.executeBillQuery(eq("BD_STOCK"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(101933, "02.002")), null, null));
+        when(formClient.save(eq("PRD_INSTOCK"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "SCRK998", "id2"));
+        when(formClient.submit(eq("PRD_INSTOCK"), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
+
+        assertTrue(writer.write(inbound("1", "0")).isSuccess());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(formClient).save(eq("PRD_INSTOCK"), captor.capture());
+        Map<String, Object> model = captor.getValue();
+        assertEquals("100", ((Map<?, ?>) model.get("FPrdOrgId")).get("FNumber"));
+        assertEquals("100", ((Map<?, ?>) model.get("FStockOrgId")).get("FNumber"));
+        assertEquals("100", ((Map<?, ?>) model.get("FOwnerId0")).get("FNumber"));
+        List<Map<String, Object>> entries = (List<Map<String, Object>>) model.get("FEntity");
+        Map<String, Object> entry = entries.get(0);
+        assertEquals("100", ((Map<?, ?>) entry.get("FOwnerId")).get("FNumber"));
+        assertEquals("100", ((Map<?, ?>) entry.get("FKeeperId")).get("FNumber"));
+        // 命中 100 组织的物料记录（基本单位 101589 → zhi100），证明不是拿的 101 记录
+        assertEquals("zhi100", ((Map<?, ?>) entry.get("FUnitID")).get("FNumber"));
+        // 仓库用 100 组织的覆盖配置，而不是通用 stock-code
+        assertEquals("99.001", ((Map<?, ?>) entry.get("FStockId")).get("FNumber"));
+    }
+
+    @Test
     void write_pureBadQty_isRejected() {
         WmsOrderSyncResult result = writer.write(inbound("0", "2"));
         assertFalse(result.isSuccess());

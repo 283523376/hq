@@ -63,10 +63,10 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
                 return submit(billNo);
             }
 
-            // 2) 生产订单来源分录（主产品行）：FMoId / FMoEntryId / FMoEntrySeq / 车间
+            // 2) 生产订单来源分录（主产品行）：FMoId / FMoEntryId / FMoEntrySeq / 车间 / 生产组织
             WmsKingdeeResult moResult = formClient.executeBillQuery("PRD_MO",
                     "FID,FBillNo,FWorkShopID,FWorkShopID.FNumber,FQty,FProductType,"
-                            + "FTreeEntity_FEntryId,FTreeEntity_FSeq",
+                            + "FTreeEntity_FEntryId,FTreeEntity_FSeq,FPrdOrgId,FPrdOrgId.FNumber",
                     "FBillNo='" + inbound.getWorkOrderNo().replace("'", "''") + "'", 10);
             if (!moResult.isSuccess() || moResult.getRows().isEmpty()) {
                 return WmsOrderSyncResult.fail("金蝶未找到生产订单：" + inbound.getWorkOrderNo());
@@ -89,6 +89,17 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             if (moBillId == null || moEntryId == null) {
                 return WmsOrderSyncResult.fail("金蝶生产订单缺少主键/分录内码：" + moBillNo);
             }
+            // 入库单组织必须跟随生产订单的生产组织（订单可能属于 100/101 任一组织），
+            // 不能固定用配置的默认组织；查不到时才回退默认组织并告警
+            Long moOrgId = mo.size() > 8 ? toLong(mo.get(8)) : null;
+            String moOrgNumber = mo.size() > 9 ? str(mo.get(9)) : "";
+            if (oConvertUtils.isEmpty(moOrgNumber)) {
+                moOrgNumber = properties.getDefaultOrgNumber();
+                log.warn("金蝶生产订单[{}]未取到生产组织编号，回退默认组织 {}", moBillNo, moOrgNumber);
+            }
+            if (moOrgId == null) {
+                moOrgId = toLong(properties.getDefaultOrgId());
+            }
 
             // 3) 物料 / 单位
             String kingdeeMaterialCode = properties.getMaterialMap()
@@ -102,10 +113,10 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             if (materialResult.getRows().isEmpty()) {
                 return WmsOrderSyncResult.fail("金蝶未找到物料编码：" + kingdeeMaterialCode);
             }
-            // 同一物料编码可能存在于多个组织：优先取 FUseOrgId = 默认组织 的记录
+            // 同一物料编码可能存在于多个组织：优先取 FUseOrgId = 生产订单组织 的记录
             List<Object> material = null;
             for (List<Object> row : materialResult.getRows()) {
-                if (row.size() > 5 && String.valueOf(row.get(5)).equals(properties.getDefaultOrgId())) {
+                if (row.size() > 5 && String.valueOf(row.get(5)).equals(String.valueOf(moOrgId))) {
                     material = row;
                     break;
                 }
@@ -113,7 +124,7 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             if (material == null) {
                 material = materialResult.getRows().get(0);
                 log.warn("金蝶物料[{}]未找到组织[{}]的记录，退回第一条（id={}）",
-                        kingdeeMaterialCode, properties.getDefaultOrgId(), material.get(0));
+                        kingdeeMaterialCode, moOrgId, material.get(0));
             }
             Object materialId = material.get(0);
             Object unitId = material.size() > 3 ? material.get(3) : null;
@@ -128,12 +139,20 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             }
             String unitNumber = str(unitResult.getRows().get(0).get(1));
 
-            // 4) 仓库
+            // 4) 仓库：仓库是组织级基础资料，优先按生产订单组织取覆盖配置
             String stockKey = WmsConstants.PRODUCT_TYPE_SEMI.equals(inbound.getProductType())
                     ? "stereo" : WmsConstants.PRODUCT_TYPE_FINISHED.equals(inbound.getProductType()) ? "agile" : null;
-            String stockCode = stockKey == null ? null : properties.getStockCode().get(stockKey);
+            if (stockKey == null) {
+                return WmsOrderSyncResult.fail("未知产品类型：" + inbound.getProductType());
+            }
+            Map<String, String> orgStock = properties.getStockCodeByOrg().get(moOrgNumber);
+            String stockCode = orgStock == null ? null : orgStock.get(stockKey);
             if (oConvertUtils.isEmpty(stockCode)) {
-                return WmsOrderSyncResult.fail("未配置金蝶仓库编码（stock-code." + stockKey + "）");
+                stockCode = properties.getStockCode().get(stockKey);
+            }
+            if (oConvertUtils.isEmpty(stockCode)) {
+                return WmsOrderSyncResult.fail("未配置金蝶仓库编码（stock-code." + stockKey
+                        + "，组织 " + moOrgNumber + "）");
             }
             WmsKingdeeResult stockResult = formClient.executeBillQuery("BD_STOCK",
                     "FStockId,FNumber", "FNumber='" + stockCode.replace("'", "''") + "'", 1);
@@ -147,12 +166,12 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             model.put("FBillNo", billNo);
             model.put("FDate", formatDate(inbound.getCompleteTime() != null
                     ? inbound.getCompleteTime() : inbound.getSubmitTime()));
-            model.put("FPrdOrgId", dict(properties.getDefaultOrgNumber()));
-            model.put("FStockOrgId", dict(properties.getDefaultOrgNumber()));
+            model.put("FPrdOrgId", dict(moOrgNumber));
+            model.put("FStockOrgId", dict(moOrgNumber));
             model.put("FBillType", dict(properties.getBillType()));
-            model.put("FOwnerId0", dict(properties.getDefaultOrgNumber()));
+            model.put("FOwnerId0", dict(moOrgNumber));
             model.put("FOwnerTypeId", properties.getOwnerType());
-            model.put("FOwnerId", dict(properties.getDefaultOrgNumber()));
+            model.put("FOwnerId", dict(moOrgNumber));
 
             Map<String, Object> entry = new LinkedHashMap<>();
             // 来源字段必须在业务字段之前（金蝶保存顺序要求）
@@ -181,7 +200,7 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             entry.put("FUnitID", dict(unitNumber));
             entry.put("FBaseUnitId", dict(unitNumber));
             entry.put("FOwnerTypeId", properties.getOwnerType());
-            entry.put("FOwnerId", dict(properties.getDefaultOrgNumber()));
+            entry.put("FOwnerId", dict(moOrgNumber));
             entry.put("FStockId", dict(stockCode));
             // 批号：物料启用批号时必填；WMS 批次号需在 BD_BatchMainFile 中存在
             if (oConvertUtils.isNotEmpty(inbound.getBatchNo())) {
@@ -189,7 +208,7 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             }
             entry.put("FStockStatusId", dict(properties.getStockStatusId()));
             entry.put("FKeeperTypeId", properties.getKeeperType());
-            entry.put("FKeeperId", dict(properties.getDefaultOrgNumber()));
+            entry.put("FKeeperId", dict(moOrgNumber));
             entry.put("FRealQty", goodQty);
             entry.put("FNote", note(inbound));
             model.put("FEntity", List.of(entry));

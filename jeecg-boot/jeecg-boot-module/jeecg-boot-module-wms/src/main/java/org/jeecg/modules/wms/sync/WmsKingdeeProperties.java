@@ -48,6 +48,12 @@ public class WmsKingdeeProperties {
     /** 库区类型 → 金蝶仓库编码，例如 stereo=02.002、agile=02.001、scrap=02.005。 */
     private Map<String, String> stockCode = new LinkedHashMap<>();
 
+    /**
+     * 按生产订单组织覆盖仓库编码：键=金蝶组织编码（FNumber，如 100/101），值同 stock-code。
+     * 仓库是组织级基础资料，同一编码在不同组织下不通用；命中优先于通用 stock-code。
+     */
+    private Map<String, Map<String, String>> stockCodeByOrg = new LinkedHashMap<>();
+
     /** WMS 物料编码 → 金蝶物料编码；为空时按相同编码查询。 */
     private Map<String, String> materialMap = new LinkedHashMap<>();
 
