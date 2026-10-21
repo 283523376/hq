@@ -42,6 +42,8 @@ public class WmsRmsClient {
 
     private static final String PATH_INBOUND = "/api/v2/task/inbound";
     private static final String PATH_INBOUND_FORCE = "/api/v2/task/inbound/force";
+    private static final String PATH_OUTBOUND = "/api/v2/task/outbound";
+    private static final String PATH_OUTBOUND_PRIORITY = "/api/v2/task/outbound/priority/adjust";
     private static final String PATH_CANCEL = "/api/v2/task/cancel";
 
     private final String baseUrl;
@@ -116,6 +118,63 @@ public class WmsRmsClient {
             payload.put("containers", containers);
         }
         return post(PATH_INBOUND_FORCE, payload);
+    }
+
+    /**
+     * 出库任务下发（V1.6 §3.1）。
+     *
+     * @param priority 顶层优先级 1~5，可为 null
+     * @param details  出库明细（taskNo + containerCode 必填）
+     */
+    public WmsRmsResponse outbound(Integer priority, List<WmsRmsOutboundTask> details) {
+        if (details == null || details.isEmpty()) {
+            return WmsRmsResponse.paramError("details 不能为空");
+        }
+        List<Map<String, Object>> items = new java.util.ArrayList<>();
+        for (WmsRmsOutboundTask detail : details) {
+            if (oConvertUtils.isEmpty(detail.getTaskNo())) {
+                return WmsRmsResponse.paramError("taskNo 不能为空");
+            }
+            if (oConvertUtils.isEmpty(detail.getContainerCode())) {
+                return WmsRmsResponse.paramError("containerCode 不能为空");
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("taskNo", detail.getTaskNo().trim());
+            item.put("containerCode", detail.getContainerCode().trim());
+            if (detail.getPriority() != null) {
+                item.put("priority", detail.getPriority());
+            }
+            if (detail.getStationCodes() != null && !detail.getStationCodes().isEmpty()) {
+                item.put("stationCodes", detail.getStationCodes());
+            }
+            items.add(item);
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (priority != null) {
+            payload.put("priority", priority);
+        }
+        payload.put("details", items);
+        return post(PATH_OUTBOUND, payload);
+    }
+
+    /** 出库任务优先级调整（V1.6 §3.2）：containerCode/taskNo/priority 均必填。 */
+    public WmsRmsResponse adjustOutboundPriority(List<WmsRmsOutboundTask> details) {
+        if (details == null || details.isEmpty()) {
+            return WmsRmsResponse.paramError("details 不能为空");
+        }
+        List<Map<String, Object>> items = new java.util.ArrayList<>();
+        for (WmsRmsOutboundTask detail : details) {
+            if (oConvertUtils.isEmpty(detail.getTaskNo()) || oConvertUtils.isEmpty(detail.getContainerCode())
+                    || detail.getPriority() == null) {
+                return WmsRmsResponse.paramError("taskNo/containerCode/priority 均为必填");
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("containerCode", detail.getContainerCode().trim());
+            item.put("taskNo", detail.getTaskNo().trim());
+            item.put("priority", detail.getPriority());
+            items.add(item);
+        }
+        return post(PATH_OUTBOUND_PRIORITY, Map.of("details", items));
     }
 
     /** 任务取消（尽力而为，调用方自行决定是否忽略失败）。 */

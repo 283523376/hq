@@ -185,10 +185,12 @@ public class WmsProductionInboundServiceImpl
         }
 
         if (bad.signum() > 0) {
+            // container_code 是 NOT NULL：不良品入库没有载具，必须显式给空串
             inventoryMapper.upsertInventory(new WmsInventory()
                     .setMaterialId(order.getMaterialId())
                     .setLocationId(scrapLocationId)
                     .setBatchNo(batchNo)
+                    .setContainerCode("")
                     .setQuantity(bad));
         }
         log.info("生产入库提交：单号={}，工单={}，良品={}，不良品={}，状态={}",
@@ -355,10 +357,15 @@ public class WmsProductionInboundServiceImpl
                 || oConvertUtils.isEmpty(record.getLocationId())) {
             return;
         }
+        // 成品敏捷仓按料箱记库存（CK-002 出库按容器分配）；半成品立库不区分容器
+        String containerCode = WmsConstants.PRODUCT_TYPE_FINISHED.equals(record.getProductType())
+                && oConvertUtils.isNotEmpty(record.getCarrierCode())
+                ? record.getCarrierCode() : "";
         inventoryMapper.upsertInventory(new WmsInventory()
                 .setMaterialId(record.getMaterialId())
                 .setLocationId(record.getLocationId())
                 .setBatchNo(record.getBatchNo())
+                .setContainerCode(containerCode)
                 .setQuantity(record.getGoodQty()));
     }
 

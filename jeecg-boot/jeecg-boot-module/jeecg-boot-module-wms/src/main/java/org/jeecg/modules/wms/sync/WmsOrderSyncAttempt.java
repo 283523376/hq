@@ -1,6 +1,5 @@
 package org.jeecg.modules.wms.sync;
 
-import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -15,7 +14,6 @@ import java.io.Serializable;
  * @Date: 2026-10-14
  */
 @Data
-@AllArgsConstructor
 public class WmsOrderSyncAttempt implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -28,4 +26,19 @@ public class WmsOrderSyncAttempt implements Serializable {
 
     /** 本次流程实际重试次数（0 表示首次即成功） */
     private final int retryCount;
+
+    /** 是否走了 mock（未启用金蝶/未配置地址），页面文案需要标注「模拟」 */
+    private final boolean mocked;
+
+    /** 三参重载给不关心中间 mock 状态的既有调用方。 */
+    public WmsOrderSyncAttempt(boolean success, String errorMessage, int retryCount) {
+        this(success, errorMessage, retryCount, false);
+    }
+
+    public WmsOrderSyncAttempt(boolean success, String errorMessage, int retryCount, boolean mocked) {
+        this.success = success;
+        this.errorMessage = errorMessage;
+        this.retryCount = retryCount;
+        this.mocked = mocked;
+    }
 }

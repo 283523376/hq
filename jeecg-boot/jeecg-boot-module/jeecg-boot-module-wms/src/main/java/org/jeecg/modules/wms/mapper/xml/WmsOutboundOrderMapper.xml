@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper">
+
+    <update id="claimForSync">
+        UPDATE wms_outbound_order
+           SET sync_status = '同步中',
+               last_sync_time = NOW()
+         WHERE id = #{id}
+           AND status = '已完成'
+           AND deleted_at = 0
+           AND (
+                 sync_status IN ('待同步', '同步失败')
+                 OR (sync_status = '同步中' AND (last_sync_time IS NULL OR last_sync_time &lt; #{staleBefore}))
+               )
+    </update>
+
+    <update id="claimSaleForSync">
+        UPDATE wms_outbound_order
+           SET sale_sync_status = '同步中',
+               sale_sync_time = NOW()
+         WHERE id = #{id}
+           AND outbound_type = '销售出库'
+           AND status &lt;&gt; '已关闭'
+           AND deleted_at = 0
+           AND (
+                 sale_sync_status IN ('待同步', '同步失败')
+                 OR (sale_sync_status = '同步中' AND (sale_sync_time IS NULL OR sale_sync_time &lt; #{staleBefore}))
+               )
+    </update>
+
+    <select id="selectSyncCandidates" resultType="org.jeecg.modules.wms.entity.WmsOutboundOrder">
+        SELECT *
+          FROM wms_outbound_order
+         WHERE deleted_at = 0
+           AND status = '已完成'
+           AND (
+                 sync_status IN ('待同步', '同步失败')
+                 OR (sync_status = '同步中' AND (last_sync_time IS NULL OR last_sync_time &lt; #{staleBefore}))
+               )
+         ORDER BY last_sync_time IS NULL DESC, last_sync_time ASC
+         LIMIT #{limit}
+    </select>
+
+    <select id="selectSaleSyncCandidates" resultType="org.jeecg.modules.wms.entity.WmsOutboundOrder">
+        SELECT *
+          FROM wms_outbound_order
+         WHERE deleted_at = 0
+           AND outbound_type = '销售出库'
+           AND status &lt;&gt; '已关闭'
+           AND (
+                 sale_sync_status IN ('待同步', '同步失败')
+                 OR (sale_sync_status = '同步中' AND (sale_sync_time IS NULL OR sale_sync_time &lt; #{staleBefore}))
+               )
+         ORDER BY sale_sync_time IS NULL DESC, sale_sync_time ASC
+         LIMIT #{limit}
+    </select>
+
+    <select id="selectUndispatchedBefore" resultType="org.jeecg.modules.wms.entity.WmsOutboundOrder">
+        SELECT *
+          FROM wms_outbound_order
+         WHERE deleted_at = 0
+           AND status = '已分配'
+           AND update_time &lt; #{before}
+         ORDER BY update_time ASC
+         LIMIT #{limit}
+    </select>
+
+    <update id="persistSyncResult">
+        UPDATE wms_outbound_order
+           SET sync_status = #{status},
+               retry_count = #{retryCount},
+               last_sync_error = #{error},
+               last_sync_time = NOW(),
+               sync_fail_count = IF(#{status} = '同步成功', 0, sync_fail_count + 1),
+               update_time = NOW()
+         WHERE id = #{id}
+           AND deleted_at = 0
+    </update>
+
+    <update id="persistSaleSyncResult">
+        UPDATE wms_outbound_order
+           SET sale_sync_status = #{status},
+               sale_sync_error = #{error},
+               sale_sync_time = NOW(),
+               sale_sync_fail_count = IF(#{status} = '同步成功', 0, sale_sync_fail_count + 1),
+               update_time = NOW()
+         WHERE id = #{id}
+           AND deleted_at = 0
+    </update>
+
+</mapper>

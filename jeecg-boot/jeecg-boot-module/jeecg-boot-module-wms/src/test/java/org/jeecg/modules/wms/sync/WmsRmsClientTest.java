@@ -128,4 +128,43 @@ class WmsRmsClientTest {
         assertTrue(response.getMessage().contains("stationCode"));
         server.verify();
     }
+
+    @Test
+    void outbound_sendsDocumentedV16Payload() {
+        server.expect(requestTo("http://rms.test/api/v2/task/outbound"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.priority").value(2))
+                .andExpect(jsonPath("$.details[0].taskNo").value("T1"))
+                .andExpect(jsonPath("$.details[0].containerCode").value("C1"))
+                .andExpect(jsonPath("$.details[0].priority").value(3))
+                .andExpect(jsonPath("$.details[0].stationCodes[0]").value("OUT_01"))
+                .andRespond(withSuccess("{\"code\":0,\"msg\":\"success\"}", MediaType.APPLICATION_JSON));
+
+        WmsRmsOutboundTask task = new WmsRmsOutboundTask();
+        task.setTaskNo("T1");
+        task.setContainerCode("C1");
+        task.setPriority(3);
+        task.setStationCodes(List.of("OUT_01"));
+
+        WmsRmsResponse response = client.outbound(2, List.of(task));
+
+        assertTrue(response.isSuccess());
+        server.verify();
+    }
+
+    @Test
+    void outbound_300008_isParsedAsContainerLocked() {
+        server.expect(requestTo("http://rms.test/api/v2/task/outbound"))
+                .andRespond(withSuccess("{\"code\":300008,\"msg\":\"容器已被其他出库任务锁定\"}",
+                        MediaType.APPLICATION_JSON));
+
+        WmsRmsOutboundTask task = new WmsRmsOutboundTask();
+        task.setTaskNo("T1");
+        task.setContainerCode("C1");
+
+        WmsRmsResponse response = client.outbound(1, List.of(task));
+
+        assertFalse(response.isSuccess());
+        assertEquals(WmsRmsErrorCode.CONTAINER_LOCKED, response.getCode());
+    }
 }

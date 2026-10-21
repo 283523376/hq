@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsOutboundAllocationMapper">
+
+    <select id="selectByTaskNo" resultType="org.jeecg.modules.wms.entity.WmsOutboundAllocation">
+        SELECT *
+          FROM wms_outbound_allocation
+         WHERE task_no = #{taskNo}
+           AND deleted_at = 0
+         ORDER BY id ASC
+         LIMIT 1
+    </select>
+
+    <!--
+      认领任务完成：允许 已受理/执行中/失败 收敛为 已完成
+      （覆盖「下发超时但设备已受理」与重复回执）。影响行数 0 即已处理。
+    -->
+    <update id="claimFinished">
+        UPDATE wms_outbound_allocation
+           SET task_status = '已完成',
+               update_time = NOW()
+         WHERE task_no = #{taskNo}
+           AND deleted_at = 0
+           AND task_status IN ('已受理', '执行中', '失败')
+    </update>
+
+    <update id="markRunning">
+        UPDATE wms_outbound_allocation
+           SET task_status = '执行中',
+               update_time = NOW()
+         WHERE task_no = #{taskNo}
+           AND deleted_at = 0
+           AND task_status IN ('已受理', '执行中')
+    </update>
+
+    <update id="markFailed">
+        UPDATE wms_outbound_allocation
+           SET task_status = '失败',
+               task_error = #{error},
+               update_time = NOW()
+         WHERE task_no = #{taskNo}
+           AND deleted_at = 0
+           AND task_status IN ('已受理', '执行中', '失败')
+    </update>
+
+</mapper>

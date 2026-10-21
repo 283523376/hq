@@ -54,7 +54,7 @@ public class HttpWmsRmsGateway implements IWmsRmsGateway {
         WmsTaskDispatchResult last = null;
         for (int i = 0; i <= WmsConstants.SYNC_MAX_RETRY; i++) {
             WmsRmsResponse response = client.inbound(taskNo, carrierCode, stationCode, warehouse, priority);
-            last = toResult(response, false);
+            last = toResult(response, WmsRmsErrorCode::isInboundIdempotentSuccess);
             if (last.isSuccess() || !last.isRetryable() || i == WmsConstants.SYNC_MAX_RETRY) {
                 return last;
             }
@@ -70,7 +70,40 @@ public class HttpWmsRmsGateway implements IWmsRmsGateway {
             return WmsTaskDispatchResult.okMock();
         }
         WmsRmsResponse response = client.inboundForce(stationCode, taskNo, List.of(carrierCode));
-        return toResult(response, true);
+        return toResult(response, WmsRmsErrorCode::isForceIdempotentSuccess);
+    }
+
+    @Override
+    public WmsTaskDispatchResult dispatchOutbound(List<WmsRmsOutboundTask> tasks) {
+        if (!client.isConfigured()) {
+            log.info("未配置 RMS 地址（wms.sync.rms.url），出库任务按模拟受理处理");
+            return WmsTaskDispatchResult.okMock();
+        }
+        WmsTaskDispatchResult last = null;
+        for (int i = 0; i <= WmsConstants.SYNC_MAX_RETRY; i++) {
+            WmsRmsResponse response = client.outbound(null, tasks);
+            last = toResult(response, WmsRmsErrorCode::isOutboundIdempotentSuccess);
+            if (last.isSuccess() || !last.isRetryable() || i == WmsConstants.SYNC_MAX_RETRY) {
+                return last;
+            }
+            sleepBeforeRetry(i, tasks.isEmpty() ? "" : tasks.get(0).getTaskNo());
+        }
+        return last;
+    }
+
+    @Override
+    public void cancelOutbound(String taskNo, String containerCode) {
+        if (!client.isConfigured()) {
+            return;
+        }
+        try {
+            WmsRmsResponse response = client.cancel(taskNo, containerCode);
+            if (!response.isSuccess()) {
+                log.warn("任务[{}]取消 RMS 出库任务失败：{}", taskNo, response.getMessage());
+            }
+        } catch (Exception e) {
+            log.warn("任务[{}]取消 RMS 出库任务异常（不阻塞关单）：{}", taskNo, e.getMessage());
+        }
     }
 
     @Override
@@ -89,7 +122,8 @@ public class HttpWmsRmsGateway implements IWmsRmsGateway {
     }
 
     /** RMS 响应 → 业务结果：区分幂等成功、可重试失败与需转人工的业务错误。 */
-    private WmsTaskDispatchResult toResult(WmsRmsResponse response, boolean force) {
+    private WmsTaskDispatchResult toResult(WmsRmsResponse response,
+                                           java.util.function.IntPredicate idempotentSuccess) {
         if (response.isTransportError()) {
             return WmsTaskDispatchResult.fail(null, response.getMessage(), true);
         }
@@ -98,10 +132,7 @@ public class HttpWmsRmsGateway implements IWmsRmsGateway {
             return WmsTaskDispatchResult.fail(null, response.getMessage(), httpStatus >= 500);
         }
         int code = response.getCode();
-        boolean idempotent = force
-                ? WmsRmsErrorCode.isForceIdempotentSuccess(code)
-                : WmsRmsErrorCode.isInboundIdempotentSuccess(code);
-        if (idempotent) {
+        if (idempotentSuccess.test(code)) {
             return WmsTaskDispatchResult.ok();
         }
         String description = WmsRmsErrorCode.describe(code);

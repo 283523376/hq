@@ -67,4 +67,9 @@ public final class WmsRmsErrorCode {
     public static boolean isForceIdempotentSuccess(int code) {
         return code == SUCCESS || code == TASK_ALREADY_CALLED;
     }
+
+    /** 出库任务：0 或 300001 都表示这条任务已经在 RMS 侧被受理。 */
+    public static boolean isOutboundIdempotentSuccess(int code) {
+        return code == SUCCESS || code == TASK_EXISTS;
+    }
 }

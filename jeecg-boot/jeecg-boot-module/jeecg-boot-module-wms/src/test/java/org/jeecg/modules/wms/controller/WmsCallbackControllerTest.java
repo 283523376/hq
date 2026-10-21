@@ -32,6 +32,7 @@ class WmsCallbackControllerTest {
 
     private IWmsProductionInboundService productionService;
     private IWmsProductionSyncService syncService;
+    private org.jeecg.modules.wms.service.IWmsOutboundService outboundService;
     private WmsRmsCallbackController rmsController;
     private WmsWcsCallbackController wcsController;
 
@@ -39,16 +40,31 @@ class WmsCallbackControllerTest {
     void setUp() {
         productionService = mock(IWmsProductionInboundService.class);
         syncService = mock(IWmsProductionSyncService.class);
+        outboundService = mock(org.jeecg.modules.wms.service.IWmsOutboundService.class);
 
         rmsController = new WmsRmsCallbackController();
         WmsTestSupport.inject(rmsController, "productionService", productionService);
         WmsTestSupport.inject(rmsController, "productionSyncService", syncService);
+        WmsTestSupport.inject(rmsController, "outboundService", outboundService);
         WmsTestSupport.inject(rmsController, "callbackToken", "dev-rms-token");
 
         wcsController = new WmsWcsCallbackController();
         WmsTestSupport.inject(wcsController, "productionService", productionService);
         WmsTestSupport.inject(wcsController, "productionSyncService", syncService);
+        WmsTestSupport.inject(wcsController, "outboundService", outboundService);
         WmsTestSupport.inject(wcsController, "callbackToken", "dev-wcs-token");
+    }
+
+    @Test
+    void outboundTask_isRoutedToOutboundService() {
+        when(productionService.findByTaskNo("T1")).thenReturn(null);
+        when(outboundService.isOutboundTask("T1")).thenReturn(true);
+
+        Map<String, Object> response = rmsController.taskFeedback("dev-rms-token", feedback("FINISHED"));
+
+        assertEquals(0, response.get("code"));
+        verify(outboundService).onTaskFeedback(eq("T1"), eq("C1"), eq("FINISHED"), any(), eq(true));
+        verify(syncService, never()).syncInbound(anyString(), anyBoolean());
     }
 
     private WmsProductionInbound record() {

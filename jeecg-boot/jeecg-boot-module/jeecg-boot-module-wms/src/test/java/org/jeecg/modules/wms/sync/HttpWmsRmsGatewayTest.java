@@ -104,4 +104,45 @@ class HttpWmsRmsGatewayTest {
         assertEquals(300003, result.getErrorCode());
         assertTrue(result.getErrorMessage().contains("工作站编码不存在"));
     }
+
+    @Test
+    void dispatchOutbound_300001_isIdempotentSuccess() {
+        WmsRmsOutboundTask task = outboundTask();
+        when(client.outbound(null, List.of(task))).thenReturn(WmsRmsResponse.of(300001, "任务已存在"));
+
+        assertTrue(gateway.dispatchOutbound(List.of(task)).isSuccess());
+    }
+
+    @Test
+    void dispatchOutbound_300008_isManualNotRetryable() {
+        WmsRmsOutboundTask task = outboundTask();
+        when(client.outbound(null, List.of(task)))
+                .thenReturn(WmsRmsResponse.of(300008, "容器已被其他出库任务锁定"));
+
+        WmsTaskDispatchResult result = gateway.dispatchOutbound(List.of(task));
+
+        assertFalse(result.isSuccess());
+        assertEquals(300008, result.getErrorCode());
+        assertFalse(result.isRetryable());
+        assertTrue(result.getErrorMessage().contains("容器已被其他出库任务锁定"));
+    }
+
+    @Test
+    void dispatchOutbound_300000_isRetriedThenFails() {
+        WmsRmsOutboundTask task = outboundTask();
+        when(client.outbound(null, List.of(task))).thenReturn(WmsRmsResponse.of(300000, "接口调用失败，可重试"));
+
+        WmsTaskDispatchResult result = gateway.dispatchOutbound(List.of(task));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.isRetryable());
+        verify(client, times(4)).outbound(null, List.of(task));
+    }
+
+    private WmsRmsOutboundTask outboundTask() {
+        WmsRmsOutboundTask task = new WmsRmsOutboundTask();
+        task.setTaskNo("T1");
+        task.setContainerCode("C1");
+        return task;
+    }
 }

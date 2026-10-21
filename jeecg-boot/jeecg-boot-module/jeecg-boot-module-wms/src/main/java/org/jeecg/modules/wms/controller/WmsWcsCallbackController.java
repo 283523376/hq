@@ -43,6 +43,9 @@ public class WmsWcsCallbackController {
     @Autowired
     private IWmsProductionSyncService productionSyncService;
 
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsOutboundService outboundService;
+
     @Value("${wms.sync.wcs.callback-token:}")
     private String callbackToken;
 
@@ -68,9 +71,17 @@ public class WmsWcsCallbackController {
                 item.put("carrierCode", carrier);
                 WmsProductionInbound record = productionService.findByTaskNo(detail.getTaskNo());
                 if (record == null) {
-                    item.put("code", -1);
-                    item.put("msg", "任务号不存在");
-                    failedCount++;
+                    // 未命中入库任务时，路由到出库分配行；出库只在确认出库后同步
+                    if (outboundService.isOutboundTask(detail.getTaskNo())) {
+                        outboundService.onTaskFeedback(detail.getTaskNo(), carrier,
+                                detail.getTaskStatus(), detail.getMessage(), false);
+                        item.put("code", 0);
+                        item.put("msg", "");
+                    } else {
+                        item.put("code", -1);
+                        item.put("msg", "任务号不存在");
+                        failedCount++;
+                    }
                 } else {
                     boolean completed = productionService.onTaskFeedback(detail.getTaskNo(), carrier,
                             detail.getTaskStatus(), stack, detail.getMessage(), false);

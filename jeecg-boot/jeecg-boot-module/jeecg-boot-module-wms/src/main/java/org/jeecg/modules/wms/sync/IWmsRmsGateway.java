@@ -1,5 +1,7 @@
 package org.jeecg.modules.wms.sync;
 
+import java.util.List;
+
 /**
  * 米塔 RMS 网关（RMS 任务接口文档 V1.6）。
  *
@@ -23,4 +25,15 @@ public interface IWmsRmsGateway {
      * 任务取消：POST /api/v2/task/cancel。尽力而为，异常不向上抛。
      */
     void cancelInbound(String taskNo, String carrierCode);
+
+    /**
+     * 出库任务下发：POST /api/v2/task/outbound（批量，单条失败即整体失败）。
+     * 300001（任务已存在）按幂等成功处理；300000 退避重试。
+     */
+    WmsTaskDispatchResult dispatchOutbound(List<WmsRmsOutboundTask> tasks);
+
+    /**
+     * 出库任务取消：POST /api/v2/task/cancel。尽力而为，异常不向上抛。
+     */
+    void cancelOutbound(String taskNo, String containerCode);
 }

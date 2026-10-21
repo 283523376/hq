@@ -424,10 +424,12 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
                 if (affected == 0) {
                     throw new RuntimeException("库位已被占用，请重新分配");
                 }
+                // container_code 是 NOT NULL：采购入库不按料箱管理，必须显式给空串
                 inventoryMapper.upsertInventory(new WmsInventory()
                         .setMaterialId(d.getMaterialId())
                         .setLocationId(loc.getId())
                         .setBatchNo(d.getBatchNo())
+                        .setContainerCode("")
                         .setQuantity(item.getActualQuantity()));
             }
             d.setActualQuantity(item.getActualQuantity());

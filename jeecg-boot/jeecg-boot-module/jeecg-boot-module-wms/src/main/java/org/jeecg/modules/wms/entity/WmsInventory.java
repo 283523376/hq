@@ -34,7 +34,15 @@ public class WmsInventory extends JeecgEntity {
     @Schema(description = "批次号")
     private String batchNo;
 
+    /** 料箱/托盘编码（敏捷仓按箱记库存；立体库为空串）。 */
+    @Schema(description = "料箱/托盘编码")
+    private String containerCode;
+
     /** 库存数量 */
     @Schema(description = "库存数量")
     private java.math.BigDecimal quantity;
+
+    /** 出库分配锁定数量：可用量 = quantity - lockedQty。 */
+    @Schema(description = "出库分配锁定数量")
+    private java.math.BigDecimal lockedQty;
 }

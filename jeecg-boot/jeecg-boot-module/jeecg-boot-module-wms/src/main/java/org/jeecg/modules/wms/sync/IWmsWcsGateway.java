@@ -1,5 +1,7 @@
 package org.jeecg.modules.wms.sync;
 
+import org.jeecg.modules.wms.entity.WmsOutboundAllocation;
+import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
 
 /**
@@ -22,4 +24,14 @@ public interface IWmsWcsGateway {
      * 任务取消。尽力而为，异常不向上抛。
      */
     void cancelInbound(WmsProductionInbound inbound, String locationCode);
+
+    /**
+     * 半成品立库出库任务下发（堆垛机到站取货）。
+     */
+    WmsTaskDispatchResult dispatchOutbound(WmsOutboundOrder order, WmsOutboundAllocation allocation);
+
+    /**
+     * 出库任务取消。尽力而为，异常不向上抛。
+     */
+    void cancelOutbound(WmsOutboundOrder order, WmsOutboundAllocation allocation);
 }

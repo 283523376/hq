@@ -2,16 +2,72 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.jeecg.modules.wms.mapper.WmsInventoryMapper">
 
-    <!-- 聚合上架：同 (material_id, location_id, batch_no) 存在则数量累加，否则插入新行 -->
+    <!-- 聚合上架：同 (material_id, location_id, batch_no, container_code) 存在则数量累加，否则插入新行 -->
     <insert id="upsertInventory" parameterType="org.jeecg.modules.wms.entity.WmsInventory">
         INSERT INTO wms_inventory
-            (id, material_id, location_id, batch_no, quantity, create_by, create_time, update_by, update_time)
+            (id, material_id, location_id, batch_no, container_code, quantity, create_by, create_time, update_by, update_time)
         VALUES
-            (#{id}, #{materialId}, #{locationId}, #{batchNo}, #{quantity}, #{createBy}, NOW(), #{updateBy}, NOW())
+            (#{id}, #{materialId}, #{locationId}, #{batchNo}, #{containerCode}, #{quantity}, #{createBy}, NOW(), #{updateBy}, NOW())
         ON DUPLICATE KEY UPDATE
             quantity = quantity + VALUES(quantity),
             update_by = #{updateBy},
             update_time = NOW()
     </insert>
+
+    <!-- 出库可用库存：按入库时间 FIFO；敏捷仓只取已绑定料箱的行 -->
+    <select id="selectAvailable" resultType="org.jeecg.modules.wms.vo.WmsInventoryAvailableVO">
+        SELECT i.id,
+               i.material_id,
+               i.location_id,
+               l.location_code,
+               i.container_code,
+               i.batch_no,
+               i.quantity,
+               i.locked_qty,
+               i.create_time
+          FROM wms_inventory i
+          JOIN wms_location l ON l.id = i.location_id AND l.deleted_at = 0
+          JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
+         WHERE i.material_id = #{materialId}
+           AND w.warehouse_type = #{warehouseType}
+           AND i.quantity - i.locked_qty &gt; 0
+        <if test="batchNo != null and batchNo != ''">
+           AND i.batch_no = #{batchNo}
+        </if>
+        <if test="requireContainer">
+           AND i.container_code &lt;&gt; ''
+        </if>
+         ORDER BY i.create_time ASC, i.container_code ASC, i.id ASC
+         LIMIT #{limit}
+    </select>
+
+    <!-- 锁定库存：可用量不足时影响 0 行，调用方必须据此回滚 -->
+    <update id="lockInventory">
+        UPDATE wms_inventory
+           SET locked_qty = locked_qty + #{qty},
+               update_time = NOW()
+         WHERE id = #{id}
+           AND quantity - locked_qty &gt;= #{qty}
+    </update>
+
+    <!-- 释放锁定：条件更新，锁定不足时不做任何修改（防止把其它出库单的锁定一起抹掉） -->
+    <update id="releaseLocked">
+        UPDATE wms_inventory
+           SET locked_qty = locked_qty - #{qty},
+               update_time = NOW()
+         WHERE id = #{id}
+           AND locked_qty &gt;= #{qty}
+    </update>
+
+    <!-- 扣减库存并释放锁定：两个条件必须同时满足 -->
+    <update id="deductLocked">
+        UPDATE wms_inventory
+           SET quantity = quantity - #{qty},
+               locked_qty = locked_qty - #{qty},
+               update_time = NOW()
+         WHERE id = #{id}
+           AND locked_qty &gt;= #{qty}
+           AND quantity &gt;= #{qty}
+    </update>
 
 </mapper>

@@ -357,6 +357,8 @@ class WmsInboundServiceImplTest {
         org.mockito.Mockito.verify(inventoryMapper).upsertInventory(invCap.capture());
         assertEquals("m-d1", invCap.getValue().getMaterialId());
         assertEquals(new java.math.BigDecimal("10"), invCap.getValue().getQuantity());
+        // container_code 是 NOT NULL：采购入库必须显式空串，否则真实 SQL 报 1048
+        assertEquals("", invCap.getValue().getContainerCode());
         assertEquals(WmsConstants.INBOUND_STATUS_AUDITED, service.getById("ib1").getInboundStatus());
         assertEquals("system", service.getById("ib1").getAuditBy());
     }

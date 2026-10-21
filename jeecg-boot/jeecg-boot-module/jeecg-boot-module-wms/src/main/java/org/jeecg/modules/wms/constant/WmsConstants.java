@@ -118,6 +118,9 @@ public final class WmsConstants {
     /** 补偿任务每轮最多处理的订单数，限制单轮耗时上限。 */
     public static final int SYNC_SCAN_BATCH = 50;
 
+    /** 连续同步失败达到该次数时，补偿任务补发一次告警（成功后计数清零）。 */
+    public static final int SYNC_ALERT_AFTER_FAILS = 3;
+
     /** 「同步中」僵死回收阈值（秒），须远大于单次同步最坏耗时（约 7 秒）。 */
     public static final int SYNC_RECLAIM_TIMEOUT_SECONDS = 300;
 
@@ -369,4 +372,71 @@ public final class WmsConstants {
     public static final String PRODUCTION_DEVICE_ALERT_TITLE = "WMS生产入库设备异常告警";
     /** 生产入库库位不足告警标题。 */
     public static final String PRODUCTION_LOCATION_ALERT_TITLE = "WMS生产入库库位不足告警";
+
+    // ---------------------------------------------------------------- 出库域（CK-001/CK-002）
+
+    /** 出库类型：生产领料（半成品立库）。 */
+    public static final String OUTBOUND_TYPE_PICK = "生产领料";
+    /** 出库类型：销售出库（成品敏捷仓）。 */
+    public static final String OUTBOUND_TYPE_SALES = "销售出库";
+
+    /** 领料出库单号前缀。 */
+    public static final String OUTBOUND_NO_PREFIX_PICK = "LL";
+    /** 销售出库单号前缀。 */
+    public static final String OUTBOUND_NO_PREFIX_SALES = "XS";
+
+    /** 出库单状态：待分配。 */
+    public static final String OUTBOUND_STATUS_PENDING_ALLOCATE = "待分配";
+    /** 出库单状态：已分配。 */
+    public static final String OUTBOUND_STATUS_ALLOCATED = "已分配";
+    /** 出库单状态：执行中。 */
+    public static final String OUTBOUND_STATUS_EXECUTING = "执行中";
+    /** 出库单状态：待复核（CK-001 等价于待取料确认）。 */
+    public static final String OUTBOUND_STATUS_PENDING_REVIEW = "待复核";
+    /** 出库单状态：复核异常。 */
+    public static final String OUTBOUND_STATUS_REVIEW_EXCEPTION = "复核异常";
+    /** 出库单状态：异常待人工。 */
+    public static final String OUTBOUND_STATUS_EXCEPTION = "异常待人工";
+    /** 出库单状态：已完成。 */
+    public static final String OUTBOUND_STATUS_COMPLETED = "已完成";
+    /** 出库单状态：已关闭。 */
+    public static final String OUTBOUND_STATUS_CLOSED = "已关闭";
+
+    /** 复核状态：待复核。 */
+    public static final String REVIEW_STATUS_PENDING = "待复核";
+    /** 复核状态：一致。 */
+    public static final String REVIEW_STATUS_MATCHED = "一致";
+    /** 复核状态：不一致。 */
+    public static final String REVIEW_STATUS_MISMATCHED = "不一致";
+    /** 复核状态：已放行。 */
+    public static final String REVIEW_STATUS_RELEASED = "已放行";
+
+    /** 需求来源：金蝶用料清单。 */
+    public static final String REQUIREMENT_SOURCE_PPBOM = "金蝶用料清单";
+    /** 需求来源：手工录入。 */
+    public static final String REQUIREMENT_SOURCE_MANUAL = "手工";
+
+    /** 出库同步补偿任务在 sys_quartz_job 中的主键；必须与 Flyway 种子行一致。 */
+    public static final String OUTBOUND_SYNC_JOB_ID = "1920000000000000300";
+    /** 出库同步补偿任务类名；必须与 Flyway 种子行一致。 */
+    public static final String OUTBOUND_SYNC_JOB_CLASS = "org.jeecg.modules.wms.job.WmsOutboundSyncRetryJob";
+    /** 出库补偿 cron：每 5 分钟落在 :17/:22/…，与其它补偿任务错峰。 */
+    public static final String OUTBOUND_SYNC_JOB_CRON = "0 17/5 * * * ? *";
+    /** 出库同步候选的僵死阈值（分钟）。 */
+    public static final int OUTBOUND_SYNC_STALE_MINUTES = 10;
+    /** 出库未下发补偿阈值（分钟）：分配后超过该时长仍已分配即重新下发。 */
+    public static final int UNDISPATCHED_OUTBOUND_TIMEOUT_MINUTES = 2;
+
+    /** 出库库存不足告警标题。 */
+    public static final String OUTBOUND_STOCK_ALERT_TITLE = "WMS出库库存不足告警";
+    /** 出库库位/料箱异常告警标题。 */
+    public static final String OUTBOUND_LOCATION_ALERT_TITLE = "WMS出库库位异常告警";
+    /** 出库设备异常告警标题。 */
+    public static final String OUTBOUND_DEVICE_ALERT_TITLE = "WMS出库设备异常告警";
+    /** 出库复核不一致告警标题。 */
+    public static final String OUTBOUND_REVIEW_ALERT_TITLE = "WMS出库复核不一致告警";
+    /** 出库单同步失败告警标题。 */
+    public static final String OUTBOUND_SYNC_ALERT_TITLE = "WMS出库同步失败告警";
+    /** 销售订单同步失败告警标题。 */
+    public static final String SALE_ORDER_SYNC_ALERT_TITLE = "WMS销售订单同步失败告警";
 }

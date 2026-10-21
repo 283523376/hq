@@ -74,4 +74,25 @@ public class WmsKingdeeProperties {
 
     /** 金蝶 FDocumentStatus → WMS 工单状态。 */
     private Map<String, String> statusMap = new LinkedHashMap<>();
+
+    // ---------------------------------------------------------------- 出库（CK-001/CK-002）
+
+    /** 生产领料单单据类型（普通生产领料 SCLLD01_SYS）。 */
+    private String pickBillType;
+    /** 销售订单单据类型（标准销售订单 XSDD01_SYS）。 */
+    private String saleOrderBillType;
+    /** 销售出库单单据类型（标准销售出库单 XSCKD01_SYS）。 */
+    private String outStockBillType;
+    /** 销售组织内码（FK3 组织 ID，测试环境 101=209624）。 */
+    private String saleOrgId;
+    /** 销售组织编码（FNumber）。 */
+    private String saleOrgNumber;
+    /** 默认销售员编码（BD_Saler.FNumber）。 */
+    private String salerId;
+    /** 结算币别编码（默认 PRE001 人民币）。 */
+    private String settleCurrency;
+    /** 发货部门编码（BOS_Department/BD_Department.FNumber）。 */
+    private String deliveryDeptId;
+    /** 仓管员编码（BD_Empinfo.FNumber）。 */
+    private String stockerId;
 }

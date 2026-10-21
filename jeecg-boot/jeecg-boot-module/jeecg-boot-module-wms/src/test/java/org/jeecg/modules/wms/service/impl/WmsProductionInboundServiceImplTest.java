@@ -148,6 +148,8 @@ class WmsProductionInboundServiceImplTest {
         verify(inventoryMapper).upsertInventory(captor.capture());
         assertEquals("default-loc", captor.getValue().getLocationId());
         assertEquals(0, captor.getValue().getQuantity().compareTo(new BigDecimal("2")));
+        // container_code 是 NOT NULL：不良品入库必须显式空串，否则真实 SQL 报 1048
+        assertEquals("", captor.getValue().getContainerCode());
     }
 
     @Test
