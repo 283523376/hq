@@ -19,20 +19,10 @@ import org.jeecg.modules.wms.service.IWmsWorkOrderService;
 import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsWorkOrderInfoVO;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.Map;
 
 /**
  * @Description: 生产工单服务：扫码查询、MES 推送/回源、手工维护与删除守卫。
@@ -45,31 +35,11 @@ import java.util.Map;
 public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, WmsWorkOrder>
         implements IWmsWorkOrderService {
 
-    private static final int MES_TIMEOUT_MS = 3000;
-
     @Autowired
     private WmsMaterialMapper materialMapper;
 
     @Autowired
     private WmsProductionInboundMapper inboundMapper;
-
-    @Value("${wms.sync.mes.work-order-url:}")
-    private String mesWorkOrderUrl;
-
-    @Value("${wms.sync.mes.username:}")
-    private String mesUsername;
-
-    @Value("${wms.sync.mes.password:}")
-    private String mesPassword;
-
-    private final RestTemplate restTemplate;
-
-    public WmsWorkOrderServiceImpl() {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(MES_TIMEOUT_MS);
-        factory.setReadTimeout(MES_TIMEOUT_MS);
-        this.restTemplate = new RestTemplate(factory);
-    }
 
     @Override
     public WmsWorkOrder getByWorkOrderNo(String workOrderNo) {
@@ -84,9 +54,7 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
     public WmsWorkOrderInfoVO scan(String workOrderNo) {
         WmsWorkOrder order = getByWorkOrderNo(workOrderNo);
         if (order == null) {
-            order = fetchFromMes(workOrderNo);
-        }
-        if (order == null) {
+            // 本地无单直接拒绝；ERP 回源统一走 scanWithErpFallback（IWmsKingdeeWorkOrderSyncService）
             throw new RuntimeException("工单号无效");
         }
         BigDecimal inbounded = inboundMapper.sumInboundedQty(order.getWorkOrderNo());
@@ -193,74 +161,10 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void addWorkOrder(WmsWorkOrder order) {
-        if (order == null) {
-            throw new RuntimeException("工单信息不能为空");
-        }
-        fillMaterial(order);
-        order.setWorkOrderNo(trim(order.getWorkOrderNo()));
-        if (getByWorkOrderNo(order.getWorkOrderNo()) != null) {
-            throw new RuntimeException("工单号已存在");
-        }
-        order.setSource(WmsConstants.WORK_ORDER_SOURCE_MANUAL);
-        if (oConvertUtils.isEmpty(order.getWorkOrderStatus())) {
-            order.setWorkOrderStatus(WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS);
-        }
-        validate(order);
-        order.setId(null);
-        order.setDeletedAt(0L);
-        WmsUtils.fillCreate(order);
-        save(order);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void editWorkOrder(WmsWorkOrder order) {
-        if (order == null || oConvertUtils.isEmpty(order.getId())) {
-            throw new RuntimeException("工单ID不能为空");
-        }
-        WmsWorkOrder existing = getById(order.getId());
-        if (existing == null) {
-            throw new RuntimeException("工单不存在");
-        }
-        if (oConvertUtils.isNotEmpty(order.getWorkOrderNo())
-                && !order.getWorkOrderNo().trim().equals(existing.getWorkOrderNo())) {
-            throw new RuntimeException("工单号不可修改");
-        }
-        fillMaterial(order);
-        order.setWorkOrderNo(existing.getWorkOrderNo());
-        Long refs = inboundMapper.selectCount(Wrappers.<WmsProductionInbound>query()
-                .eq("work_order_no", existing.getWorkOrderNo()));
-        if (refs != null && refs > 0) {
-            if (!java.util.Objects.equals(existing.getMaterialId(), order.getMaterialId())
-                    || !java.util.Objects.equals(existing.getProductType(), order.getProductType())) {
-                throw new RuntimeException("工单已被生产入库引用，不可修改物料或产品类型");
-            }
-        }
-        validate(order);
-        WmsUtils.fillUpdate(order);
-        updateById(order);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void removeWorkOrder(String id) {
-        WmsWorkOrder existing = getById(id);
-        if (existing == null) {
-            throw new RuntimeException("工单不存在");
-        }
-        Long refs = inboundMapper.selectCount(Wrappers.<WmsProductionInbound>query()
-                .eq("work_order_no", existing.getWorkOrderNo()));
-        if (refs != null && refs > 0) {
-            throw new RuntimeException("该工单已被生产入库引用，不可删除");
-        }
-        removeById(id);
-    }
-
-    @Override
     public IPage<WmsWorkOrder> listPage(int pageNo, int pageSize, String workOrderNo,
-                                        String productType, String workOrderStatus) {
+                                        String productType, String workOrderStatus,
+                                        String source, String syncStatus,
+                                        String startDate, String endDate) {
         QueryWrapper<WmsWorkOrder> qw = new QueryWrapper<>();
         if (oConvertUtils.isNotEmpty(workOrderNo)) {
             qw.like("work_order_no", workOrderNo.trim());
@@ -271,71 +175,20 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         if (oConvertUtils.isNotEmpty(workOrderStatus)) {
             qw.eq("work_order_status", workOrderStatus);
         }
+        if (oConvertUtils.isNotEmpty(source)) {
+            qw.eq("source", source);
+        }
+        if (oConvertUtils.isNotEmpty(syncStatus)) {
+            qw.eq("sync_status", syncStatus);
+        }
+        if (oConvertUtils.isNotEmpty(startDate)) {
+            qw.ge("create_time", startDate + " 00:00:00");
+        }
+        if (oConvertUtils.isNotEmpty(endDate)) {
+            qw.le("create_time", endDate + " 23:59:59");
+        }
         qw.orderByDesc("create_time");
         return page(new Page<>(pageNo, pageSize), qw);
-    }
-
-    /** 从 MES 回源工单；未配置地址或调用失败返回 null。 */
-    @SuppressWarnings("unchecked")
-    private WmsWorkOrder fetchFromMes(String workOrderNo) {
-        if (oConvertUtils.isEmpty(mesWorkOrderUrl) || oConvertUtils.isEmpty(workOrderNo)) {
-            return null;
-        }
-        try {
-            String url = mesWorkOrderUrl.trim()
-                    + (mesWorkOrderUrl.contains("?") ? "&" : "?")
-                    + "workOrderNo=" + URLEncoder.encode(workOrderNo.trim(), StandardCharsets.UTF_8);
-            HttpHeaders headers = new HttpHeaders();
-            if (oConvertUtils.isNotEmpty(mesUsername)) {
-                headers.setBasicAuth(mesUsername, mesPassword == null ? "" : mesPassword);
-            }
-            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET,
-                    new HttpEntity<>(headers), Map.class);
-            Map<String, Object> body = response.getBody();
-            if (body == null || !"0".equals(String.valueOf(body.get("code")))) {
-                log.warn("MES 工单回源失败：工单号={}，响应={}", workOrderNo, body);
-                return null;
-            }
-            Map<String, Object> data = (Map<String, Object>) body.get("data");
-            if (data == null) {
-                return null;
-            }
-            WmsWorkOrderPushDTO dto = new WmsWorkOrderPushDTO();
-            dto.setWorkOrderNo(str(data.get("workOrderNo")));
-            dto.setMaterialCode(str(data.get("materialCode")));
-            dto.setProductType(str(data.get("productType")));
-            dto.setPlanQty(data.get("planQty") == null ? null : new BigDecimal(str(data.get("planQty"))));
-            dto.setBatchNo(str(data.get("batchNo")));
-            dto.setWorkOrderStatus(str(data.get("workOrderStatus")));
-            return push(dto);
-        } catch (Exception e) {
-            log.warn("MES 工单回源异常：工单号={}，原因={}", workOrderNo, e.getMessage());
-            return null;
-        }
-    }
-
-    /** 按物料编码带出物料主数据；物料不存在时抛错。 */
-    private void fillMaterial(WmsWorkOrder order) {
-        if (oConvertUtils.isEmpty(order.getMaterialCode())) {
-            if (oConvertUtils.isEmpty(order.getMaterialId())) {
-                throw new RuntimeException("物料编码不能为空");
-            }
-            WmsMaterial material = materialMapper.selectById(order.getMaterialId());
-            if (material == null) {
-                throw new RuntimeException("物料编码不存在");
-            }
-            order.setMaterialCode(material.getMaterialCode());
-            order.setMaterialName(material.getMaterialName());
-            return;
-        }
-        WmsMaterial material = materialMapper.selectOne(Wrappers.<WmsMaterial>query()
-                .eq("material_code", order.getMaterialCode().trim()).last("LIMIT 1"));
-        if (material == null) {
-            throw new RuntimeException("物料编码不存在");
-        }
-        order.setMaterialId(material.getId());
-        order.setMaterialCode(material.getMaterialCode());
-        order.setMaterialName(material.getMaterialName());
     }
 
     private void validate(WmsWorkOrder order) {
@@ -355,13 +208,5 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         if (oConvertUtils.isEmpty(order.getBatchNo())) {
             throw new RuntimeException("批次号不能为空");
         }
-    }
-
-    private String trim(String text) {
-        return text == null ? null : text.trim();
-    }
-
-    private String str(Object value) {
-        return value == null ? null : String.valueOf(value);
     }
 }

@@ -372,6 +372,14 @@ public class WmsProductionInboundServiceImpl
     // ------------------------------------------------------------ 查询
 
     @Override
+    public List<WmsProductionInbound> listByWorkOrderNo(String workOrderNo) {
+        return list(com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsProductionInbound>lambdaQuery()
+                .eq(WmsProductionInbound::getWorkOrderNo, workOrderNo == null ? "" : workOrderNo.trim())
+                .orderByDesc(WmsProductionInbound::getSubmitTime)
+                .last("LIMIT 100"));
+    }
+
+    @Override
     public com.baomidou.mybatisplus.core.metadata.IPage<WmsProductionInbound> listPage(
             int pageNo, int pageSize, WmsProductionInbound query) {
         com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<WmsProductionInbound> qw =

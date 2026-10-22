@@ -90,6 +90,13 @@ public interface IWmsProductionInboundService extends JeecgService<WmsProduction
     IPage<WmsProductionInbound> listPage(int pageNo, int pageSize, WmsProductionInbound query);
 
     /**
+     * 工单关联的生产入库记录（BD-002 V2.2：工单详情展示，按提交时间倒序，上限 100 条）。
+     */
+    List<WmsProductionInbound> listByWorkOrderNo(String workOrderNo);
+
+
+
+    /**
      * 详情；不存在抛「生产入库记录不存在」。
      */
     WmsProductionInbound detail(String id);

@@ -5,7 +5,7 @@ import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.jeecg.modules.wms.service.IWmsProductionInboundService;
 import org.jeecg.modules.wms.service.IWmsProductionSyncService;
 import org.jeecg.modules.wms.service.IWmsProductionTaskService;
-import org.jeecg.modules.wms.service.IWmsWorkOrderService;
+import org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
 import org.jeecg.modules.wms.sync.WmsTaskDispatchResult;
@@ -40,12 +40,12 @@ class WmsProductionControllerTest {
     @BeforeEach
     void setUp() {
         service = mock(IWmsProductionInboundService.class);
-        IWmsWorkOrderService workOrderService = mock(IWmsWorkOrderService.class);
+        IWmsKingdeeWorkOrderSyncService kingdeeWorkOrderSyncService = mock(IWmsKingdeeWorkOrderSyncService.class);
         taskService = mock(IWmsProductionTaskService.class);
         syncService = mock(IWmsProductionSyncService.class);
         controller = new WmsProductionController();
         WmsTestSupport.inject(controller, "service", service);
-        WmsTestSupport.inject(controller, "workOrderService", workOrderService);
+        WmsTestSupport.inject(controller, "kingdeeWorkOrderSyncService", kingdeeWorkOrderSyncService);
         WmsTestSupport.inject(controller, "taskService", taskService);
         WmsTestSupport.inject(controller, "syncService", syncService);
     }

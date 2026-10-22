@@ -15,7 +15,7 @@ import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.jeecg.modules.wms.service.IWmsProductionInboundService;
 import org.jeecg.modules.wms.service.IWmsProductionSyncService;
 import org.jeecg.modules.wms.service.IWmsProductionTaskService;
-import org.jeecg.modules.wms.service.IWmsWorkOrderService;
+import org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
 import org.jeecg.modules.wms.sync.WmsTaskDispatchResult;
 import org.jeecg.modules.wms.vo.WmsWorkOrderInfoVO;
@@ -46,7 +46,7 @@ public class WmsProductionController {
     private IWmsProductionInboundService service;
 
     @Autowired
-    private IWmsWorkOrderService workOrderService;
+    private IWmsKingdeeWorkOrderSyncService kingdeeWorkOrderSyncService;
 
     @Autowired
     private IWmsProductionTaskService taskService;
@@ -55,12 +55,12 @@ public class WmsProductionController {
     private IWmsProductionSyncService syncService;
 
     @RequiresPermissions("wms:production:scan")
-    @Operation(summary = "生产入库-扫码调出工单信息")
+    @Operation(summary = "生产入库-按工单号查询（本地无单时自动从 ERP 同步）")
     @GetMapping(value = "/work-order")
     public Result<WmsWorkOrderInfoVO> workOrder(
             @RequestParam(name = "workOrderNo") String workOrderNo) {
         try {
-            return Result.OK(workOrderService.scan(workOrderNo));
+            return Result.OK(kingdeeWorkOrderSyncService.scanWithErpFallback(workOrderNo));
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }

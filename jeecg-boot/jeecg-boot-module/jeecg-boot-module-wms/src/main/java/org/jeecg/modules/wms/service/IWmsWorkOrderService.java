@@ -34,23 +34,9 @@ public interface IWmsWorkOrderService extends JeecgService<WmsWorkOrder> {
     WmsWorkOrder push(WmsWorkOrderPushDTO dto);
 
     /**
-     * 手工新增工单。
-     */
-    void addWorkOrder(WmsWorkOrder order);
-
-    /**
-     * 手工编辑工单。
-     */
-    void editWorkOrder(WmsWorkOrder order);
-
-    /**
-     * 删除工单；已被生产入库引用时拒绝。
-     */
-    void removeWorkOrder(String id);
-
-    /**
-     * 分页查询。
+     * 分页查询（支持来源/同步状态/创建时间窗口过滤）。
      */
     IPage<WmsWorkOrder> listPage(int pageNo, int pageSize, String workOrderNo, String productType,
-                                 String workOrderStatus);
+                                 String workOrderStatus, String source, String syncStatus,
+                                 String startDate, String endDate);
 }

@@ -58,59 +58,6 @@ class WmsWorkOrderServiceImplTest {
         assertEquals(0, service.scan("WO1").getRemainingQty().compareTo(new BigDecimal("70")));
     }
 
-    @Test
-    void remove_referencedWorkOrder_isRejected() {
-        when(mapper.selectById("id1")).thenReturn(new WmsWorkOrder().setWorkOrderNo("WO1"));
-        when(inboundMapper.selectCount(any())).thenReturn(2L);
-        RuntimeException e = assertThrows(RuntimeException.class, () -> service.removeWorkOrder("id1"));
-        assertTrue(e.getMessage().contains("已被生产入库引用"));
-    }
-
-    @Test
-    void edit_referencedWorkOrder_cannotChangeMaterialOrProductType() {
-        WmsWorkOrder existing = new WmsWorkOrder();
-        existing.setId("id1");
-        existing.setWorkOrderNo("WO1");
-        existing.setMaterialId("m1");
-        existing.setProductType("半成品");
-        existing.setPlanQty(new BigDecimal("10"));
-        existing.setBatchNo("B1");
-        when(mapper.selectById("id1")).thenReturn(existing);
-        when(inboundMapper.selectCount(any())).thenReturn(1L);
-
-        WmsWorkOrder material2 = new WmsWorkOrder();
-        material2.setMaterialId("m2");
-        org.jeecg.modules.wms.entity.WmsMaterial material = new org.jeecg.modules.wms.entity.WmsMaterial();
-        material.setId("m2");
-        material.setMaterialCode("M2");
-        material.setMaterialName("物料2");
-        when(materialMapper.selectOne(any())).thenReturn(material);
-
-        WmsWorkOrder update = new WmsWorkOrder();
-        update.setId("id1");
-        update.setWorkOrderNo("WO1");
-        update.setMaterialCode("M2");
-        update.setProductType("半成品");
-        update.setPlanQty(new BigDecimal("10"));
-        update.setBatchNo("B1");
-
-        RuntimeException e = assertThrows(RuntimeException.class, () -> service.editWorkOrder(update));
-        assertEquals("工单已被生产入库引用，不可修改物料或产品类型", e.getMessage());
-    }
-
-    @Test
-    void push_unknownMaterial_isRejected() {
-        when(materialMapper.selectOne(any())).thenReturn(null);
-        WmsWorkOrderPushDTO dto = new WmsWorkOrderPushDTO();
-        dto.setWorkOrderNo("WO1");
-        dto.setMaterialCode("NOPE");
-        dto.setProductType("半成品");
-        dto.setPlanQty(new BigDecimal("10"));
-        dto.setBatchNo("B1");
-        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
-        assertEquals("物料编码不存在", e.getMessage());
-    }
-
     // ---------------------------------------------------------------- BD-002 V2.2 push 合并规则
 
     private WmsWorkOrderPushDTO baseDto() {
