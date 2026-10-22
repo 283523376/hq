@@ -179,6 +179,11 @@ public class WmsTransferInventoryServiceImpl implements IWmsTransferInventorySer
                 .set("update_time", new Date())
                 .eq("id", exist.getId())
                 .ge("quantity", qty));
+        // 暂存库位被清空后回「空闲」，避免上架完成后库位长期显示占用
+        WmsInventory after = inventoryMapper.selectById(exist.getId());
+        if (after != null && nvl(after.getQuantity()).signum() == 0) {
+            releaseLocation(locationId);
+        }
     }
 
     @Override

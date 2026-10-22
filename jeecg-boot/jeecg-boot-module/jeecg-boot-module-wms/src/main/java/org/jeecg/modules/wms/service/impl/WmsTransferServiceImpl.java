@@ -100,6 +100,10 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
     @Value("${wms.sync.rms.warehouse:MITA}")
     private String rmsWarehouse;
 
+    /** 同仓搬运的默认目标区域（业务确认：调拨不要求精准到库位，区域必填）。 */
+    @Value("${wms.sync.rms.transfer-default-zone:PRE_ORDER}")
+    private String transferDefaultZone;
+
     @Value("${wms.sync.alert.to-user:" + WmsConstants.ALERT_TO_USER + "}")
     private String alertToUser;
 
@@ -111,11 +115,15 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
         WmsWarehouse out = requireWarehouse(dto.getOutWarehouseId(), "调出库区");
         WmsWarehouse in = requireWarehouse(dto.getInWarehouseId(), "调入库区");
         boolean sameWarehouse = out.getId().equals(in.getId());
-        if (sameWarehouse && oConvertUtils.isEmpty(dto.getInZoneCode())) {
-            throw new RuntimeException("同仓区域搬运必须指定调入区域（zoneCode）");
-        }
         if (!sameWarehouse && oConvertUtils.isEmpty(transitLocationId)) {
             throw new RuntimeException("跨仓调拨未配置在途暂存库位（wms.transfer.transit-location-id），请先在系统配置中指定");
+        }
+        // 区域口径（业务确认）：调拨只到仓库/区域级，不要求精准到库位；同仓搬运区域可缺省，回落到配置默认值
+        String inZone = oConvertUtils.isNotEmpty(dto.getInZoneCode())
+                ? dto.getInZoneCode().trim()
+                : (sameWarehouse ? trimToNull(transferDefaultZone) : null);
+        if (sameWarehouse && oConvertUtils.isEmpty(inZone)) {
+            throw new RuntimeException("同仓区域搬运需要目标区域编码（zoneCode），请填写或配置 wms.sync.rms.transfer-default-zone");
         }
 
         WmsTransferOrder order = new WmsTransferOrder()
@@ -127,7 +135,7 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
                 .setOutZoneCode(trimToNull(dto.getOutZoneCode()))
                 .setInWarehouseId(in.getId())
                 .setInWarehouseCode(in.getWarehouseCode())
-                .setInZoneCode(trimToNull(dto.getInZoneCode()))
+                .setInZoneCode(inZone)
                 .setTransferMode(sameWarehouse ? WmsConstants.TRANSFER_MODE_SAME : WmsConstants.TRANSFER_MODE_CROSS)
                 .setExecStatus(WmsConstants.TRANSFER_EXEC_PENDING)
                 .setSyncStatus(WmsConstants.SYNC_STATUS_PENDING)

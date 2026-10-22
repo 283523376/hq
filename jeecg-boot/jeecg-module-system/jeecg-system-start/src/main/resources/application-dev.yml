@@ -446,6 +446,13 @@ justauth:
 #   3) 开发令牌仅用于本机联调，生产环境必须替换。
 # ============================================================================
 wms:
+  transfer:
+    # CK-004 库存调拨：跨仓在途暂存库位（必须在调入仓内）；为空时建跨仓单会被拒绝
+    transit-location-id: "${WMS_TRANSFER_TRANSIT_LOCATION_ID:}"
+    # 是否启用「出发/到达」两段式确认（false = 出发即落暂存库位）
+    enable-transit: "${WMS_TRANSFER_ENABLE_TRANSIT:true}"
+    # 金蝶调拨单库存组织编码
+    org-code: "${KINGDEE_TRANSFER_ORG_CODE:101}"
   sync:
     mes:
       # MES 工单查询地址（占位）；未配置时只查本地 wms_work_order
@@ -474,6 +481,8 @@ wms:
       outbound-stations: ""
       # 出库任务优先级 1~5
       outbound-priority: 1
+      # CK-004 调拨：同仓搬运默认目标区域（米塔 zoneCode）；调拨不要求精准到库位
+      transfer-default-zone: "${WMS_RMS_TRANSFER_DEFAULT_ZONE:PRE_ORDER}"
     wcs:
       # 堆垛机 WCS 入库下发地址（占位，协议待对方提供）
       inbound-url: ""
