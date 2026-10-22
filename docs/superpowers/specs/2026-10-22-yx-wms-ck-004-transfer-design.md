@@ -69,6 +69,7 @@
 
 | 不做 | 理由 |
 |---|---|
+| **跨库调拨（跨库区）** | **业务确认（2026-10-22）：跨库由金蝶 ERP 实现，WMS 暂时不做**。代码层用 `wms.transfer.enable-cross-warehouse=false` 拦住跨库建单；跨库相关实现（在途暂存、三段确认、金蝶 Writer/SyncJob）保留但暂不启用 |
 | ERP→WMS 调拨单拉取（反向同步） | 本期 WMS 是执行方，双写来源会与 SB-001 对账口径冲突；列入 Phase 2 与 SB-001 一起做 |
 | 调拨申请单 `STK_TransferApply` | 客户流程未要求先申请；如需要另立流程 |
 | 跨组织调拨（100↔101） | 只实测了同组织 `InnerOrgTransfer`；跨组织 `FTransferBizType` 未验证 |
