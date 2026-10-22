@@ -7,34 +7,56 @@ export const PRODUCT_TYPE_OPTIONS = [
   { label: '成品（敏捷仓 / SCR / 料箱二维码）', value: '成品' },
 ];
 
-export const WORK_ORDER_STATUS_OPTIONS = ['待生产', '生产中', '已完成', '已关闭'].map((v) => ({
+export const WORK_ORDER_STATUS_OPTIONS = ['待生产', '已下达', '生产中', '已完成', '已关闭'].map((v) => ({
+  label: v,
+  value: v,
+}));
+
+export const WORK_ORDER_SOURCE_OPTIONS = ['ERP', 'MES', '手工'].map((v) => ({ label: v, value: v }));
+
+export const SYNC_STATUS_OPTIONS = ['待同步', '同步中', '同步成功', '同步失败', '无需同步'].map((v) => ({
   label: v,
   value: v,
 }));
 
 const statusColor: Record<string, string> = {
   待生产: 'default',
+  已下达: 'blue',
   生产中: 'processing',
   已完成: 'success',
   已关闭: 'default',
 };
 
+const syncStatusColor: Record<string, string> = {
+  同步成功: 'success',
+  同步失败: 'error',
+  同步中: 'processing',
+};
+
 export const columns: BasicColumn[] = [
-  { title: '工单号', align: 'center', dataIndex: 'workOrderNo', width: 160 },
+  { title: '工单号', align: 'center', dataIndex: 'workOrderNo', width: 150 },
   { title: '物料编码', align: 'center', dataIndex: 'materialCode', width: 130 },
-  { title: '物料名称', align: 'center', dataIndex: 'materialName', width: 160 },
+  { title: '物料名称', align: 'center', dataIndex: 'materialName', width: 150 },
   { title: '产品类型', align: 'center', dataIndex: 'productType', width: 90 },
-  { title: '计划数量', align: 'center', dataIndex: 'planQty', width: 100 },
-  { title: '批次号', align: 'center', dataIndex: 'batchNo', width: 130 },
+  { title: '计划数量', align: 'center', dataIndex: 'planQty', width: 90 },
+  { title: '批次号', align: 'center', dataIndex: 'batchNo', width: 120 },
   {
     title: '工单状态',
     align: 'center',
     dataIndex: 'workOrderStatus',
-    width: 110,
+    width: 100,
     customRender: ({ text }) => h(Tag, { color: statusColor[text] || 'default' }, () => text),
   },
-  { title: '来源', align: 'center', dataIndex: 'source', width: 90 },
-  { title: '创建时间', align: 'center', dataIndex: 'createTime', width: 170 },
+  { title: '来源', align: 'center', dataIndex: 'source', width: 70 },
+  {
+    title: '同步状态',
+    align: 'center',
+    dataIndex: 'syncStatus',
+    width: 100,
+    customRender: ({ text }) => h(Tag, { color: syncStatusColor[text] || 'default' }, () => text),
+  },
+  { title: '最近同步时间', align: 'center', dataIndex: 'lastSyncTime', width: 160 },
+  { title: '创建时间', align: 'center', dataIndex: 'createTime', width: 160 },
 ];
 
 export const searchFormSchema: FormSchema[] = [
@@ -53,38 +75,18 @@ export const searchFormSchema: FormSchema[] = [
     componentProps: { options: WORK_ORDER_STATUS_OPTIONS, allowClear: true },
     colProps: { span: 8 },
   },
-];
-
-export const formSchema: FormSchema[] = [
-  { label: '', field: 'id', component: 'Input', show: false },
   {
-    label: '工单号',
-    field: 'workOrderNo',
-    component: 'Input',
-    required: true,
-    dynamicDisabled: ({ values }) => !!values.id,
-  },
-  { label: '物料编码', field: 'materialCode', component: 'Input', required: true },
-  {
-    label: '产品类型',
-    field: 'productType',
+    label: '来源',
+    field: 'source',
     component: 'Select',
-    required: true,
-    componentProps: { options: PRODUCT_TYPE_OPTIONS, placeholder: '请选择产品类型' },
+    componentProps: { options: WORK_ORDER_SOURCE_OPTIONS, allowClear: true },
+    colProps: { span: 8 },
   },
   {
-    label: '计划数量',
-    field: 'planQty',
-    component: 'InputNumber',
-    required: true,
-    componentProps: { min: 0, precision: 3, style: { width: '100%' } },
-  },
-  { label: '批次号', field: 'batchNo', component: 'Input', required: true },
-  {
-    label: '工单状态',
-    field: 'workOrderStatus',
+    label: '同步状态',
+    field: 'syncStatus',
     component: 'Select',
-    componentProps: { options: WORK_ORDER_STATUS_OPTIONS, placeholder: '请选择工单状态' },
+    componentProps: { options: SYNC_STATUS_OPTIONS, allowClear: true },
+    colProps: { span: 8 },
   },
-  { label: '备注', field: 'remark', component: 'InputTextArea' },
 ];

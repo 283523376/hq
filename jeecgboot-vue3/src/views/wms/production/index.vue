@@ -1,12 +1,12 @@
 <template>
   <div class="wms-production">
-    <a-card :bordered="false" size="small" title="扫码作业台" class="wms-production__workbench">
+    <a-card :bordered="false" size="small" title="工单作业台（工单由ERP同步，录入单号即自动同步/查询）" class="wms-production__workbench">
       <a-form layout="inline">
         <a-form-item label="工单号">
           <a-input
             ref="workOrderInputRef"
             v-model:value="workOrderNo"
-            placeholder="扫码枪扫描或手工录入，回车即查询"
+            placeholder="录入ERP生产订单号，回车查询（本地无单自动从ERP同步）"
             allow-clear
             style="width: 320px"
             @press-enter="handleScan"
