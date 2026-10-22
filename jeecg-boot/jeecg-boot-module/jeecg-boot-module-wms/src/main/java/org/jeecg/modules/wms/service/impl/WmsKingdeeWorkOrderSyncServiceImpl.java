@@ -112,6 +112,10 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         }
         WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, FIELD_KEYS, filter, limit);
         if (!result.isSuccess()) {
+            syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS,
+                    WmsConstants.SYNC_LOG_TYPE_WORK_ORDER, null,
+                    WmsConstants.SYNC_LOG_TARGET_KINGDEE, false, 1, null, null,
+                    "金蝶工单查询失败：" + result.getMessage(), 0L);
             throw new RuntimeException("金蝶工单查询失败：" + result.getMessage());
         }
         WmsKingdeeWorkOrderSyncResultVO vo = new WmsKingdeeWorkOrderSyncResultVO();
@@ -148,6 +152,7 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
             } catch (RuntimeException e) {
                 vo.setSkipped(vo.getSkipped() + 1);
                 vo.getMessages().add(workOrderNo + "：" + e.getMessage());
+                workOrderService.markSyncFailed(workOrderNo, e.getMessage());
                 syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS,
                         WmsConstants.SYNC_LOG_TYPE_WORK_ORDER, workOrderNo,
                         WmsConstants.SYNC_LOG_TARGET_KINGDEE, false, 1, null, null,

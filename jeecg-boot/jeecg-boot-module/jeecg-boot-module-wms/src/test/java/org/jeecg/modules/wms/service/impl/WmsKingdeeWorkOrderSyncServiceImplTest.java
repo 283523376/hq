@@ -269,4 +269,34 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
                 () -> service.scanWithErpFallback("NOPE"));
         assertEquals("工单号无效", e.getMessage());
     }
+
+    @Test
+    void sync_pushFailureMarksWorkOrderAndLogs() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of(List.of("WORK00076", "C", "1",
+                        "WA.2206.2201.02000430.A003", "半成品", "0", new BigDecimal("10"),
+                        "2026-10-01"))));
+        when(materialMapper.selectOne(any())).thenReturn(pbc001());
+        when(workOrderService.getByWorkOrderNo("WORK00076")).thenReturn(new WmsWorkOrder());
+        org.mockito.Mockito.doThrow(new RuntimeException("物料编码不存在"))
+                .when(workOrderService).push(any());
+
+        WmsKingdeeWorkOrderSyncResultVO vo = service.syncFromKingdee("WORK00076", null, null, 50);
+
+        assertEquals(1, vo.getSkipped());
+        verify(workOrderService).markSyncFailed(eq("WORK00076"), contains("物料编码不存在"));
+        verify(syncLogService).logSync(eq("ERP_TO_WMS"), eq("WORK_ORDER"), eq("WORK00076"),
+                eq("KINGDEE"), eq(false), anyInt(), any(), any(), contains("物料编码不存在"), anyLong());
+    }
+
+    @Test
+    void sync_queryFailureWritesFailureLog() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.fail("鉴权失败"));
+
+        assertThrows(RuntimeException.class, () -> service.syncFromKingdee(null, null, null, 50));
+
+        verify(syncLogService).logSync(eq("ERP_TO_WMS"), eq("WORK_ORDER"), eq(null),
+                eq("KINGDEE"), eq(false), anyInt(), any(), any(), contains("鉴权失败"), anyLong());
+    }
 }

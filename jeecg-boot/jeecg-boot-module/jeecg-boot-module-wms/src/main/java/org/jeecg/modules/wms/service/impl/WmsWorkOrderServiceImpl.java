@@ -147,6 +147,17 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         if (oConvertUtils.isNotEmpty(dto.getErpDocumentStatus())) {
             order.setErpDocumentStatus(dto.getErpDocumentStatus());
         }
+        // 同步状态（BD-002 V2.2）：ERP 同步成功即刷成功/时间/清零重试；MES 推送不动同步字段
+        boolean erpSync = WmsConstants.WORK_ORDER_SOURCE_ERP.equals(source)
+                || oConvertUtils.isNotEmpty(dto.getErpDocumentStatus());
+        if (erpSync) {
+            order.setSyncStatus(WmsConstants.SYNC_STATUS_SUCCESS)
+                    .setLastSyncTime(new java.util.Date())
+                    .setRetryCount(0)
+                    .setLastSyncError(null);
+        } else if (create) {
+            order.setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED);
+        }
         validate(order);
         if (create) {
             order.setId(null);
@@ -158,6 +169,23 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
             updateById(order);
         }
         return order;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void markSyncFailed(String workOrderNo, String errorMessage) {
+        WmsWorkOrder order = getByWorkOrderNo(workOrderNo);
+        if (order == null) {
+            return;
+        }
+        int retry = order.getRetryCount() == null ? 0 : order.getRetryCount();
+        int fail = order.getSyncFailCount() == null ? 0 : order.getSyncFailCount();
+        order.setSyncStatus(WmsConstants.SYNC_STATUS_FAILED)
+                .setRetryCount(retry + 1)
+                .setSyncFailCount(fail + 1)
+                .setLastSyncError(errorMessage);
+        WmsUtils.fillUpdate(order);
+        updateById(order);
     }
 
     @Override

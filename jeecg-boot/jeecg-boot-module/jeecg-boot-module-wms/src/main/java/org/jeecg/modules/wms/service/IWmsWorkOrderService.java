@@ -34,6 +34,12 @@ public interface IWmsWorkOrderService extends JeecgService<WmsWorkOrder> {
     WmsWorkOrder push(WmsWorkOrderPushDTO dto);
 
     /**
+     * 标记工单同步失败（BD-002 V2.2）：已存在则累加 retry/fail 计数并记录原因；
+     * 不存在（新单未落库）静默跳过，由 wms_sync_log 留痕。
+     */
+    void markSyncFailed(String workOrderNo, String errorMessage);
+
+    /**
      * 分页查询（支持来源/同步状态/创建时间窗口过滤）。
      */
     IPage<WmsWorkOrder> listPage(int pageNo, int pageSize, String workOrderNo, String productType,

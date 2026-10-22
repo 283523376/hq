@@ -179,4 +179,57 @@ class WmsWorkOrderServiceImplTest {
         service.push(dto);
         assertEquals("C", capturedOnUpdate().getErpDocumentStatus());
     }
+
+    @Test
+    void pushFromErpMarksSyncSuccess() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("ERP")
+                .setWorkOrderStatus("待生产").setSyncStatus("同步失败")
+                .setRetryCount(2).setLastSyncError("旧错误"));
+        WmsWorkOrderPushDTO dto = baseDto();
+        dto.setSource("ERP");
+        dto.setWorkOrderStatus("已下达");
+        dto.setErpDocumentStatus("C");
+        service.push(dto);
+        WmsWorkOrder saved = capturedOnUpdate();
+        assertEquals("同步成功", saved.getSyncStatus());
+        assertEquals(0, saved.getRetryCount().intValue());
+        assertEquals(null, saved.getLastSyncError());
+        org.junit.jupiter.api.Assertions.assertNotNull(saved.getLastSyncTime());
+    }
+
+    @Test
+    void pushFromMesDoesNotTouchSyncFields() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("ERP")
+                .setWorkOrderStatus("已下达").setSyncStatus("同步成功"));
+        WmsWorkOrderPushDTO dto = baseDto();
+        dto.setSource("MES");
+        dto.setWorkOrderStatus("生产中");
+        service.push(dto);
+        assertEquals("同步成功", capturedOnUpdate().getSyncStatus());
+    }
+
+    @Test
+    void markSyncFailedIncrementsCounters() {
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSyncStatus("同步成功")
+                .setRetryCount(1).setSyncFailCount(2));
+        service.markSyncFailed("WO1", "字段缺失");
+        WmsWorkOrder saved = capturedOnUpdate();
+        assertEquals("同步失败", saved.getSyncStatus());
+        assertEquals(2, saved.getRetryCount().intValue());
+        assertEquals(3, saved.getSyncFailCount().intValue());
+        assertEquals("字段缺失", saved.getLastSyncError());
+    }
 }
