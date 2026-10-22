@@ -9,6 +9,7 @@ import lombok.experimental.Accessors;
 import org.jeecg.common.system.base.entity.JeecgEntity;
 
 import java.math.BigDecimal;
+import java.util.Date;
 
 /**
  * @Description: 生产工单（YX-WMS-RK-002）。
@@ -60,9 +61,33 @@ public class WmsWorkOrder extends JeecgEntity {
     @Schema(description = "工单状态")
     private String workOrderStatus;
 
-    /** 来源：MES/手工 */
+    /** 来源：ERP/MES/手工（手工仅历史数据；新代码必须显式写来源） */
     @Schema(description = "来源")
     private String source;
+
+    /** 金蝶 FDocumentStatus 原始值（A/B/C/D…），只读留痕 */
+    @Schema(description = "金蝶单据状态原始值")
+    private String erpDocumentStatus;
+
+    /** 同步状态：待同步/同步中/同步成功/同步失败/无需同步 */
+    @Schema(description = "同步状态")
+    private String syncStatus;
+
+    /** 连续失败次数（成功清零） */
+    @Schema(description = "连续失败次数")
+    private Integer retryCount;
+
+    /** 累计失败次数（告警阈值用） */
+    @Schema(description = "累计失败次数")
+    private Integer syncFailCount;
+
+    /** 最近一次同步失败原因 */
+    @Schema(description = "最近同步失败原因")
+    private String lastSyncError;
+
+    /** 最近一次成功同步时间 */
+    @Schema(description = "最近同步成功时间")
+    private Date lastSyncTime;
 
     /** MES 侧单号 */
     @Schema(description = "MES侧单号")

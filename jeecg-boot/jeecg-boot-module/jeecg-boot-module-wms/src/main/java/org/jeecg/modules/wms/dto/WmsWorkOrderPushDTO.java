@@ -30,8 +30,14 @@ public class WmsWorkOrderPushDTO {
     @Schema(description = "批次号")
     private String batchNo;
 
-    @Schema(description = "工单状态：待生产/生产中/已完成/已关闭")
+    @Schema(description = "工单状态：待生产/已下达/生产中/已完成/已关闭")
     private String workOrderStatus;
+
+    @Schema(description = "来源：ERP/MES（ERP=金蝶同步，MES=推送；空则按 MES 兼容处理）")
+    private String source;
+
+    @Schema(description = "金蝶 FDocumentStatus 原始值（ERP 同步时携带）")
+    private String erpDocumentStatus;
 
     @Schema(description = "MES 侧单号")
     private String mesOrderNo;

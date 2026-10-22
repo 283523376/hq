@@ -322,8 +322,10 @@ public final class WmsConstants {
     /** 任务状态：已关闭。 */
     public static final String TASK_STATUS_CLOSED = "已关闭";
 
-    /** 工单状态：待生产。 */
+    /** 工单状态：待生产（金蝶 FDocumentStatus=A/B，未审核，不可入库/领料）。 */
     public static final String WORK_ORDER_STATUS_PENDING = "待生产";
+    /** 工单状态：已下达（金蝶 FDocumentStatus=C 已审核，同步落地即可执行）。 */
+    public static final String WORK_ORDER_STATUS_RELEASED = "已下达";
     /** 工单状态：生产中。 */
     public static final String WORK_ORDER_STATUS_IN_PROGRESS = "生产中";
     /** 工单状态：已完成。 */
@@ -333,8 +335,21 @@ public final class WmsConstants {
 
     /** 工单来源：MES。 */
     public static final String WORK_ORDER_SOURCE_MES = "MES";
+    /** 工单来源：ERP（金蝶 PRD_MO 同步，BD-002 V2.2 起为唯一业务来源）。 */
+    public static final String WORK_ORDER_SOURCE_ERP = "ERP";
     /** 工单来源：手工。 */
     public static final String WORK_ORDER_SOURCE_MANUAL = "手工";
+
+    /** 工单 ERP 同步任务 ID（sys_quartz_job 种子同值）。 */
+    public static final String WORK_ORDER_SYNC_JOB_ID = "1920000000000000340";
+    /** 工单 ERP 同步任务 cron：与订单(3/5)、设备(7/5)、采购入库(9/5)、生产入库(13/5)、出库(17/5) 错峰。 */
+    public static final String WORK_ORDER_SYNC_JOB_CRON = "0 1/5 * * * ? *";
+    /** 同步日志对象类型：生产工单。 */
+    public static final String SYNC_LOG_TYPE_WORK_ORDER = "WORK_ORDER";
+    /** 同步日志方向：ERP → WMS。 */
+    public static final String SYNC_LOG_DIRECTION_ERP_TO_WMS = "ERP_TO_WMS";
+    /** 同步日志对端：金蝶。 */
+    public static final String SYNC_LOG_TARGET_KINGDEE = "KINGDEE";
 
     /** 库区类型：废品仓（不良品直接写库存，不做库位分配）。 */
     public static final String WAREHOUSE_TYPE_SCRAP = "废品仓";
