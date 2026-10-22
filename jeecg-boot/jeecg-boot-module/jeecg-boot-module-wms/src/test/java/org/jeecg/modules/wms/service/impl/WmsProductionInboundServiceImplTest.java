@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -223,5 +224,32 @@ class WmsProductionInboundServiceImplTest {
         assertEquals("已入库", captor.getValue().getStatus());
         assertEquals("待同步", captor.getValue().getSyncStatus());
         verify(locationService, never()).listFreeByWarehouseType(anyString());
+    }
+
+    @Test
+    void pendingWorkOrder_rejectedAtGate() {
+        org.jeecg.modules.wms.entity.WmsWorkOrder wo = new org.jeecg.modules.wms.entity.WmsWorkOrder()
+                .setWorkOrderNo("WO1").setWorkOrderStatus("待生产").setPlanQty(new BigDecimal("10"));
+        when(workOrderMapper.selectByNoForUpdate("WO1")).thenReturn(wo);
+        org.jeecg.modules.wms.dto.WmsProductionSubmitDTO dto = new org.jeecg.modules.wms.dto.WmsProductionSubmitDTO();
+        dto.setWorkOrderNo("WO1");
+        dto.setGoodQty(BigDecimal.ONE);
+        dto.setBadQty(BigDecimal.ZERO);
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.submit(dto));
+        assertEquals("工单状态不允许入库", e.getMessage());
+    }
+
+    @Test
+    void releasedWorkOrder_passesGate() {
+        org.jeecg.modules.wms.entity.WmsWorkOrder wo = new org.jeecg.modules.wms.entity.WmsWorkOrder()
+                .setWorkOrderNo("WO2").setWorkOrderStatus("已下达").setPlanQty(new BigDecimal("10"));
+        when(workOrderMapper.selectByNoForUpdate("WO2")).thenReturn(wo);
+        org.jeecg.modules.wms.dto.WmsProductionSubmitDTO dto = new org.jeecg.modules.wms.dto.WmsProductionSubmitDTO();
+        dto.setWorkOrderNo("WO2");
+        dto.setGoodQty(BigDecimal.ONE);
+        dto.setBadQty(BigDecimal.ZERO);
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.submit(dto));
+        assertTrue(!"工单状态不允许入库".equals(e.getMessage()),
+                "已下达工单应通过门槛，实际被拦：" + e.getMessage());
     }
 }

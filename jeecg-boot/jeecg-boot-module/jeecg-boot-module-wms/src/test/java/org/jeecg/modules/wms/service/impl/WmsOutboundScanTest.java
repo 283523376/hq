@@ -44,6 +44,9 @@ class WmsOutboundScanTest {
         WmsTestSupport.inject(service, "detailMapper", mock(WmsOutboundDetailMapper.class));
         WmsTestSupport.inject(service, "workOrderMapper", workOrderMapper);
         WmsTestSupport.inject(service, "ppbomReader", ppbomReader);
+        org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService kingdeeSync =
+                org.mockito.Mockito.mock(org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService.class);
+        WmsTestSupport.inject(service, "kingdeeWorkOrderSyncService", kingdeeSync);
 
         WmsWorkOrder workOrder = new WmsWorkOrder()
                 .setWorkOrderNo("FG001173")
@@ -93,5 +96,33 @@ class WmsOutboundScanTest {
         vo.setRequiredQty(new BigDecimal(qty));
         vo.setMatched(true);
         return vo;
+    }
+
+    @Test
+    void scanPickSyncsFromKingdeeOnMiss() {
+        when(workOrderMapper.selectOne(org.mockito.ArgumentMatchers.any())).thenReturn(null)
+                .thenReturn(new org.jeecg.modules.wms.entity.WmsWorkOrder().setWorkOrderNo("NOPE")
+                        .setWorkOrderStatus("已下达"));
+        org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService sync =
+                org.mockito.Mockito.mock(org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService.class);
+        org.jeecg.modules.wms.support.WmsTestSupport.inject(service, "kingdeeWorkOrderSyncService", sync);
+        when(sync.syncSingleFromKingdee("NOPE")).thenReturn(true);
+        when(ppbomReader.read("NOPE")).thenReturn(java.util.List.of());
+
+        org.jeecg.modules.wms.vo.WmsOutboundScanVO vo = service.scanPick("NOPE");
+        org.junit.jupiter.api.Assertions.assertNotNull(vo);
+        org.mockito.Mockito.verify(sync).syncSingleFromKingdee("NOPE");
+    }
+
+    @Test
+    void scanPick_propagatesWhenErpHasNothing() {
+        when(workOrderMapper.selectOne(org.mockito.ArgumentMatchers.any())).thenReturn(null);
+        org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService sync =
+                org.mockito.Mockito.mock(org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService.class);
+        org.jeecg.modules.wms.support.WmsTestSupport.inject(service, "kingdeeWorkOrderSyncService", sync);
+        when(sync.syncSingleFromKingdee("NOPE")).thenReturn(false);
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.scanPick("NOPE"));
+        assertEquals("工单号无效", e.getMessage());
     }
 }

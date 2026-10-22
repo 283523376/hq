@@ -83,7 +83,8 @@ public class WmsProductionInboundServiceImpl
         if (order == null) {
             throw new RuntimeException("工单号无效");
         }
-        if (!WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS.equals(order.getWorkOrderStatus())
+        if (!WmsConstants.WORK_ORDER_STATUS_RELEASED.equals(order.getWorkOrderStatus())
+                && !WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS.equals(order.getWorkOrderStatus())
                 && !WmsConstants.WORK_ORDER_STATUS_FINISHED.equals(order.getWorkOrderStatus())) {
             throw new RuntimeException("工单状态不允许入库");
         }

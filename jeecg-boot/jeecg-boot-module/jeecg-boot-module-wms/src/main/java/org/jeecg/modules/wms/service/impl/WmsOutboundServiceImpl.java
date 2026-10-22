@@ -79,6 +79,9 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
     private org.jeecg.modules.wms.sync.IWmsKingdeePpbomReader ppbomReader;
 
     @Autowired
+    private org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService kingdeeWorkOrderSyncService;
+
+    @Autowired
     private IWmsOutboundAllocator allocator;
 
     @Autowired
@@ -636,6 +639,12 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
         }
         WmsWorkOrder workOrder = workOrderMapper.selectOne(Wrappers.<WmsWorkOrder>query()
                 .eq("work_order_no", workOrderNo.trim()).last("LIMIT 1"));
+        if (workOrder == null
+                && oConvertUtils.isNotEmpty(workOrderNo)
+                && kingdeeWorkOrderSyncService.syncSingleFromKingdee(workOrderNo.trim())) {
+            workOrder = workOrderMapper.selectOne(Wrappers.<WmsWorkOrder>query()
+                    .eq("work_order_no", workOrderNo.trim()).last("LIMIT 1"));
+        }
         if (workOrder == null) {
             throw new RuntimeException("工单号无效");
         }
@@ -669,6 +678,11 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                 .eq("work_order_no", dto.getWorkOrderNo().trim()).last("LIMIT 1"));
         if (workOrder == null) {
             throw new RuntimeException("工单号无效");
+        }
+        if (!WmsConstants.WORK_ORDER_STATUS_RELEASED.equals(workOrder.getWorkOrderStatus())
+                && !WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS.equals(workOrder.getWorkOrderStatus())
+                && !WmsConstants.WORK_ORDER_STATUS_FINISHED.equals(workOrder.getWorkOrderStatus())) {
+            throw new RuntimeException("工单状态不允许领料");
         }
         if (dto.getDetails() == null || dto.getDetails().isEmpty()) {
             throw new RuntimeException("领料明细不能为空");

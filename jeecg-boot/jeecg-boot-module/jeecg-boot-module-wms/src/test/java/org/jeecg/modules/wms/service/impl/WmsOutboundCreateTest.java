@@ -157,4 +157,14 @@ class WmsOutboundCreateTest {
         RuntimeException e = assertThrows(RuntimeException.class, () -> service.createSales(dto));
         assertEquals("数量必须大于 0", e.getMessage());
     }
+
+    @Test
+    void createPickRejectsPendingOrder() {
+        when(workOrderMapper.selectOne(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new org.jeecg.modules.wms.entity.WmsWorkOrder().setWorkOrderNo("WO1")
+                        .setWorkOrderStatus("待生产"));
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.createPick(pickDto("WO1", detail("PBC001", "10"))));
+        assertEquals("工单状态不允许领料", e.getMessage());
+    }
 }
