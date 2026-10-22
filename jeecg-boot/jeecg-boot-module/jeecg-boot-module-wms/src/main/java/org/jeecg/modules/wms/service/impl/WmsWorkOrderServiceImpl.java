@@ -110,6 +110,29 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         return vo;
     }
 
+    /**
+     * 工单状态秩（BD-002 V2.2）：同步/推送合并时取 rank-max，状态只进不退；
+     * 已关闭为终态（rank 最大，任何来源都不能把它拖回去）。
+     */
+    static int statusRank(String status) {
+        if (WmsConstants.WORK_ORDER_STATUS_PENDING.equals(status)) {
+            return 0;
+        }
+        if (WmsConstants.WORK_ORDER_STATUS_RELEASED.equals(status)) {
+            return 1;
+        }
+        if (WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS.equals(status)) {
+            return 2;
+        }
+        if (WmsConstants.WORK_ORDER_STATUS_FINISHED.equals(status)) {
+            return 3;
+        }
+        if (WmsConstants.WORK_ORDER_STATUS_CLOSED.equals(status)) {
+            return 4;
+        }
+        return -1;
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public WmsWorkOrder push(WmsWorkOrderPushDTO dto) {
@@ -126,8 +149,21 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         }
         WmsWorkOrder order = getByWorkOrderNo(dto.getWorkOrderNo());
         boolean create = order == null;
+        String incomingStatus = oConvertUtils.isEmpty(dto.getWorkOrderStatus())
+                ? WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS : dto.getWorkOrderStatus();
+        String source;
+        String status;
         if (create) {
-            order = new WmsWorkOrder().setSource(WmsConstants.WORK_ORDER_SOURCE_MES);
+            // 新建：来源显式写（ERP/MES），空值按 MES 兼容旧调用方
+            source = oConvertUtils.isEmpty(dto.getSource())
+                    ? WmsConstants.WORK_ORDER_SOURCE_MES : dto.getSource();
+            status = incomingStatus;
+            order = new WmsWorkOrder().setSource(source);
+        } else {
+            // 更新：来源不改；状态 rank-max 只进不退；已关闭为终态
+            source = order.getSource();
+            status = statusRank(incomingStatus) > statusRank(order.getWorkOrderStatus())
+                    ? incomingStatus : order.getWorkOrderStatus();
         }
         order.setWorkOrderNo(dto.getWorkOrderNo().trim())
                 .setMaterialId(material.getId())
@@ -136,10 +172,13 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
                 .setProductType(dto.getProductType())
                 .setPlanQty(dto.getPlanQty())
                 .setBatchNo(dto.getBatchNo())
-                .setWorkOrderStatus(oConvertUtils.isEmpty(dto.getWorkOrderStatus())
-                        ? WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS : dto.getWorkOrderStatus())
+                .setWorkOrderStatus(status)
                 .setMesOrderNo(dto.getMesOrderNo())
                 .setRemark(dto.getRemark());
+        // ERP 原始状态只读留痕：仅同步方显式携带时刷新，MES 推送不得清空
+        if (oConvertUtils.isNotEmpty(dto.getErpDocumentStatus())) {
+            order.setErpDocumentStatus(dto.getErpDocumentStatus());
+        }
         validate(order);
         if (create) {
             order.setId(null);

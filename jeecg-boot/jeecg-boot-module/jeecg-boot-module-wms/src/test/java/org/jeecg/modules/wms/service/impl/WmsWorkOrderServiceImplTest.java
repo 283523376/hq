@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.service.impl;
 
 import org.jeecg.modules.wms.dto.WmsWorkOrderPushDTO;
+import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.mapper.WmsProductionInboundMapper;
@@ -108,5 +109,127 @@ class WmsWorkOrderServiceImplTest {
         dto.setBatchNo("B1");
         RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
         assertEquals("物料编码不存在", e.getMessage());
+    }
+
+    // ---------------------------------------------------------------- BD-002 V2.2 push 合并规则
+
+    private WmsWorkOrderPushDTO baseDto() {
+        WmsWorkOrderPushDTO dto = new WmsWorkOrderPushDTO();
+        dto.setWorkOrderNo("WO1");
+        dto.setMaterialCode("M1");
+        dto.setProductType("半成品");
+        dto.setPlanQty(new BigDecimal("10"));
+        dto.setBatchNo("B1");
+        return dto;
+    }
+
+    private WmsWorkOrder capturedOnSave() {
+        org.mockito.ArgumentCaptor<WmsWorkOrder> captor =
+                org.mockito.ArgumentCaptor.forClass(WmsWorkOrder.class);
+        org.mockito.Mockito.verify(mapper).insert(captor.capture());
+        return captor.getValue();
+    }
+
+    private WmsWorkOrder capturedOnUpdate() {
+        org.mockito.ArgumentCaptor<WmsWorkOrder> captor =
+                org.mockito.ArgumentCaptor.forClass(WmsWorkOrder.class);
+        org.mockito.Mockito.verify(mapper).updateById(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    void pushUpdateKeepsErpSourceAndMergesStatus() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("ERP")
+                .setWorkOrderStatus("生产中"));
+        WmsWorkOrderPushDTO dto = baseDto();
+        dto.setSource("MES");
+        dto.setWorkOrderStatus("已下达");
+        dto.setErpDocumentStatus("C");
+        service.push(dto);
+        WmsWorkOrder saved = capturedOnUpdate();
+        assertEquals("ERP", saved.getSource());
+        assertEquals("生产中", saved.getWorkOrderStatus());
+        assertEquals("C", saved.getErpDocumentStatus());
+    }
+
+    @Test
+    void pushUpgradesPendingToReleased() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("ERP")
+                .setWorkOrderStatus("待生产"));
+        WmsWorkOrderPushDTO dto = baseDto();
+        dto.setSource("ERP");
+        dto.setWorkOrderStatus("已下达");
+        service.push(dto);
+        assertEquals("已下达", capturedOnUpdate().getWorkOrderStatus());
+    }
+
+    @Test
+    void pushNeverReopensClosed() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("ERP")
+                .setWorkOrderStatus("已关闭"));
+        WmsWorkOrderPushDTO dto = baseDto();
+        dto.setSource("MES");
+        dto.setWorkOrderStatus("生产中");
+        service.push(dto);
+        assertEquals("已关闭", capturedOnUpdate().getWorkOrderStatus());
+    }
+
+    @Test
+    void pushCreateDefaultsMesSource_andErpCreateIsExplicit() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        when(mapper.selectOne(any())).thenReturn(null);
+        service.push(baseDto());
+        WmsWorkOrder created = capturedOnSave();
+        assertEquals("MES", created.getSource());
+        assertEquals("生产中", created.getWorkOrderStatus());
+
+        org.mockito.Mockito.clearInvocations(mapper);
+        when(mapper.selectOne(any())).thenReturn(null);
+        WmsWorkOrderPushDTO erp = baseDto();
+        erp.setSource("ERP");
+        erp.setWorkOrderStatus("已下达");
+        service.push(erp);
+        WmsWorkOrder erpCreated = capturedOnSave();
+        assertEquals("ERP", erpCreated.getSource());
+        assertEquals("已下达", erpCreated.getWorkOrderStatus());
+    }
+
+    @Test
+    void pushMesUpdateKeepsErpDocumentStatus() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("ERP")
+                .setWorkOrderStatus("已下达").setErpDocumentStatus("C"));
+        WmsWorkOrderPushDTO dto = baseDto();
+        dto.setSource("MES");
+        dto.setWorkOrderStatus("生产中");
+        service.push(dto);
+        assertEquals("C", capturedOnUpdate().getErpDocumentStatus());
     }
 }
