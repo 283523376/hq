@@ -30,4 +30,13 @@ public class WmsKingdeeWorkOrderSyncResultVO {
 
     @Schema(description = "跳过/失败原因")
     private List<String> messages = new ArrayList<>();
+
+    @Schema(description = "实际生效的同步窗口起（yyyy-MM-dd；按单号同步时为空）")
+    private String effectiveStartDate;
+
+    @Schema(description = "实际生效的同步窗口止（yyyy-MM-dd；按单号同步时为空）")
+    private String effectiveEndDate;
+
+    @Schema(description = "未显式给窗口时实际采用的默认窗口天数（7；给了窗口则为 0）")
+    private int effectiveWindowDays;
 }

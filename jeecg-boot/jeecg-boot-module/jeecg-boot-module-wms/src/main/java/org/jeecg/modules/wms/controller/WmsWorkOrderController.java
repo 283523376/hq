@@ -64,7 +64,7 @@ public class WmsWorkOrderController extends JeecgController<WmsWorkOrder, IWmsWo
             @RequestParam(name = "billNo", required = false) String billNo,
             @RequestParam(name = "top", defaultValue = "50") Integer top) {
         try {
-            return Result.OK("同步完成", kingdeeSyncService.syncFromKingdee(billNo, top));
+            return Result.OK("同步完成", kingdeeSyncService.syncFromKingdee(billNo, null, null, top));
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }

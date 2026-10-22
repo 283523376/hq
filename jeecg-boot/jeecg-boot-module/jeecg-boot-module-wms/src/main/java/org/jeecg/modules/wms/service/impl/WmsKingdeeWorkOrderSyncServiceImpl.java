@@ -3,19 +3,23 @@ package org.jeecg.modules.wms.service.impl;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsWorkOrderPushDTO;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService;
+import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.service.IWmsWorkOrderService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
 import org.jeecg.modules.wms.vo.WmsKingdeeWorkOrderSyncResultVO;
+import org.jeecg.modules.wms.vo.WmsWorkOrderInfoVO;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -24,9 +28,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * @Description: 金蝶 PRD_MO → WMS 工单同步。
+ * @Description: 金蝶 PRD_MO → WMS 工单同步（BD-002 V2.2：ERP 为唯一业务来源）。
  *
- * <p>同一 FBillNo 多条分录按数量求和；多物料工单直接跳过（WMS 工单是单物料模型）。
+ * <p>审核门槛（评审 B1）：C(已审核)→已下达、A/B(未审核)→待生产、D 及未知整单跳过。
+ * 同一 FBillNo 多分录按数量求和；多物料或多批次整单跳过（WMS 工单是单物料单批次模型）。
+ * 每单实际 upsert 写一条同步日志；整单跳过属永久性原因，不写失败日志、不进重试队列。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-10-20
@@ -36,34 +42,83 @@ import java.util.Set;
 public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderSyncService {
 
     private static final String FORM_ID = "PRD_MO";
+    /** FDate 追加在末尾（索引 7），避免打乱既有下标。 */
     private static final String FIELD_KEYS =
-            "FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty";
+            "FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty,FDate";
+    private static final int DEFAULT_TOP = 50;
+    private static final int MAX_TOP = 200;
+    /** 手工同步未给窗口时的默认回看天数。 */
+    private static final int DEFAULT_WINDOW_DAYS = 7;
 
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
     private final IWmsWorkOrderService workOrderService;
     private final WmsMaterialMapper materialMapper;
+    private final IWmsSyncLogService syncLogService;
 
     public WmsKingdeeWorkOrderSyncServiceImpl(WmsKingdeeFormClient formClient,
                                               WmsKingdeeProperties properties,
                                               IWmsWorkOrderService workOrderService,
-                                              WmsMaterialMapper materialMapper) {
+                                              WmsMaterialMapper materialMapper,
+                                              IWmsSyncLogService syncLogService) {
         this.formClient = formClient;
         this.properties = properties;
         this.workOrderService = workOrderService;
         this.materialMapper = materialMapper;
+        this.syncLogService = syncLogService;
+    }
+
+    /**
+     * 金蝶 FDocumentStatus → WMS 工单状态门槛（评审 B1）。
+     *
+     * @return 已下达/待生产；D 及未知返回 null（整单跳过，不默认已完成）
+     */
+    static String gateStatus(String documentStatus) {
+        if ("C".equals(documentStatus)) {
+            return WmsConstants.WORK_ORDER_STATUS_RELEASED;
+        }
+        if ("A".equals(documentStatus) || "B".equals(documentStatus)) {
+            return WmsConstants.WORK_ORDER_STATUS_PENDING;
+        }
+        return null;
     }
 
     @Override
-    public WmsKingdeeWorkOrderSyncResultVO syncFromKingdee(String billNo, int top) {
-        String filter = oConvertUtils.isEmpty(billNo)
-                ? "" : "FBillNo='" + billNo.trim().replace("'", "''") + "'";
-        WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, FIELD_KEYS, filter, top);
+    public WmsKingdeeWorkOrderSyncResultVO syncFromKingdee(String billNo, String startDate, String endDate,
+                                                           Integer top) {
+        int limit = top == null ? DEFAULT_TOP : Math.min(top, MAX_TOP);
+        String effectiveStart = startDate;
+        String effectiveEnd = endDate;
+        int windowDays = 0;
+        String filter;
+        if (oConvertUtils.isNotEmpty(billNo)) {
+            filter = "FBillNo='" + billNo.trim().replace("'", "''") + "'";
+        } else {
+            if (oConvertUtils.isEmpty(effectiveStart) && oConvertUtils.isEmpty(effectiveEnd)) {
+                effectiveStart = LocalDate.now().minusDays(DEFAULT_WINDOW_DAYS - 1L).toString();
+                windowDays = DEFAULT_WINDOW_DAYS;
+            }
+            StringBuilder sb = new StringBuilder();
+            if (oConvertUtils.isNotEmpty(effectiveStart)) {
+                sb.append("FDate>='").append(effectiveStart).append("'");
+            }
+            if (oConvertUtils.isNotEmpty(effectiveEnd)) {
+                if (sb.length() > 0) {
+                    sb.append(" AND ");
+                }
+                sb.append("FDate<='").append(effectiveEnd).append("'");
+            }
+            filter = sb.toString();
+        }
+        WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, FIELD_KEYS, filter, limit);
         if (!result.isSuccess()) {
             throw new RuntimeException("金蝶工单查询失败：" + result.getMessage());
         }
         WmsKingdeeWorkOrderSyncResultVO vo = new WmsKingdeeWorkOrderSyncResultVO();
         vo.setQueried(result.getRows().size());
+        vo.setEffectiveStartDate(billNo == null ? effectiveStart : null);
+        vo.setEffectiveEndDate(billNo == null ? effectiveEnd : null);
+        vo.setEffectiveWindowDays(windowDays);
 
         Map<String, List<List<Object>>> byBill = new LinkedHashMap<>();
         for (List<Object> row : result.getRows()) {
@@ -78,31 +133,82 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         for (Map.Entry<String, List<List<Object>>> entry : byBill.entrySet()) {
             String workOrderNo = entry.getKey();
             List<List<Object>> rows = entry.getValue();
+            long begin = System.currentTimeMillis();
             try {
-                if (!syncOne(workOrderNo, rows, vo)) {
+                if (syncOne(workOrderNo, rows, vo)) {
+                    syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS,
+                            WmsConstants.SYNC_LOG_TYPE_WORK_ORDER, workOrderNo,
+                            WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, 0, null, null, null,
+                            System.currentTimeMillis() - begin);
+                } else {
                     vo.setSkipped(vo.getSkipped() + 1);
                 }
+                // 整单跳过（多物料/多批次/门槛外状态/映射缺失）属永久性原因：
+                // 只进 messages 与 skipped 计数，不写失败日志，避免污染重试队列（评审 I2 的反面——不可重试的不重试）
             } catch (RuntimeException e) {
                 vo.setSkipped(vo.getSkipped() + 1);
                 vo.getMessages().add(workOrderNo + "：" + e.getMessage());
+                syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS,
+                        WmsConstants.SYNC_LOG_TYPE_WORK_ORDER, workOrderNo,
+                        WmsConstants.SYNC_LOG_TARGET_KINGDEE, false, 1, null, null,
+                        e.getMessage(), System.currentTimeMillis() - begin);
             }
         }
-        log.info("金蝶工单同步：查询{}行，新增{}，更新{}，跳过{}",
+        log.info("金蝶工单同步：窗口[{} ~ {}] 查询{}行，新增{}，更新{}，跳过{}",
+                vo.getEffectiveStartDate(), vo.getEffectiveEndDate(),
                 vo.getQueried(), vo.getImported(), vo.getUpdated(), vo.getSkipped());
         return vo;
     }
 
-    /** @return true=已处理，false=跳过（原因已写入 messages） */
+    @Override
+    public boolean syncSingleFromKingdee(String billNo) {
+        if (oConvertUtils.isEmpty(billNo)) {
+            return false;
+        }
+        WmsKingdeeWorkOrderSyncResultVO vo = syncFromKingdee(billNo, null, null, 1);
+        return vo.getImported() + vo.getUpdated() > 0;
+    }
+
+    @Override
+    public WmsWorkOrderInfoVO scanWithErpFallback(String workOrderNo) {
+        try {
+            return workOrderService.scan(workOrderNo);
+        } catch (RuntimeException first) {
+            if (oConvertUtils.isEmpty(workOrderNo) || !syncSingleFromKingdee(workOrderNo)) {
+                throw first;
+            }
+            return workOrderService.scan(workOrderNo);
+        }
+    }
+
+    /** @return true=已处理（含 MES/ERP 已有单更新），false=整单跳过（原因已写入 messages） */
     private boolean syncOne(String workOrderNo, List<List<Object>> rows,
                             WmsKingdeeWorkOrderSyncResultVO vo) {
+        // 审核门槛最先判：门槛外状态整单跳过（评审 B1，不默认已完成）
+        String documentStatus = str(rows.get(0).get(1));
+        String gatedStatus = gateStatus(documentStatus);
+        if (gatedStatus == null) {
+            vo.getMessages().add(workOrderNo + "：金蝶单据状态 " + documentStatus
+                    + " 不受支持（未审核或不识别），已跳过");
+            return false;
+        }
         Set<String> materialNumbers = new LinkedHashSet<>();
+        Set<String> lots = new LinkedHashSet<>();
         BigDecimal planQty = BigDecimal.ZERO;
         for (List<Object> row : rows) {
             materialNumbers.add(str(row.get(3)));
+            String lot = str(row.get(5));
+            if (oConvertUtils.isNotEmpty(lot) && !"0".equals(lot)) {
+                lots.add(lot);
+            }
             planQty = planQty.add(toDecimal(row.get(6)));
         }
         if (materialNumbers.size() != 1) {
             vo.getMessages().add(workOrderNo + "：金蝶工单含多个物料，WMS 单物料模型不支持，已跳过");
+            return false;
+        }
+        if (lots.size() > 1) {
+            vo.getMessages().add(workOrderNo + "：金蝶工单含多个批次 " + lots + "，WMS 单批次模型不支持，已跳过");
             return false;
         }
         String kingdeeMaterial = materialNumbers.iterator().next();
@@ -133,7 +239,6 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
             vo.getMessages().add(workOrderNo + "：计划数量为 0，已跳过");
             return false;
         }
-        String status = mapStatus(str(rows.get(0).get(1)));
         String lot = str(rows.get(0).get(5));
         String batchNo = (oConvertUtils.isEmpty(lot) || "0".equals(lot)) ? "KD-" + workOrderNo : lot;
 
@@ -144,7 +249,9 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         dto.setProductType(productType);
         dto.setPlanQty(planQty);
         dto.setBatchNo(batchNo);
-        dto.setWorkOrderStatus(status);
+        dto.setWorkOrderStatus(gatedStatus);
+        dto.setSource(WmsConstants.WORK_ORDER_SOURCE_ERP);
+        dto.setErpDocumentStatus(documentStatus);
         dto.setMesOrderNo(workOrderNo);
         workOrderService.push(dto);
         if (existed == null) {
@@ -163,20 +270,6 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
             }
         }
         return kingdeeCode;
-    }
-
-    private String mapStatus(String documentStatus) {
-        String mapped = properties.getStatusMap().get(documentStatus);
-        if (oConvertUtils.isNotEmpty(mapped)) {
-            return mapped;
-        }
-        if ("C".equals(documentStatus)) {
-            return "生产中";
-        }
-        if ("A".equals(documentStatus) || "B".equals(documentStatus)) {
-            return "待生产";
-        }
-        return "已完成";
     }
 
     private BigDecimal toDecimal(Object value) {
