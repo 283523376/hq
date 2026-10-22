@@ -72,4 +72,9 @@ public final class WmsRmsErrorCode {
     public static boolean isOutboundIdempotentSuccess(int code) {
         return code == SUCCESS || code == TASK_EXISTS;
     }
+
+    /** 搬运（移库）任务：0 或 300001（任务号已存在）都表示已受理。 */
+    public static boolean isTransferIdempotentSuccess(int code) {
+        return code == SUCCESS || code == TASK_EXISTS;
+    }
 }

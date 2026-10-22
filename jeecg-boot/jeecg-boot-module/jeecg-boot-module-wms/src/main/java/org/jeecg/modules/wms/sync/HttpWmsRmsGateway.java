@@ -121,6 +121,39 @@ public class HttpWmsRmsGateway implements IWmsRmsGateway {
         }
     }
 
+    @Override
+    public WmsTaskDispatchResult dispatchTransfer(String zoneCode, String warehouse, List<WmsRmsTransferTask> tasks) {
+        if (!client.isConfigured()) {
+            log.info("未配置 RMS 地址（wms.sync.rms.url），搬运任务按模拟受理处理");
+            return WmsTaskDispatchResult.okMock();
+        }
+        WmsTaskDispatchResult last = null;
+        for (int i = 0; i <= WmsConstants.SYNC_MAX_RETRY; i++) {
+            WmsRmsResponse response = client.transfer(zoneCode, warehouse, priority, tasks);
+            last = toResult(response, WmsRmsErrorCode::isTransferIdempotentSuccess);
+            if (last.isSuccess() || !last.isRetryable() || i == WmsConstants.SYNC_MAX_RETRY) {
+                return last;
+            }
+            sleepBeforeRetry(i, tasks.isEmpty() ? "" : tasks.get(0).getTaskNo());
+        }
+        return last;
+    }
+
+    @Override
+    public void cancelTransfer(String taskNo, String containerCode) {
+        if (!client.isConfigured()) {
+            return;
+        }
+        try {
+            WmsRmsResponse response = client.cancel("TRANSFER", taskNo, containerCode);
+            if (!response.isSuccess()) {
+                log.warn("任务[{}]取消 RMS 搬运任务失败：{}", taskNo, response.getMessage());
+            }
+        } catch (Exception e) {
+            log.warn("任务[{}]取消 RMS 搬运任务异常（不阻塞关单）：{}", taskNo, e.getMessage());
+        }
+    }
+
     /** RMS 响应 → 业务结果：区分幂等成功、可重试失败与需转人工的业务错误。 */
     private WmsTaskDispatchResult toResult(WmsRmsResponse response,
                                            java.util.function.IntPredicate idempotentSuccess) {

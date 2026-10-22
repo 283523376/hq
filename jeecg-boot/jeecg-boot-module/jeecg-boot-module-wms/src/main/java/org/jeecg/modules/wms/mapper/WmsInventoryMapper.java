@@ -38,6 +38,19 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
     /** 锁定库存：可用量不足时影响 0 行。 */
     int lockInventory(@Param("id") String id, @Param("qty") BigDecimal qty);
 
+    /**
+     * 指定库区的可用库存（FIFO）：调拨按「源仓」取数，避免同类型多仓混用。
+     *
+     * @param warehouseId      源库区ID
+     * @param requireContainer 是否只取已绑定料箱的行（敏捷仓）
+     */
+    List<WmsInventoryAvailableVO> selectAvailableByWarehouse(@Param("materialId") String materialId,
+                                                         @Param("batchNo") String batchNo,
+                                                         @Param("warehouseId") String warehouseId,
+                                                         @Param("containerCode") String containerCode,
+                                                             @Param("requireContainer") boolean requireContainer,
+                                                             @Param("limit") int limit);
+
     /** 释放锁定（关单/复核差额）。 */
     int releaseLocked(@Param("id") String id, @Param("qty") BigDecimal qty);
 

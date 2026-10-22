@@ -41,6 +41,36 @@
          LIMIT #{limit}
     </select>
 
+    <!-- 指定库区的可用库存（FIFO）：调拨按源仓取数，避免同类型多仓混用 -->
+    <select id="selectAvailableByWarehouse" resultType="org.jeecg.modules.wms.vo.WmsInventoryAvailableVO">
+        SELECT i.id,
+               i.material_id,
+               i.location_id,
+               l.location_code,
+               i.container_code,
+               i.batch_no,
+               i.quantity,
+               i.locked_qty,
+               i.create_time
+          FROM wms_inventory i
+          JOIN wms_location l ON l.id = i.location_id AND l.deleted_at = 0
+          JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
+         WHERE i.material_id = #{materialId}
+           AND w.id = #{warehouseId}
+        <if test="containerCode != null and containerCode != ''">
+           AND i.container_code = #{containerCode}
+        </if>
+           AND i.quantity - i.locked_qty &gt; 0
+        <if test="batchNo != null and batchNo != ''">
+           AND i.batch_no = #{batchNo}
+        </if>
+        <if test="requireContainer">
+           AND i.container_code &lt;&gt; ''
+        </if>
+         ORDER BY i.create_time ASC, i.container_code ASC, i.id ASC
+         LIMIT #{limit}
+    </select>
+
     <!-- 锁定库存：可用量不足时影响 0 行，调用方必须据此回滚 -->
     <update id="lockInventory">
         UPDATE wms_inventory

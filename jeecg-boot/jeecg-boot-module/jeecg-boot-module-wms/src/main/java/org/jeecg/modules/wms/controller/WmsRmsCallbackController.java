@@ -47,6 +47,9 @@ public class WmsRmsCallbackController {
     @Autowired
     private org.jeecg.modules.wms.service.IWmsOutboundService outboundService;
 
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsTransferService transferService;
+
     @Value("${wms.sync.rms.callback-token:}")
     private String callbackToken;
 
@@ -72,6 +75,11 @@ public class WmsRmsCallbackController {
                     if (outboundService.isOutboundTask(detail.getTaskNo())) {
                         outboundService.onTaskFeedback(detail.getTaskNo(), detail.getContainerCode(),
                                 detail.getTaskStatus(), detail.getMessage(), true);
+                        item.put("code", 0);
+                        item.put("msg", "");
+                    } else if (transferService.onTaskFeedback(detail.getTaskNo(), detail.getContainerCode(),
+                            detail.getTaskStatus(), detail.getMessage())) {
+                        // CK-004：同仓区域搬运任务（实物完成后再由位置回调补齐库位）
                         item.put("code", 0);
                         item.put("msg", "");
                     } else {
@@ -121,6 +129,8 @@ public class WmsRmsCallbackController {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("containerCode", detail.getContainerCode());
                 int affected = productionService.onContainerLocation(detail.getContainerCode(), detail.getStackCode());
+                // CK-004：同一容器也可能属于调拨任务，一并更新实际调入库位
+                affected += transferService.onContainerLocation(detail.getContainerCode(), detail.getStackCode());
                 item.put("code", affected > 0 ? 0 : -1);
                 item.put("msg", affected > 0 ? "" : "容器编码不存在或未绑定");
                 if (affected == 0) {

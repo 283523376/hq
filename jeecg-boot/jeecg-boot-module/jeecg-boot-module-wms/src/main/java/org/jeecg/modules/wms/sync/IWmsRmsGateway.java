@@ -36,4 +36,17 @@ public interface IWmsRmsGateway {
      * 出库任务取消：POST /api/v2/task/cancel。尽力而为，异常不向上抛。
      */
     void cancelOutbound(String taskNo, String containerCode);
+
+    /**
+     * 搬运（移库）任务下发：POST /api/v2/task/transfer。
+     *
+     * <p>米塔只能指定目标<b>区域</b>（{@code zoneCode}），不能指定库位；跨仓段不经过米塔。
+     * 300001（任务号已存在）按幂等成功处理；300000 退避重试；300007/300013 原样透出转人工。
+     */
+    WmsTaskDispatchResult dispatchTransfer(String zoneCode, String warehouse, List<WmsRmsTransferTask> tasks);
+
+    /**
+     * 搬运任务取消：POST /api/v2/task/cancel（type=TRANSFER）。尽力而为，异常不向上抛。
+     */
+    void cancelTransfer(String taskNo, String containerCode);
 }

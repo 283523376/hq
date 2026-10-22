@@ -316,7 +316,17 @@ public final class WmsConstants {
     /** 任务状态：执行中。 */
     public static final String TASK_STATUS_EXECUTING = "执行中";
     /** 任务状态：已完成。 */
+    /** 任务状态：已完成（WMS 内部值，设备原值为 FINISHED）。 */
     public static final String TASK_STATUS_FINISHED = "已完成";
+
+    /** 设备原始状态：完成（RMS/WCS 回执字面值，与 WMS 内部「已完成」区分）。 */
+    public static final String DEVICE_STATUS_FINISHED = "FINISHED";
+
+    /** 设备原始状态：失败。 */
+    public static final String DEVICE_STATUS_FAILED = "FAILED";
+
+    /** 设备原始状态：执行中。 */
+    public static final String DEVICE_STATUS_RUNNING = "RUNNING";
     /** 任务状态：失败。 */
     public static final String TASK_STATUS_FAILED = "失败";
     /** 任务状态：已关闭。 */
@@ -456,4 +466,87 @@ public final class WmsConstants {
     public static final String OUTBOUND_SYNC_ALERT_TITLE = "WMS出库同步失败告警";
     /** 销售订单同步失败告警标题。 */
     public static final String SALE_ORDER_SYNC_ALERT_TITLE = "WMS销售订单同步失败告警";
+
+    // ==================== CK-004 库存调拨 ====================
+
+    /** 调拨单号前缀（DB=调拨）。 */
+    public static final String TRANSFER_NO_PREFIX = "DB";
+    /** 调拨单类型：同仓区域搬运（走米塔 task/transfer）。 */
+    public static final String TRANSFER_MODE_SAME = "同仓区域";
+    /** 调拨单类型：跨仓调拨（米塔只同仓，跨仓段走人工/其他物流）。 */
+    public static final String TRANSFER_MODE_CROSS = "跨仓";
+    /** 调拨来源：WMS 发起。 */
+    public static final String TRANSFER_SOURCE_WMS = "WMS";
+    /** 调拨来源：ERP 发起（本期不做，留字段）。 */
+    public static final String TRANSFER_SOURCE_ERP = "ERP";
+
+    // --- 实物时钟 exec_status ---
+    /** 实物时钟：待执行。 */
+    public static final String TRANSFER_EXEC_PENDING = "待执行";
+    /** 实物时钟：执行中（已下发/已分配）。 */
+    public static final String TRANSFER_EXEC_RUNNING = "执行中";
+    /** 实物时钟：在途（跨仓已出发）。 */
+    public static final String TRANSFER_EXEC_IN_TRANSIT = "在途";
+    /** 实物时钟：待入库（跨仓已到达暂存库位）。 */
+    public static final String TRANSFER_EXEC_PENDING_INBOUND = "待入库";
+    /** 实物时钟：实物完成（库存已按实际动作移动）。 */
+    public static final String TRANSFER_EXEC_COMPLETED = "实物完成";
+    /** 实物时钟：异常。 */
+    public static final String TRANSFER_EXEC_EXCEPTION = "异常";
+
+    // --- ERP 时钟 sync_status（以下三个为调拨新增，其余复用 SYNC_STATUS_*） ---
+    /** ERP 时钟：已提交待审核（金蝶 B）。 */
+    public static final String TRANSFER_SYNC_SUBMITTED = "已提交待审核";
+    /** ERP 时钟：已审核（金蝶 C），与实物完成同时成立才算「已完成」。 */
+    public static final String TRANSFER_SYNC_APPROVED = "已审核";
+    /** ERP 时钟：ERP 驳回/作废（金蝶 D 或工作流驳回）。 */
+    public static final String TRANSFER_SYNC_REJECTED = "ERP驳回";
+
+    // --- 单据总状态 status（只由 deriveStatus 派生，禁止直接赋值） ---
+    /** 总状态：待执行。 */
+    public static final String TRANSFER_STATUS_PENDING = "待执行";
+    /** 总状态：执行中。 */
+    public static final String TRANSFER_STATUS_RUNNING = "执行中";
+    /** 总状态：待ERP审核（实物已完成，等金蝶审批）。 */
+    public static final String TRANSFER_STATUS_PENDING_ERP = "待ERP审核";
+    /** 总状态：已完成（实物完成 + 金蝶 C）。 */
+    public static final String TRANSFER_STATUS_COMPLETED = "已完成";
+    /** 总状态：异常（含 ERP 驳回待处置）。 */
+    public static final String TRANSFER_STATUS_EXCEPTION = "异常";
+    /** 总状态：已关闭（终态）。 */
+    public static final String TRANSFER_STATUS_CLOSED = "已关闭";
+
+    // --- 驳回处置 ---
+    /** 驳回处置：待处置。 */
+    public static final String TRANSFER_REJECT_PENDING = "待处置";
+    /** 驳回处置：已冲销（生成了反向调拨单）。 */
+    public static final String TRANSFER_REJECT_REVERSED = "已冲销";
+    /** 驳回处置：已人工关闭。 */
+    public static final String TRANSFER_REJECT_CLOSED = "已人工关闭";
+
+    // --- 金蝶调拨单据常量（口径见 spec §1） ---
+    /** 金蝶直接调拨单 FormId。 */
+    public static final String KINGDEE_TRANSFER_FORM_ID = "STK_TransferDirect";
+    /** 金蝶直接调拨单标准单据类型。 */
+    public static final String KINGDEE_TRANSFER_BILL_TYPE = "ZJDB01_SYS";
+    /** 金蝶调拨类型：同组织内部调拨（101 已实测）。 */
+    public static final String KINGDEE_TRANSFER_BIZ_TYPE = "InnerOrgTransfer";
+    /** 金蝶调拨方向：普通。 */
+    public static final String KINGDEE_TRANSFER_DIRECT = "GENERAL";
+    /** 金蝶单据状态：已审核（C）。 */
+    public static final String KINGDEE_DOC_STATUS_APPROVED = "C";
+    /** 金蝶单据状态：审核中（B）。 */
+    public static final String KINGDEE_DOC_STATUS_SUBMITTED = "B";
+    /** 金蝶单据状态：暂存（A）。 */
+    public static final String KINGDEE_DOC_STATUS_SAVED = "A";
+
+    // --- 告警与任务 ---
+    /** 调拨审批超时告警标题。 */
+    public static final String TRANSFER_APPROVAL_TIMEOUT_ALERT_TITLE = "WMS调拨审批超时告警";
+    /** 调拨 ERP 驳回告警标题。 */
+    public static final String TRANSFER_REJECT_ALERT_TITLE = "WMS调拨ERP驳回告警";
+    /** 调拨设备/库位异常告警标题。 */
+    public static final String TRANSFER_DEVICE_ALERT_TITLE = "WMS调拨设备异常告警";
+    /** 调拨 ERP 同步失败告警标题。 */
+    public static final String TRANSFER_SYNC_ALERT_TITLE = "WMS调拨同步失败告警";
 }

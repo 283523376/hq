@@ -43,6 +43,7 @@ public class WmsRmsClient {
     private static final String PATH_INBOUND = "/api/v2/task/inbound";
     private static final String PATH_INBOUND_FORCE = "/api/v2/task/inbound/force";
     private static final String PATH_OUTBOUND = "/api/v2/task/outbound";
+    private static final String PATH_TRANSFER = "/api/v2/task/transfer";
     private static final String PATH_OUTBOUND_PRIORITY = "/api/v2/task/outbound/priority/adjust";
     private static final String PATH_CANCEL = "/api/v2/task/cancel";
 
@@ -179,13 +180,65 @@ public class WmsRmsClient {
 
     /** 任务取消（尽力而为，调用方自行决定是否忽略失败）。 */
     public WmsRmsResponse cancel(String taskNo, String containerCode) {
+        return cancel("INBOUND", taskNo, containerCode);
+    }
+
+    /** 任务取消（指定任务类型：INBOUND / OUTBOUND / TRANSFER）。 */
+    public WmsRmsResponse cancel(String type, String taskNo, String containerCode) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("containerCode", containerCode);
         detail.put("taskNo", taskNo);
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("type", "INBOUND");
+        payload.put("type", oConvertUtils.isEmpty(type) ? "INBOUND" : type);
         payload.put("details", List.of(detail));
         return post(PATH_CANCEL, payload);
+    }
+
+    /**
+     * 搬运（移库）任务下发（V1.6 §4.3）：只能指定目标区域，不能指定库位。
+     *
+     * @param zoneCode  目标区域编码（必填）
+     * @param warehouse 仓库名（可选，缺省主仓库）
+     * @param priority  顶层优先级 1~5，可为 null
+     * @param details   搬运明细（taskNo + containerCode 必填）
+     */
+    public WmsRmsResponse transfer(String zoneCode, String warehouse, Integer priority,
+                                   List<WmsRmsTransferTask> details) {
+        if (oConvertUtils.isEmpty(zoneCode)) {
+            return WmsRmsResponse.paramError("zoneCode 不能为空");
+        }
+        if (details == null || details.isEmpty()) {
+            return WmsRmsResponse.paramError("details 不能为空");
+        }
+        List<Map<String, Object>> items = new java.util.ArrayList<>();
+        for (WmsRmsTransferTask detail : details) {
+            if (oConvertUtils.isEmpty(detail.getTaskNo())) {
+                return WmsRmsResponse.paramError("taskNo 不能为空");
+            }
+            if (oConvertUtils.isEmpty(detail.getContainerCode())) {
+                return WmsRmsResponse.paramError("containerCode 不能为空");
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("taskNo", detail.getTaskNo().trim());
+            item.put("containerCode", detail.getContainerCode().trim());
+            if (oConvertUtils.isNotEmpty(detail.getZoneCode())) {
+                item.put("zoneCode", detail.getZoneCode().trim());
+            }
+            if (detail.getPriority() != null) {
+                item.put("priority", detail.getPriority());
+            }
+            items.add(item);
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("zoneCode", zoneCode.trim());
+        if (oConvertUtils.isNotEmpty(warehouse)) {
+            payload.put("warehouse", warehouse.trim());
+        }
+        if (priority != null) {
+            payload.put("priority", priority);
+        }
+        payload.put("details", items);
+        return post(PATH_TRANSFER, payload);
     }
 
     /** 统一 POST；未配置地址时返回 notConfigured，传输异常转 transportError，不向上抛。 */
