@@ -358,6 +358,7 @@
     try {
       const res: any = await previewSalesOrder(salesForm.salesOrderNo.trim());
       salesPreview.value = res;
+      salesForm.deliveryDate = res?.order?.deliveryDate || undefined;
       rows.value = (res?.lines || []).map((d: any) => ({
         _key: ++rowSeq,
         materialCode: d.materialCode,
