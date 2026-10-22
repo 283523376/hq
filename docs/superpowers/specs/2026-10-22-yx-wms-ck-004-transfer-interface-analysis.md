@@ -12,10 +12,12 @@
 | 项 | 结论 |
 |---|---|
 | 金蝶调拨单 FormId | **`STK_TransferDirect`（直接调拨单）**，标准单据类型 **`ZJDB01_SYS`**；`STK_TransferApply` 是调拨申请单，不作为执行单据 |
-| 金蝶调拨单能力 | 支持调出/调入**仓库 + 仓位**、批号、数量、货主/保管者；实测样本 `ZJDB000001` 已审核（C） |
-| 米塔移库 API | **`POST /api/v2/task/transfer`（搬运任务下发）**，但只支持“把容器搬到指定**区域**（`zoneCode`：`EMERGENCY_OUT`/`PRE_ORDER`）”，**不能指定目标库位 `stackCode`** |
-| 关键缺口 | 金蝶可精确到“仓位”，米塔 V1.6 只能到“区域”；CK-004 若要求“调入库位”精确落位，现有 RMS 接口不足 |
-| 建议 | 同仓/区域级搬运用 `task/transfer`；跨仓或精确到库位的调拨用“源出库 + 目标入库”组合，或由米塔提供新接口；金蝶侧统一用 `STK_TransferDirect` |
+| 金蝶调拨单能力 | 支持调出/调入仓库 + 仓位、批号、数量、货主/保管者；实测样本 `ZJDB000001` 已审核（C） |
+| 101 同组织跨仓 | `FTransferBizType=InnerOrgTransfer` 可用；D.01→D.02 **不传仓位**可 Save（A）并 Submit（B） |
+| 金蝶审批 | `ZJDB01_SYS` 关联工作流，WebAPI `Audit` 被拒；Submit 后停在 B（审核中），需 ERP 工作流审批后才变 C 并移动库存 |
+| 米塔移库 API | **`POST /api/v2/task/transfer`（搬运任务下发）**，只能指定目标**区域**（`zoneCode`），不能指定目标库位；**米塔只同仓使用** |
+| 关键口径 | ERP/WMS 调拨是**跨仓仓库级**；米塔只负责**同仓区域级**搬运；跨仓段由业务/人工/其他物流完成，不经过米塔 |
+| 建议 | 金蝶统一 `STK_TransferDirect`；WMS 记录“调出仓/调入仓 + 区域”，执行时再分配库位；同仓区域搬运用 `task/transfer`，跨仓段走 WMS 在途/人工确认 |
 
 ## 2. 金蝶调拨单（实测）
 
@@ -137,11 +139,30 @@ FSrcStockId.FNumber,FDestStockId.FNumber
 
 保存后调用 `Submit`（`FormId=STK_TransferDirect`，`data.Numbers=[单号]`），状态变为 `C`。
 
-### 2.6 待金蝶确认
+### 2.6 101 实测：不传仓位的 Save / Submit / Audit（2026-10-22）
 
-1. **跨组织调拨**：样本是 `InnerOrgTransfer`（同组织）。100/101 跨组织时 `FTransferBizType`/`FTransferBizTypeId` 取什么值？
-2. **仓管员**：`FStockerId` 必填，需给一个测试/生产仓管员编码；建议加配置 `stocker-number`。
-3. **仓位映射**：101 的 D.01/D.02 未启用仓位管理，WMS 的库位是否只做本地记录、不写 ERP 仓位？100 的 02.001/02.002 启用仓位，需提供“WMS 库位 ↔ 金蝶仓位内码”映射表。
+测试单据：`WMS-TEST-TR-20261022-02`（Id 108907），组织 101，`D.01 → D.02`，物料 `E.008.0065`，批号 `JD`，数量 1。
+
+| 步骤 | 请求 | 结果 |
+|---|---|---|
+| Save | `STK_TransferDirect` + `ZJDB01_SYS` + `InnerOrgTransfer` + `GENERAL`；**不传 `FSrcStockLocId/FDestStockLocId`** | **成功**，状态 `A` |
+| Submit | `data.Numbers=[单号]` | **成功**，状态 `B`（审核中） |
+| Audit | `DynamicFormService.Audit` | **失败**：`单据编码为…已关联工作流实例，不支持通过WebAPI接口进行传统审批` |
+| 库存 | 查 `STK_Inventory` | Submit 后 D.01 仍 14000、D.02 仍 0；未审批，库存未移动 |
+
+**结论**：
+
+1. **101 的 D.01/D.02 不需要仓位**，Save 可以省略 `FSrcStockLocId/FDestStockLocId`，因此 **CK-004 不需要“WMS 库位 ↔ 金蝶仓位内码”映射**。
+2. `Submit` 后是 **B（审核中）**，不是 C；`ZJDB01_SYS` 关联工作流，WebAPI 不能直接 Audit。WMS 只能 Save + Submit，**C（已审核）与库存移动由 ERP 工作流审批完成**；WMS 需轮询 `FDocumentStatus` 或接受 B 作为“已提交”。
+3. `FStockerId` 引用的是 **`BD_WAREHOUSEWORKERS`（仓管员）**，不是 `BD_Empinfo`。测试用 `2040421005` 在 101 下是**禁用**（`FForbidStatus=B`、`ISUSE=false`），Save 报“仓管员必填”；改用 101 启用仓管员 `0050 熊丹妮`（FID 279082）后 Save 成功。因此配置 `stocker-number` 必须填 `BD_WAREHOUSEWORKERS` 的编码，且该记录对目标组织启用。
+
+> **测试单残留**：`WMS-TEST-TR-20261022-02` 目前停在 B（审核中），因工作流无法通过 WebAPI 撤回/删除；需在金蝶 UI 或工作流中撤回后删除。该单未审批，库存未移动（D.02 仍为 0）。
+
+### 2.7 待金蝶确认
+
+1. **跨组织调拨**：101 内部 D.01↔D.02 已确认用 `InnerOrgTransfer`；若未来做 100↔101，再确认跨组织 `FTransferBizType`/`FTransferBizTypeId`。
+2. **仓管员**：生产用哪个 `BD_WAREHOUSEWORKERS` 编码（必须对 101 启用）；测试用 `0050`。
+3. **审批流**：`ZJDB01_SYS` 的工作流由谁审批、WMS 是否只到 B 即可，还是必须等 C；若要求 WMS 自动完成，需要无工作流单据类型或金蝶工作流接口。
 4. **单据类型**：是否统一用 `ZJDB01_SYS`，还是按业务场景用其他直接调拨单类型。
 
 ## 3. 米塔 RMS 移库 API（V1.6）
@@ -178,56 +199,64 @@ FSrcStockId.FNumber,FDestStockId.FNumber
 - 另有 `POST /api/v2/stack/unbind`（库位解绑）只用于人工出库，不是移库。
 - 位置回调 `料箱位置更新`（RMS→WMS，`containerCode + stackCode`）可用于理货/移库后的库存位置更新。
 
-### 3.3 CK-004 可选方案
+### 3.3 CK-004 可选方案（按“米塔只同仓”修订）
 
 | 方案 | 做法 | 适用 | 风险 |
 |---|---|---|---|
-| **A. 区域搬运（现成）** | 调 `task/transfer`，`zoneCode` 指向目标区域 | 同仓、目标只到区域级（如“预出库区/紧急出库区”） | 不能精确到库位；区域编码需米塔配置 |
-| **B. 源出库 + 目标入库（组合）** | 源仓 `task/outbound` → 工作站；目标仓 `task/inbound` | 跨仓、需要精确目标库位 | 两段任务、跨 RMS 交接未定义；中间状态需 WMS 编排 |
-| **C. 米塔新增移库接口** | 要求 `task/transfer` 支持 `warehouse + stackCode` 或新增 `task/move` | 精确库位调拨 | 依赖米塔排期 |
+| **A. 同仓区域搬运（现成）** | 调 `task/transfer`，`warehouse=本仓`、`zoneCode=目标区域` | 同仓、目标只到区域级 | 不能精确到库位；区域编码需米塔配置 |
+| **B. 跨仓（不经过米塔）** | 跨仓段由人工/叉车/其他物流完成，WMS 记调出→在途→调入 | 跨仓业务 | 需定义在途/到达确认；WMS 不能依赖 RMS 完成跨仓 |
+| **C. 米塔新增接口（不需要）** | 仅在米塔未来要承接跨仓/精确库位时才需要 | — | 当前业务口径不需要 |
 
-**建议**：CK-004 先按 B 做跨仓/精确库位，A 做同仓区域搬运；同时向米塔提 C 的需求。若业务只要求“调拨到目标仓/区域”，A 即可，不必等新接口。
+**结论**：米塔只同仓使用，**CK-004 不向 RMS 下跨仓任务**；同仓区域搬运才用 `task/transfer`。跨仓段是 WMS/ERP 业务调拨 + 人工/其他物流，WMS 用“在途/待入库”状态闭环。
 
 ## 4. CK-004 落地口径建议
 
-### 4.1 WMS 本地模型
+### 4.1 WMS 本地模型（按“跨仓、区域级、执行时分配库位”收敛）
 
 `wms_transfer_order`：
 
 - `transfer_no`（唯一）、`source`（WMS/ERP）、`erp_bill_no`、`erp_document_status`
-- `out_warehouse_id/out_location_id`、`in_warehouse_id/in_location_id`
-- `status`：待分配/已分配/执行中/已完成/异常/已关闭
+- `out_warehouse_id/out_zone_code`、`in_warehouse_id/in_zone_code`：**单据只到仓库/区域**，不预分配库位
+- `status`：待执行/在途/待入库/已完成/异常/已关闭
 - `sync_status/retry_count/sync_fail_count/last_sync_error/last_sync_time`
 - `operator/complete_time`、审计列
 
-`wms_transfer_detail`：物料/批次/容器/数量/已分配/实发。
+`wms_transfer_detail`：物料/批次/容器/数量/已分配/实发；执行时由 WMS 记录实际库位（不写 ERP）。
 
-### 4.2 同步方向
+### 4.2 执行模型（跨仓 vs 同仓区域）
+
+| 场景 | 物理动作 | WMS/RMS |
+|---|---|---|
+| **跨仓（D.01 ↔ D.02）** | 米塔只同仓，跨仓段由人工/叉车/其他物流完成 | WMS 记“调出 → 在途 → 调入”；源仓扣减/锁定，目标仓收货确认后增加；**不向 RMS 下跨仓任务** |
+| **同仓区域搬运** | 米塔 `POST /api/v2/task/transfer`，`warehouse=本仓`、`zoneCode=目标区域` | 下发任务 → `task-feedback FINISHED` → `料箱位置更新` 回调实际 `stackCode` → WMS 更新库位/库存 |
+| **同仓精确库位** | V1.6 不支持直接指定 `stackCode` | 由 RMS 在区域内自行分配；WMS 以位置回调为准，不在调拨单预指定 |
+
+### 4.3 同步方向
 
 | 方向 | 动作 |
 |---|---|
-| ERP→WMS | 查 `STK_TransferDirect`（`FDocumentStatus=C`），按 `FBillNo` upsert；映射组织/仓库/物料/批号/数量；仓位内码按映射表转 WMS 库位 |
-| WMS→ERP | 完成移库后 `Save + Submit` `STK_TransferDirect`；幂等键 `FBillNo`；失败重试/告警 |
-| WMS→RMS | 按 §3.3 选 A 或 B；任务号写 `wms_transfer_order`/明细；`task-feedback` 更新执行状态 |
-| RMS→WMS | `料箱位置更新` 回调更新 `wms_inventory` 位置；`task-feedback` 更新任务状态 |
+| ERP→WMS | 查 `STK_TransferDirect`（建议只取 `FDocumentStatus=C`），按 `FBillNo` upsert；映射组织/仓库/物料/批号/数量；**不取仓位** |
+| WMS→ERP | `Save + Submit` `STK_TransferDirect`（仓库级，不传 `FSrcStockLocId/FDestStockLocId`）；幂等键 `FBillNo`；Submit 后为 `B`，等待 ERP 工作流审批到 `C`；失败重试/告警 |
+| WMS→RMS | 仅同仓区域搬运调用 `task/transfer`；跨仓不下发 RMS |
+| RMS→WMS | `task-feedback` 更新任务状态；`料箱位置更新` 回调实际 `stackCode`，WMS 执行时落库位 |
 
-### 4.3 需要新增的配置
+### 4.4 需要新增的配置
 
-- `wms.sync.erp.kingdee.stocker-number`：仓管员编码（`FStockerId` 必填）。
-- `wms.sync.erp.kingdee.transfer-biz-type`：默认 `InnerOrgTransfer`；跨组织另配。
+- `wms.sync.erp.kingdee.stocker-number`：**`BD_WAREHOUSEWORKERS` 编码**（不是员工编码），且对 101 启用；测试用 `0050`（熊丹妮），生产由业务指定。
+- `wms.sync.erp.kingdee.transfer-biz-type`：默认 `InnerOrgTransfer`（101 内部调拨已实测可用）。
 - `wms.sync.erp.kingdee.transfer-bill-type`：默认 `ZJDB01_SYS`。
-- WMS 库位 ↔ 金蝶仓位内码映射（仅启用仓位管理的仓库需要）。
 - WMS 仓库 ↔ 金蝶仓库编码映射（可复用 `stock-code-by-org`）。
+- **不需要** WMS 库位 ↔ 金蝶仓位内码映射（101 不传仓位已实测通过）。
 
 ## 5. 待确认清单
 
 | # | 问题 | 责任方 | 影响 |
 |---|---|---|---|
-| 1 | 跨组织调拨的 `FTransferBizType`/`FTransferBizTypeId` 取值 | 金蝶 | WMS→ERP 保存能否成功 |
-| 2 | `FStockerId` 用哪个仓管员（测试/生产） | 金蝶/业务 | 必填字段 |
-| 3 | 101 的 D.01/D.02 是否启用仓位；WMS 库位是否写 ERP 仓位 | 金蝶/业务 | 仓位映射与精度 |
-| 4 | RMS `zoneCode` 是否可配置业务区域，是否支持目标 `stackCode` 或跨仓 | 米塔 | CK-004 用 A/B/C 哪种方案 |
-| 5 | 跨仓两段任务（outbound+inbound）的容器交接与中间状态 | 米塔/业务 | 方案 B 可行性 |
+| 1 | 生产用哪个 `BD_WAREHOUSEWORKERS` 编码（对 101 启用） | 业务/金蝶 | `FStockerId` 必填 |
+| 2 | `ZJDB01_SYS` 工作流由谁审批；WMS 到 B 是否可接受，还是必须等 C | 业务/金蝶 | WMS→ERP 完成判定 |
+| 3 | 跨仓段（D.01↔D.02）由谁/什么设备搬运，WMS 如何确认“在途/到达” | 业务 | 跨仓执行模型 |
+| 4 | 同仓 `zoneCode` 的业务区域编码（成品区/半成品区等）与位置回调是否覆盖 transfer | 米塔 | 同仓区域搬运 |
+| 5 | 测试单 `WMS-TEST-TR-20261022-02` 需在金蝶 UI/工作流撤回并删除 | 金蝶/业务 | 测试数据清理 |
 
 ## 6. 证据与复现
 
