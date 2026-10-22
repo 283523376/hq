@@ -451,6 +451,8 @@ wms:
     transit-location-id: "${WMS_TRANSFER_TRANSIT_LOCATION_ID:}"
     # 是否启用「出发/到达」两段式确认（false = 出发即落暂存库位）
     enable-transit: "${WMS_TRANSFER_ENABLE_TRANSIT:true}"
+    # 跨库调拨开关：业务已确认跨库由金蝶 ERP 实现，WMS 只做同库区移库（默认 false）
+    enable-cross-warehouse: "${WMS_TRANSFER_ENABLE_CROSS:false}"
     # 金蝶调拨单库存组织编码
     org-code: "${KINGDEE_TRANSFER_ORG_CODE:101}"
   sync:

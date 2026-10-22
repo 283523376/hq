@@ -98,6 +98,10 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
     @Value("${wms.transfer.enable-transit:true}")
     private boolean enableTransit;
 
+    /** 跨库调拨开关：业务已确认「跨库由金蝶 ERP 实现」，WMS 侧默认关闭（保留代码以备重启）。 */
+    @Value("${wms.transfer.enable-cross-warehouse:false}")
+    private boolean enableCrossWarehouse;
+
     @Value("${wms.transfer.org-code:101}")
     private String orgCode;
 
@@ -119,6 +123,10 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
         WmsWarehouse out = requireWarehouse(dto.getOutWarehouseId(), "调出库区");
         WmsWarehouse in = requireWarehouse(dto.getInWarehouseId(), "调入库区");
         boolean sameWarehouse = out.getId().equals(in.getId());
+        if (!sameWarehouse && !enableCrossWarehouse) {
+            // 业务口径（2026-10-22）：跨库调拨由金蝶 ERP 负责，WMS 只做同一库区内的区域/库位移库
+            throw new RuntimeException("跨库调拨由金蝶 ERP 实现，WMS 暂不支持（wms.transfer.enable-cross-warehouse=false）");
+        }
         if (!sameWarehouse && oConvertUtils.isEmpty(transitLocationId)) {
             throw new RuntimeException("跨仓调拨未配置在途暂存库位（wms.transfer.transit-location-id），请先在系统配置中指定");
         }
