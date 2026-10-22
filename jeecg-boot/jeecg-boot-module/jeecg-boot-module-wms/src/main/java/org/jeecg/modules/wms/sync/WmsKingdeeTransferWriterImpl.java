@@ -37,6 +37,15 @@ public class WmsKingdeeTransferWriterImpl implements IWmsKingdeeTransferWriter {
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
 
+    /**
+     * **仅测试环境**：非空时 {@link #queryStatus} 直接返回该状态（A/B/C/D），不发请求。
+     *
+     * <p>用途：测试账套没有审批人账号时，验证「C 才算完成」的 C 分支。
+     * 生产/正式验收**必须留空**，否则会把单据误判为已审核。
+     */
+    @org.springframework.beans.factory.annotation.Value("${wms.transfer.simulate-erp-status:}")
+    private String simulateErpStatus;
+
     public WmsKingdeeTransferWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties) {
         this.formClient = formClient;
         this.properties = properties;
@@ -156,6 +165,11 @@ public class WmsKingdeeTransferWriterImpl implements IWmsKingdeeTransferWriter {
 
     @Override
     public WmsKingdeeTransferStatus queryStatus(String billNo) {
+        if (oConvertUtils.isNotEmpty(simulateErpStatus)) {
+            log.warn("【模拟】调拨单[{}]金蝶状态被模拟为 {}（wms.transfer.simulate-erp-status），仅限测试",
+                    billNo, simulateErpStatus);
+            return WmsKingdeeTransferStatus.ok(simulateErpStatus.trim());
+        }
         if (!properties.isEnabled()) {
             return WmsKingdeeTransferStatus.mock();
         }

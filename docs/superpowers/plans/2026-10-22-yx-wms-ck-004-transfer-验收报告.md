@@ -200,3 +200,41 @@ E2E 结束后已恢复现场：删除全部 `wms_transfer_*` 测试行、删除�
 1. 金蝶测试单 `DB2113160550228516865`、`WMS-TEST-TR-20261022-02` 均停在 **B**；集成用户 `WMS`（UserId 167137）不是 `ZJDB01_SYS` 审批节点处理人，用 `WorkflowAudit` 审批会被拒（实测）。
    若将来重启跨库能力，需由金蝶管理员把该用户加入审批节点（或由审批人在流程中心处理）。
 2. 正式「在途暂存」库位未建（跨库暂停后不再是阻塞项）。
+
+---
+
+# C 分支的临时验证方式（2026-10-22 决策）
+
+> 背景：测试账套**没有管理员账号、也没有审批账号**，无法把集成用户 `WMS`（UserId 167137）加入
+> `ZJDB01_SYS` 审批节点，也无法在流程中心审批 → **金蝶流程本次不动**。
+> 因此 C（已审核）分支改用「单元测试 + 模拟状态」验证，真实审批闭环留待拿到审批账号后补。
+
+## 16. 临时手段
+
+| 层 | 手段 | 位置 |
+|---|---|---|
+| 单元测试 | `WmsTransferSyncServiceTest` 覆盖 C/D/A/B 四分支（C→已完成、D→异常+告警、A→退回待同步、B→超时告警） | `src/test/java/.../service/WmsTransferSyncServiceTest.java` |
+| 单元测试 | `WmsKingdeeTransferWriterTest` 覆盖模拟开关：`queryStatus` 直接返回配置状态且不发请求 | `src/test/java/.../sync/WmsKingdeeTransferWriterTest.java` |
+| 运行态模拟 | 配置 `wms.transfer.simulate-erp-status=C`（环境变量 `WMS_TRANSFER_SIMULATE_ERP_STATUS`）：`queryStatus()` 直接返回该状态，**不发金蝶请求**，日志打 WARN「【模拟】…」 | `WmsKingdeeTransferWriterImpl` + `application-dev.yml` |
+
+**安全约束（写死在代码注释与配置注释里）**：该开关只用于测试环境，生产/正式验收必须留空，否则会把单据误判为已审核。
+
+## 17. 模拟验证结果（2026-10-22）
+
+以跨库单（临时打开 `WMS_TRANSFER_ENABLE_CROSS=true` + 暂借 `LB-R01-C01-L17` 作在途）+ `simulate-erp-status=C` 执行：
+
+| 步 | 结果 |
+|---|---|
+| dispatch / depart / arrive / putaway | `执行中 → 在途 → 待入库 → 实物完成`，`status=待ERP审核` |
+| 第一次 `sync-erp`（提交） | `syncStatus=已提交待审核`、`erpDocumentStatus=B` |
+| 第二次 `sync-erp`（回读，模拟 C） | **`syncStatus=已审核`、`status=已完成`、`erpDocumentStatus=C`、`erpApproveTime`/`completeTime`=2026-10-22 15:21:37** |
+| 日志 | WARN「【模拟】调拨单[DB…]金蝶状态被模拟为 C（wms.transfer.simulate-erp-status），仅限测试」 |
+
+**结论**：`deriveStatus` + C 分支写库逻辑（两个时间锚点、`status` 派生、幂等）已验证正确；
+**未验证部分**：真实工作流审批产生的 C（需要审批账号），以及审批后金蝶库存移动（D.01 −1 / D.02 +1）。
+
+## 18. 收尾与环境恢复
+
+- 测试数据已清：`wms_transfer_*` 0 行；库存 `E2E-BOX-20261022` 回 `MJ-DEFAULT` 数量 1；`MJ-DEFAULT` 占用；`LB-R01-C01-L17/L18` 空闲。
+- 后端已按**默认配置**重启：跨库开关关闭（跨库建单被拒）、模拟开关为空、在途暂存未配置。
+- 待补：拿到审批账号后，用 `D:\tools\kd_wf_audit.sh approve <单号>` 走真实 C，并核对金蝶库存移动。

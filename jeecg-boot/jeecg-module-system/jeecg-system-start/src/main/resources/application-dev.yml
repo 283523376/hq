@@ -453,6 +453,8 @@ wms:
     enable-transit: "${WMS_TRANSFER_ENABLE_TRANSIT:true}"
     # 跨库调拨开关：业务已确认跨库由金蝶 ERP 实现，WMS 只做同库区移库（默认 false）
     enable-cross-warehouse: "${WMS_TRANSFER_ENABLE_CROSS:false}"
+    # 【仅测试】将金蝶调拨单状态模拟为指定值（A/B/C/D），用于验证「C 才算完成」；生产留空
+    simulate-erp-status: "${WMS_TRANSFER_SIMULATE_ERP_STATUS:}"
     # 金蝶调拨单库存组织编码
     org-code: "${KINGDEE_TRANSFER_ORG_CODE:101}"
   sync:

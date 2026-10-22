@@ -197,4 +197,21 @@ class WmsKingdeeTransferWriterTest {
         assertTrue(status.isSuccess());
         assertTrue(status.isMocked());
     }
+
+    @Test
+    void queryStatus_simulateSwitch_returnsConfiguredStatusWithoutCall() {
+        org.springframework.test.util.ReflectionTestUtils.setField(writer, "simulateErpStatus", "C");
+        WmsKingdeeTransferStatus status = writer.queryStatus("DB1001");
+        assertTrue(status.isSuccess());
+        assertEquals("C", status.getDocumentStatus());
+        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void saveAndSubmit_simulateC_isIdempotentWithoutSaveCall() {
+        org.springframework.test.util.ReflectionTestUtils.setField(writer, "simulateErpStatus", "C");
+        WmsOrderSyncResult result = writer.saveAndSubmit(order(), List.of(detail()));
+        assertTrue(result.isSuccess());
+        verify(formClient, never()).save(anyString(), any());
+    }
 }
