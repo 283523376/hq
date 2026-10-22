@@ -232,4 +232,45 @@ class WmsWorkOrderServiceImplTest {
         assertEquals(3, saved.getSyncFailCount().intValue());
         assertEquals("字段缺失", saved.getLastSyncError());
     }
+
+    @Test
+    void pushRejectsClosedStatusFromExternalSource() {
+        WmsWorkOrderPushDTO dto = baseDto();
+        dto.setSource("MES");
+        dto.setWorkOrderStatus("已关闭");
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
+        assertTrue(e.getMessage().contains("只能由WMS关单"));
+    }
+
+    @Test
+    void markSyncFailedTruncatesLongError() {
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setRetryCount(0).setSyncFailCount(0));
+        String longError = "x".repeat(600);
+        service.markSyncFailed("WO1", longError);
+        assertEquals(500, capturedOnUpdate().getLastSyncError().length());
+    }
+
+    @Test
+    void pushDuplicateInsertRetriesAsUpdate() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        WmsWorkOrder existing = new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("ERP").setWorkOrderStatus("已下达");
+        when(mapper.selectOne(any())).thenReturn(null).thenReturn(existing);
+        org.mockito.Mockito.doThrow(new org.springframework.dao.DuplicateKeyException("dup"))
+                .when(mapper).insert(org.mockito.ArgumentMatchers.any(WmsWorkOrder.class));
+        WmsWorkOrderPushDTO dto = baseDto();
+        dto.setSource("ERP");
+        dto.setWorkOrderStatus("已下达");
+        dto.setErpDocumentStatus("C");
+
+        WmsWorkOrder result = service.push(dto);
+
+        assertEquals("WO1", result.getWorkOrderNo());
+        org.mockito.Mockito.verify(mapper).updateById(org.mockito.ArgumentMatchers.any(WmsWorkOrder.class));
+    }
 }

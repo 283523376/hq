@@ -167,4 +167,18 @@ class WmsOutboundCreateTest {
                 () -> service.createPick(pickDto("WO1", detail("PBC001", "10"))));
         assertEquals("工单状态不允许领料", e.getMessage());
     }
+
+    @Test
+    void createPick_releasedOrder_persists() {
+        WmsWorkOrder released = new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setMaterialCode("PBC001")
+                .setMaterialName("未加工集成电路板").setProductType("半成品")
+                .setBatchNo("B1").setWorkOrderStatus("已下达");
+        when(workOrderMapper.selectOne(any())).thenReturn(released);
+
+        WmsOutboundOrder order = service.createPick(pickDto("WO1", detail("PBC001", "10")));
+
+        assertEquals("生产领料", order.getOutboundType());
+        assertEquals("待分配", order.getStatus());
+    }
 }

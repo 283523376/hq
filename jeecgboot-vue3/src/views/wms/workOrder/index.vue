@@ -55,7 +55,7 @@
 
 <script lang="ts" name="wms-work-order" setup>
   import { reactive, ref } from 'vue';
-  import { BasicTable } from '/@/components/Table';
+  import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { columns, searchFormSchema } from './workOrder.data';
@@ -102,7 +102,7 @@
       }
       reload();
     } catch (e) {
-      createMessage.error('金蝶工单同步失败，请检查金蝶配置或后端日志');
+      createMessage.error(e?.message || '金蝶工单同步失败，请检查金蝶配置或后端日志');
     } finally {
       syncing.value = false;
     }

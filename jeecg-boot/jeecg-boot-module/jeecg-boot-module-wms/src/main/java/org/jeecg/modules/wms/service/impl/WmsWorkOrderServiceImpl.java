@@ -104,8 +104,18 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
     @Override
     @Transactional(rollbackFor = Exception.class)
     public WmsWorkOrder push(WmsWorkOrderPushDTO dto) {
+        return pushInternal(dto, true);
+    }
+
+    private WmsWorkOrder pushInternal(WmsWorkOrderPushDTO dto, boolean retryOnDuplicate) {
         if (dto == null || oConvertUtils.isEmpty(dto.getWorkOrderNo())) {
             throw new RuntimeException("工单号不能为空");
+        }
+        String incomingStatus = oConvertUtils.isEmpty(dto.getWorkOrderStatus())
+                ? WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS : dto.getWorkOrderStatus();
+        if (WmsConstants.WORK_ORDER_STATUS_CLOSED.equals(incomingStatus)) {
+            // 已关闭只能由 WMS 关单动作产生；外部 MES/ERP 推送不得直接关单（评审 I6）
+            throw new RuntimeException("工单状态已关闭只能由WMS关单产生");
         }
         if (oConvertUtils.isEmpty(dto.getMaterialCode())) {
             throw new RuntimeException("物料编码不能为空");
@@ -117,8 +127,6 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         }
         WmsWorkOrder order = getByWorkOrderNo(dto.getWorkOrderNo());
         boolean create = order == null;
-        String incomingStatus = oConvertUtils.isEmpty(dto.getWorkOrderStatus())
-                ? WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS : dto.getWorkOrderStatus();
         String source;
         String status;
         if (create) {
@@ -163,7 +171,15 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
             order.setId(null);
             order.setDeletedAt(0L);
             WmsUtils.fillCreate(order);
-            save(order);
+            try {
+                save(order);
+            } catch (org.springframework.dao.DuplicateKeyException e) {
+                // 并发同步同一新单：输掉插入竞争的一方改为更新，避免把成功单误标失败（评审 I7）
+                if (!retryOnDuplicate) {
+                    throw e;
+                }
+                return pushInternal(dto, false);
+            }
         } else {
             WmsUtils.fillUpdate(order);
             updateById(order);
@@ -183,7 +199,7 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         order.setSyncStatus(WmsConstants.SYNC_STATUS_FAILED)
                 .setRetryCount(retry + 1)
                 .setSyncFailCount(fail + 1)
-                .setLastSyncError(errorMessage);
+                .setLastSyncError(truncateError(errorMessage));
         WmsUtils.fillUpdate(order);
         updateById(order);
     }
@@ -217,6 +233,13 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         }
         qw.orderByDesc("create_time");
         return page(new Page<>(pageNo, pageSize), qw);
+    }
+
+    private String truncateError(String error) {
+        if (error == null || error.length() <= WmsConstants.SYNC_ERROR_MAX_LENGTH) {
+            return error;
+        }
+        return error.substring(0, WmsConstants.SYNC_ERROR_MAX_LENGTH);
     }
 
     private void validate(WmsWorkOrder order) {

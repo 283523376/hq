@@ -72,7 +72,7 @@ public class WmsKingdeeProperties {
     /** 金蝶 FProductType 枚举 → WMS 产品类型。 */
     private Map<String, String> productTypeMap = new LinkedHashMap<>();
 
-    /** 金蝶 FDocumentStatus → WMS 工单状态。 */
+    /** 金蝶 FDocumentStatus → WMS 工单状态（@Deprecated：BD-002 V2.2 起不再读取，状态按 gateStatus 门槛）。 */
     private Map<String, String> statusMap = new LinkedHashMap<>();
 
     // ---------------------------------------------------------------- 出库（CK-001/CK-002）

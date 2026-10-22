@@ -94,6 +94,12 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         if (oConvertUtils.isNotEmpty(billNo)) {
             filter = "FBillNo='" + billNo.trim().replace("'", "''") + "'";
         } else {
+            validateDate(startDate);
+            validateDate(endDate);
+            if (oConvertUtils.isNotEmpty(startDate) && oConvertUtils.isNotEmpty(endDate)
+                    && startDate.compareTo(endDate) > 0) {
+                throw new RuntimeException("开始日期不能晚于结束日期");
+            }
             if (oConvertUtils.isEmpty(effectiveStart) && oConvertUtils.isEmpty(effectiveEnd)) {
                 effectiveStart = LocalDate.now().minusDays(DEFAULT_WINDOW_DAYS - 1L).toString();
                 windowDays = DEFAULT_WINDOW_DAYS;
@@ -120,8 +126,8 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         }
         WmsKingdeeWorkOrderSyncResultVO vo = new WmsKingdeeWorkOrderSyncResultVO();
         vo.setQueried(result.getRows().size());
-        vo.setEffectiveStartDate(billNo == null ? effectiveStart : null);
-        vo.setEffectiveEndDate(billNo == null ? effectiveEnd : null);
+        vo.setEffectiveStartDate(oConvertUtils.isEmpty(billNo) ? effectiveStart : null);
+        vo.setEffectiveEndDate(oConvertUtils.isEmpty(billNo) ? effectiveEnd : null);
         vo.setEffectiveWindowDays(windowDays);
 
         Map<String, List<List<Object>>> byBill = new LinkedHashMap<>();
@@ -170,7 +176,8 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         if (oConvertUtils.isEmpty(billNo)) {
             return false;
         }
-        WmsKingdeeWorkOrderSyncResultVO vo = syncFromKingdee(billNo, null, null, 1);
+        // 按单号也必须拉全分录：top=1 会只取首行，绕过"多物料/多批次整单跳过"保护（评审 I1）
+        WmsKingdeeWorkOrderSyncResultVO vo = syncFromKingdee(billNo, null, null, MAX_TOP);
         return vo.getImported() + vo.getUpdated() > 0;
     }
 
@@ -179,7 +186,12 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         try {
             return workOrderService.scan(workOrderNo);
         } catch (RuntimeException first) {
-            if (oConvertUtils.isEmpty(workOrderNo) || !syncSingleFromKingdee(workOrderNo)) {
+            if (oConvertUtils.isEmpty(workOrderNo)) {
+                throw first;
+            }
+            WmsKingdeeWorkOrderSyncResultVO result = syncFromKingdee(workOrderNo, null, null, MAX_TOP);
+            if (result.getImported() + result.getUpdated() == 0) {
+                log.warn("工单[{}] ERP回源未生成：{}", workOrderNo, result.getMessages());
                 throw first;
             }
             return workOrderService.scan(workOrderNo);
@@ -275,6 +287,20 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
             }
         }
         return kingdeeCode;
+    }
+
+    private void validateDate(String date) {
+        if (oConvertUtils.isEmpty(date)) {
+            return;
+        }
+        if (date.length() != 10) {
+            throw new RuntimeException("日期格式必须为 yyyy-MM-dd");
+        }
+        try {
+            java.time.LocalDate.parse(date);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new RuntimeException("日期格式必须为 yyyy-MM-dd");
+        }
     }
 
     private BigDecimal toDecimal(Object value) {

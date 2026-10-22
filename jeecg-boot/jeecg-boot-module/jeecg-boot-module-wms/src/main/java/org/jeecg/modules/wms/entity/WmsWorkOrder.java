@@ -57,7 +57,7 @@ public class WmsWorkOrder extends JeecgEntity {
     @Schema(description = "批次号")
     private String batchNo;
 
-    /** 工单状态：待生产/生产中/已完成/已关闭 */
+    /** 工单状态：待生产/已下达/生产中/已完成/已关闭 */
     @Schema(description = "工单状态")
     private String workOrderStatus;
 

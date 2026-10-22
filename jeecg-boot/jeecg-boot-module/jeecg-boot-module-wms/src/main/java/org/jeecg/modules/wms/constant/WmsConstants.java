@@ -350,6 +350,8 @@ public final class WmsConstants {
     public static final String SYNC_LOG_DIRECTION_ERP_TO_WMS = "ERP_TO_WMS";
     /** 同步日志对端：金蝶。 */
     public static final String SYNC_LOG_TARGET_KINGDEE = "KINGDEE";
+    /** 工单同步连续失败告警标题。 */
+    public static final String WORK_ORDER_SYNC_ALERT_TITLE = "生产工单ERP同步连续失败告警";
 
     /** 库区类型：废品仓（不良品直接写库存，不做库位分配）。 */
     public static final String WAREHOUSE_TYPE_SCRAP = "废品仓";

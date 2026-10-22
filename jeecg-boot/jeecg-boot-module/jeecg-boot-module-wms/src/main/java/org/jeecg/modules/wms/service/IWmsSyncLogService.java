@@ -40,4 +40,14 @@ public interface IWmsSyncLogService extends JeecgService<WmsSyncLog> {
      * @param withinDays 近 N 天
      */
     List<String> listFailedObjectNos(String objectType, int maxRetry, int withinDays);
+
+    /**
+     * 近 N 天内连续失败次数已达到/超过上限的对象单号（去重），用于一次性告警。
+     */
+    List<String> listExhaustedObjectNos(String objectType, int maxRetry, int withinDays);
+
+    /**
+     * 某对象类型最近一次同步成功的时间（毫秒）；没有成功记录返回 0。
+     */
+    long latestSuccessTimeMillis(String objectType);
 }

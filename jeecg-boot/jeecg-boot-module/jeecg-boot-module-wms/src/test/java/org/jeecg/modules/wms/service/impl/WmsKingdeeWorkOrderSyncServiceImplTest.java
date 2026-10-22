@@ -299,4 +299,27 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
         verify(syncLogService).logSync(eq("ERP_TO_WMS"), eq("WORK_ORDER"), eq(null),
                 eq("KINGDEE"), eq(false), anyInt(), any(), any(), contains("鉴权失败"), anyLong());
     }
+
+    @Test
+    void invalidDateRejectedBeforeQuery() {
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.syncFromKingdee(null, "2026/01/01", null, 50));
+        assertEquals("日期格式必须为 yyyy-MM-dd", e.getMessage());
+        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void startAfterEndRejected() {
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.syncFromKingdee(null, "2026-10-10", "2026-10-01", 50));
+        assertEquals("开始日期不能晚于结束日期", e.getMessage());
+    }
+
+    @Test
+    void syncSingleUsesMaxTopToFetchAllEntries() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of()));
+        service.syncSingleFromKingdee("WO1");
+        verify(formClient).executeBillQuery(eq("PRD_MO"), anyString(), anyString(), eq(200));
+    }
 }

@@ -89,7 +89,7 @@ public class WmsWorkOrderController extends JeecgController<WmsWorkOrder, IWmsWo
     @Operation(summary = "生产工单-关联入库记录")
     @GetMapping(value = "/inbound-records")
     public Result<List<WmsProductionInbound>> inboundRecords(
-            @RequestParam(name = "workOrderNo") String workOrderNo) {
+            @RequestParam(name = "workOrderNo", required = false) String workOrderNo) {
         if (oConvertUtils.isEmpty(workOrderNo)) {
             return Result.error("工单号不能为空");
         }
@@ -101,8 +101,7 @@ public class WmsWorkOrderController extends JeecgController<WmsWorkOrder, IWmsWo
      * 兼容入口（BD-002 V2.2 保留）：不得覆盖 ERP 来源、不得重开已关闭工单。
      */
     @IgnoreAuth
-    @AutoLog(value = "生产工单-MES推送", operateType = 2)
-    @Operation(summary = "生产工单-MES推送（外部系统）")
+    @Operation(summary = "生产工单-MES推送（外部系统；令牌不允许进系统日志，故不加 @AutoLog）")
     @PostMapping(value = "/push")
     public Result<WmsWorkOrder> push(@RequestHeader(name = "X-MES-Token", required = false) String token,
                                      @RequestBody WmsWorkOrderPushDTO dto) {
