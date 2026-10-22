@@ -59,7 +59,20 @@
 | 5 | 详情 | **`exec=实物完成`、`status=待ERP审核`**、`execFinishTime` 有值、`waitingHours=0` |
 | 6 | 库存 | 源行 `MJ-DEFAULT` 数量 0/锁定 0 且库位回「空闲」；目标行 `MJ-R01-C02-L01` 数量 1、库位「占用」 |
 
-### 3.4 负向与回归
+### 3.4 跨仓全链路（MJ → LB，两段式）
+
+前置：临时以 `LB-R01-C01-L17` 作为在途暂存库位（启动时注入 `WMS_TRANSFER_TRANSIT_LOCATION_ID`），测试后已恢复。
+
+| 步 | 动作 | 结果 |
+|---|---|---|
+| 1 | 建单（MJ → LB，**不填区域**） | 200，`transferMode=跨仓`，区域回落默认 `PRE_ORDER` |
+| 2 | `dispatch` | `exec=执行中`（跨仓只锁定，**不下发 RMS**） |
+| 3 | `depart` | `exec=在途`，源仓库存扣减 |
+| 4 | `arrive` | `exec=待入库`，暂存库位 `LB-R01-C01-L17` 数量 1 |
+| 5 | `putaway`（指定 `LB-R01-C01-L18`） | **`exec=实物完成`、`status=待ERP审核`** |
+| 6 | 库存 | 暂存 L17 数量 0；目标 L18 数量 1 且「占用」 |
+
+### 3.5 负向与回归
 
 | 场景 | 期望 | 实测 |
 |---|---|---|
@@ -68,13 +81,20 @@
 | 同仓 FINISHED 但无位置回调 | 转异常并告警 | `exec=异常`、`status=异常`；站内消息「WMS调拨设备异常告警」已投递 |
 | 执行中关单 | 释放锁定 | 关单前 `locked_qty=1` → 关单后 `0`，`status=已关闭` |
 
-### 3.5 执行期发现并修复的 3 个缺陷
+### 3.6 执行期发现并修复的 4 个缺陷
 
 | # | 缺陷 | 现象 | 修复 |
 |---|---|---|---|
 | 1 | 分配未按容器过滤 | 敏捷仓指定容器 A，却被分配到容器 B（FIFO 忽略 `container_code`） | `selectAvailableByWarehouse` 增加 `containerCode` 条件，敏捷仓按容器精确取数 |
 | 2 | 设备回执状态比对错位 | RMS 回 `FINISHED`，后端按「已完成」比较 → 收到回执也不推进 | 新增 `DEVICE_STATUS_FINISHED/FAILED/RUNNING` 常量，`isDeviceFinished/Failed` 兼容原始值与内部值 |
 | 3 | 关单漏释放锁定 | 「FINISHED 但缺库位」转异常后关单，因任务状态已「已完成」被跳过 → 锁定泄漏 1 | 释放判定改为按 `exec_status`（在途/待入库/实物完成=库存已动，不释放；其余释放） |
+| 4 | 上架后暂存库位未释放 | 跨仓 putaway 后暂存库位数量为 0 但仍显示「占用」 | `deductFromLocation` 扣到 0 时同步把库位状态回「空闲」 |
+
+### 3.7 测试数据回收
+
+E2E 结束后已恢复现场：删除全部 `wms_transfer_*` 测试行、删除测试库位 `MJ-A01`、
+库存 `E2E-BOX-20261022` 回到原库位 `MJ-DEFAULT` 且数量 1、`MJ-DEFAULT` 状态回「占用」、
+临时借用的 `LB-R01-C01-L17/L18` 回「空闲」。临时注入的 `WMS_TRANSFER_TRANSIT_LOCATION_ID` 已随重启移去（当前为空，跨仓建单再次被拒——预期保护，等业务正式建库位）。
 
 ## 4. 与计划/设计的偏差（如实记录）
 
