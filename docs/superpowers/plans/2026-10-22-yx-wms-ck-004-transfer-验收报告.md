@@ -116,3 +116,57 @@ E2E 结束后已恢复现场：删除全部 `wms_transfer_*` 测试行、删除�
 ## 6. 回滚
 
 见 `V3.9.5_21__wms_transfer.sql` 脚本头注释：删 3 张表 + 删 `19100000000000004%` 权限与授权。代码回滚按提交逆序 revert（迁移已应用不可改 checksum）。
+
+---
+
+# Phase B 追加验收（2026-10-22）
+
+> Phase A 的 §5「未完成项」中 Task 10–12 与跨仓 E2E 已在本轮补完；下文为增量证据。
+
+## 7. 交付
+
+| Task | 内容 | 落点 |
+|---|---|---|
+| 10 | 金蝶直接调拨单回写 | `IWmsKingdeeTransferWriter` + `WmsKingdeeTransferWriterImpl`（Save + Submit + 状态查询，**绝不调 Audit**） |
+| 11 | 同步 Job | `WmsTransferSyncJob` + `WmsTransferSyncJobRegistrar` + `V3.9.5_22`（Job 种子 `1920000000000000350`，cron `0 23/10 * * * ? *`） |
+| 12 | 驳回处置与手工同步 | `syncErp`（提交/回读）、`reverse`（生成反向调拨单并回填 `reverse_transfer_no`） |
+| 新增 | 同步服务 | `IWmsTransferSyncService` / `WmsTransferSyncServiceImpl`：提交待同步、C/D/A/B 回读、审批超时告警（幂等）、失败重试（≤3，第 3 次告警） |
+
+## 8. 真实金蝶联调（测试环境 219.139.47.222:2021 / 账套 6a9aaaadaf7ee6 / 组织 101）
+
+| 步 | 结果 |
+|---|---|
+| 跨仓建单 MJ→LB | 200，`sync=待同步`、`mode=跨仓` |
+| dispatch / depart / arrive / putaway | `执行中 → 在途 → 待入库 → 实物完成`，`status=待ERP审核` |
+| `POST /wms/transfer/{id}/sync-erp` | **`syncStatus=已提交待审核`、`erpDocumentStatus=B`、`erpBillNo=DB2113160550228516865`、`submitTime=2026-10-22 14:48:35`** |
+| 金蝶侧核对 | 表头 `["DB2113160550228516865","B","2026-10-22","101","101","InnerOrgTransfer"]`；明细 `["WA.2205.2200.03000550.B003", 1.0, "KD-FG001173", "D.01", "D.02"]` |
+| C 分支 | **未跑**：`ZJDB01_SYS` 审批由金蝶工作流完成，需人工审批后 Job 才回读到 C（单测已覆盖 C/D/A/B 四分支） |
+
+## 9. 本轮再次抓到并修掉的 4 处（累计 8 个）
+
+| # | 问题 | 修正 |
+|---|---|---|
+| 5 | **同仓无法生成金蝶调拨单**（金蝶报「调出仓库+调出仓位不能等于调入仓库+调入仓位」） | 同仓区域搬运定性为 **WMS 内部移库**：`sync_status=无需同步`，实物完成即「已完成」；仅跨仓回写 ERP |
+| 6 | 分录「单位是必填项」 | 单位改为 `BD_MATERIAL.FBaseUnitId → BD_UNIT.FNumber` 解析（实测基本单位为 `zhi`），不再直接传 `PCS` |
+| 7 | 分录「调入货主是必填项」 | 货主/保管者 id 统一传 **组织编码** `101`，不再传组织内码 `209624` |
+| 8 | 仓库编码映射缺失 | `stock-code-by-org.101` 增加 `LB: D.02`、`MJ: D.01`（按 WMS 库区编码取值） |
+
+## 10. 验证
+
+| 项 | 结果 |
+|---|---|
+| 后端全量单测 | **743/743 pass**（新增 `WmsKingdeeTransferWriterTest` 10 例、`WmsTransferSyncServiceTest` 11 例） |
+| 迁移 | `3.9.5.22 success=1`；启动日志「flyway执行sql脚本失败」= 0 |
+| Job 种子 | `sys_quartz_job.1920000000000000350` = `WmsTransferSyncJob` / `0 23/10 * * * ? *` |
+| 测试数据回收 | `wms_transfer_*` 清空；库存 `E2E-BOX-20261022` 回 `MJ-DEFAULT` 数量 1；`MJ-DEFAULT` 占用；`LB-R01-C01-L17/L18` 空闲；临时 `WMS_TRANSFER_TRANSIT_LOCATION_ID` 已移除 |
+
+## 11. 遗留
+
+1. **金蝶测试单 `DB2113160550228516865` 停在 B**：建议业务在金蝶 UI 审批到 C（可顺带验证 Job 回读 →「已完成」），或撤回后删除。
+2. **正式「在途暂存」库位未建**：测试借用 `LB-R01-C01-L17` 已恢复；当前跨仓建单被拒是预期保护。
+3. `sync-erp` 手工入口目前走「批量提交/回读」，未做按单精确刷新（批量上限 50，单量小可接受）。
+
+## 12. 回滚
+
+- 代码：按提交逆序 revert；
+- 迁移：`V3.9.5_21`（3 表 + 菜单/权限）、`V3.9.5_22`（Job 种子）脚本头均有回滚 SQL。

@@ -242,8 +242,11 @@ status = derive(exec_status, sync_status)   // §5.3
 
 | 场景 | 判定 | 动作 |
 |---|---|---|
-| **同仓区域搬运** | `out_warehouse_id == in_warehouse_id` | 分配容器 → `dispatch` → 米塔 `task/transfer`（`zoneCode=in_zone_code`）→ `task-feedback FINISHED` → `container-location` 回调给 `stackCode` → `exec_status=实物完成` |
-| **跨仓调拨** | 仓库不同 | 源仓出库确认（`exec_status=在途`，源仓库存扣减）→ 目标仓收货确认（落暂存库位 → `待入库`）→ 上架确认（落实际库位 → `实物完成`） |
+| **同仓区域搬运** | `out_warehouse_id == in_warehouse_id` | 分配容器 → `dispatch` → 米塔 `task/transfer`（`zoneCode=in_zone_code`）→ `task-feedback FINISHED` → `container-location` 回调给 `stackCode` → `exec_status=实物完成`；**WMS 内部移库，不生成金蝶调拨单**（`sync_status=无需同步`，实物完成即「已完成」） |
+| **跨仓调拨** | 仓库不同 | 源仓出库确认（`exec_status=在途`，源仓库存扣减）→ 目标仓收货确认（落暂存库位 → `待入库`）→ 上架确认（落实际库位 → `实物完成`）→ **回写金蝶直接调拨单并等 C** |
+
+> **实现期修正（2026-10-22）**：金蝶直接调拨单要求「调出仓库+仓位 ≠ 调入仓库+仓位」，同仓（同一库区）无法表达；
+> 因此**同仓区域搬运不走 ERP**（`sync_status=无需同步`），只有跨仓调拨才回写金蝶并等 `C`。
 
 跨仓**不向米塔下发任务**（米塔只同仓）；`enable-transit=false` 时把「在途→待入库→上架」合并为一次到达确认。
 
