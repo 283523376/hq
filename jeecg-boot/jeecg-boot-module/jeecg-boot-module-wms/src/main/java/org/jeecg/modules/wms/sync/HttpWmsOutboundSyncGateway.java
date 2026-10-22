@@ -31,19 +31,16 @@ public class HttpWmsOutboundSyncGateway implements IWmsOutboundSyncGateway {
 
     private final WmsKingdeeProperties properties;
     private final IWmsKingdeePickWriter pickWriter;
-    private final IWmsKingdeeSaleOrderWriter saleOrderWriter;
     private final IWmsKingdeeOutstockWriter outstockWriter;
     private final String mesUrl;
     private final RestTemplate restTemplate;
 
     public HttpWmsOutboundSyncGateway(WmsKingdeeProperties properties,
                                       IWmsKingdeePickWriter pickWriter,
-                                      IWmsKingdeeSaleOrderWriter saleOrderWriter,
                                       IWmsKingdeeOutstockWriter outstockWriter,
                                       @Value("${wms.sync.mes.outbound-url:}") String mesUrl) {
         this.properties = properties;
         this.pickWriter = pickWriter;
-        this.saleOrderWriter = saleOrderWriter;
         this.outstockWriter = outstockWriter;
         this.mesUrl = mesUrl == null ? "" : mesUrl.trim();
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
@@ -63,17 +60,6 @@ public class HttpWmsOutboundSyncGateway implements IWmsOutboundSyncGateway {
             return postMes(order, details);
         }
         log.info("金蝶与 MES 出库地址均未配置，出库单[{}]按 mock 同步成功处理", order.getOutboundNo());
-        return WmsOrderSyncResult.okMock();
-    }
-
-    @Override
-    public WmsOrderSyncResult syncSaleOrder(WmsOutboundOrder order, List<WmsOutboundDetail> details) {
-        if (properties.isEnabled()) {
-            return saleOrderWriter.write(order, details);
-        }
-        if (oConvertUtils.isNotEmpty(mesUrl)) {
-            return postMes(order, details);
-        }
         return WmsOrderSyncResult.okMock();
     }
 

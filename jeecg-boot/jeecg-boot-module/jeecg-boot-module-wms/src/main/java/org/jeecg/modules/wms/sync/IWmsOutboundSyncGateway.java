@@ -15,7 +15,4 @@ public interface IWmsOutboundSyncGateway {
 
     /** 出库单同步（PRD_PickMtrl / SAL_OUTSTOCK）。 */
     WmsOrderSyncResult sync(WmsOutboundOrder order, List<WmsOutboundDetail> details);
-
-    /** 销售订单同步（SAL_SaleOrder）。 */
-    WmsOrderSyncResult syncSaleOrder(WmsOutboundOrder order, List<WmsOutboundDetail> details);
 }

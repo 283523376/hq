@@ -72,25 +72,6 @@ public class WmsOutboundOrder extends JeecgEntity {
     @Schema(description = "单据状态：待分配/已分配/执行中/待复核/复核异常/异常待人工/已完成/已关闭")
     private String status;
 
-    /** 销售订单同步状态（CK-002）。 */
-    @Excel(name = "销售订单同步", width = 14)
-    @Schema(description = "销售订单同步状态")
-    private String saleSyncStatus;
-
-    /** 销售订单同步失败原因。 */
-    @Schema(description = "销售订单同步失败原因")
-    private String saleSyncError;
-
-    /** 销售订单最近同步时间。 */
-    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
-    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    @Schema(description = "销售订单最近同步时间")
-    private Date saleSyncTime;
-
-    /** 销售订单同步连续失败次数（成功清零）。 */
-    @Schema(description = "销售订单同步连续失败次数")
-    private Integer saleSyncFailCount;
-
     /** 出库单同步状态（PRD_PickMtrl / SAL_OUTSTOCK）。 */
     @Excel(name = "同步状态", width = 12)
     @Schema(description = "出库单同步状态")
@@ -114,20 +95,6 @@ public class WmsOutboundOrder extends JeecgEntity {
     /** 后台同步累计失败次数（用于超限告警）。 */
     @Schema(description = "后台同步累计失败次数")
     private Integer syncFailCount;
-
-    /** 销售订单未同步时确认出库的操作人。 */
-    @Schema(description = "销售订单未同步时确认出库的操作人")
-    private String overrideBy;
-
-    /** 确认出库时间。 */
-    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
-    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    @Schema(description = "确认出库时间")
-    private Date overrideTime;
-
-    /** 确认出库原因。 */
-    @Schema(description = "确认出库原因")
-    private String overrideReason;
 
     /** 关单原因。 */
     @Schema(description = "关单原因")

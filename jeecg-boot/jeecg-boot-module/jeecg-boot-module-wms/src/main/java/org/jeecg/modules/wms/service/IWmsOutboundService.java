@@ -23,6 +23,12 @@ public interface IWmsOutboundService extends IService<WmsOutboundOrder> {
     /** CK-002：创建销售订单对应的出库单。 */
     WmsOutboundOrder createSales(WmsOutboundSalesCreateDTO dto);
 
+    /** CK-002：预览 ERP 销售订单（含分录与剩余可出数量）。 */
+    org.jeecg.modules.wms.vo.WmsSalesOrderVO previewSalesOrder(String salesOrderNo);
+
+    /** CK-002：拉取 ERP 销售订单（按单号或日期窗口）。 */
+    int syncSalesOrder(org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO dto);
+
     /** 分配库位/料箱并锁定库存。 */
     void allocate(String id);
 

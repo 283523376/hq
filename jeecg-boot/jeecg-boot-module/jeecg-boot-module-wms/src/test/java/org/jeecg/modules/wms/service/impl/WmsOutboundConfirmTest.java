@@ -70,9 +70,9 @@ class WmsOutboundConfirmTest {
         when(locationMapper.update(any(), any())).thenReturn(1);
     }
 
-    private WmsOutboundOrder order(String type, String status, String saleSyncStatus) {
+    private WmsOutboundOrder order(String type, String status) {
         WmsOutboundOrder order = new WmsOutboundOrder().setOutboundNo("OUT1").setOutboundType(type)
-                .setStatus(status).setSaleSyncStatus(saleSyncStatus);
+                .setStatus(status);
         order.setId("o1");
         return order;
     }
@@ -95,59 +95,23 @@ class WmsOutboundConfirmTest {
     }
 
     @Test
-    void confirm_withoutSaleSync_returnsNeedConfirmAndDoesNotDeduct() {
-        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_SALES,
-                        WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW, WmsConstants.SYNC_STATUS_FAILED),
+    void confirm_salesOrder_deductsWithoutSaleSyncGate() {
+        // CK-002 方向反转后：销售订单来自 ERP，不再有「未同步」门槛，也不记录 override
+        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_SALES, WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW),
                 allocation(WmsConstants.REVIEW_STATUS_MATCHED, "10", "10"));
 
         WmsOutboundConfirmVO vo = service.confirm("o1", new WmsOutboundConfirmDTO());
 
-        assertFalse(vo.isConfirmed());
-        assertTrue(vo.isNeedSaleOrderConfirm());
-        verify(inventoryMapper, never()).deductLocked(any(), any());
-        verify(orderMapper, never()).update(any(), any());
-    }
-
-    @Test
-    void confirm_withOverride_deductsAndRecordsTrace() {
-        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_SALES,
-                        WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW, WmsConstants.SYNC_STATUS_FAILED),
-                allocation(WmsConstants.REVIEW_STATUS_MATCHED, "10", "10"));
-        WmsOutboundConfirmDTO dto = new WmsOutboundConfirmDTO();
-        dto.setOverrideSaleOrderSync(true);
-        dto.setOverrideReason("ERP 故障，客户急单先出");
-
-        org.apache.shiro.mgt.DefaultSecurityManager manager =
-                new org.apache.shiro.mgt.DefaultSecurityManager();
-        org.apache.shiro.SecurityUtils.setSecurityManager(manager);
-        org.jeecg.common.system.vo.LoginUser loginUser = new org.jeecg.common.system.vo.LoginUser();
-        loginUser.setUsername("tester");
-        org.apache.shiro.subject.Subject subject = new org.apache.shiro.subject.Subject.Builder(manager)
-                .principals(new org.apache.shiro.subject.SimplePrincipalCollection(loginUser, "test"))
-                .buildSubject();
-        org.apache.shiro.util.ThreadContext.bind(subject);
-        try {
-            WmsOutboundConfirmVO vo = service.confirm("o1", dto);
-
-            assertTrue(vo.isConfirmed());
-            verify(inventoryMapper).deductLocked("i1", new BigDecimal("10"));
-            ArgumentCaptor<WmsOutboundOrder> captor = ArgumentCaptor.forClass(WmsOutboundOrder.class);
-            verify(orderMapper).update(captor.capture(), any());
-            WmsOutboundOrder patch = captor.getValue();
-            assertEquals(WmsConstants.OUTBOUND_STATUS_COMPLETED, patch.getStatus());
-            assertEquals(WmsConstants.SYNC_STATUS_PENDING, patch.getSyncStatus());
-            assertEquals("ERP 故障，客户急单先出", patch.getOverrideReason());
-            assertEquals("tester", patch.getOverrideBy());
-        } finally {
-            org.apache.shiro.util.ThreadContext.unbindSubject();
-            org.apache.shiro.SecurityUtils.setSecurityManager(null);
-        }
+        assertTrue(vo.isConfirmed());
+        verify(inventoryMapper).deductLocked("i1", new BigDecimal("10"));
+        ArgumentCaptor<WmsOutboundOrder> captor = ArgumentCaptor.forClass(WmsOutboundOrder.class);
+        verify(orderMapper).update(captor.capture(), any());
+        assertEquals(WmsConstants.OUTBOUND_STATUS_COMPLETED, captor.getValue().getStatus());
     }
 
     @Test
     void confirmPick_deductsAndReleasesLocation() {
-        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK,
-                        WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW, WmsConstants.SYNC_STATUS_NOT_REQUIRED),
+        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK, WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW),
                 allocation(WmsConstants.REVIEW_STATUS_PENDING, "10", "10"));
 
         WmsOutboundConfirmVO vo = service.confirmPick("o1", new WmsOutboundConfirmDTO());
@@ -160,8 +124,7 @@ class WmsOutboundConfirmTest {
     @Test
     void confirm_zeroActual_releasesLockWithoutDeduct() {
         // 复核后显式确认「实收 0」才允许不扣库存直接释放锁定
-        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK,
-                        WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW, WmsConstants.SYNC_STATUS_NOT_REQUIRED),
+        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK, WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW),
                 allocation(WmsConstants.REVIEW_STATUS_MATCHED, "10", "0"));
 
         WmsOutboundConfirmVO vo = service.confirmPick("o1", new WmsOutboundConfirmDTO());
@@ -183,8 +146,7 @@ class WmsOutboundConfirmTest {
                 .setOutboundId("o1").setDetailId("d1").setInventoryId("i1").setLocationId("l1")
                 .setAllocatedQty(new BigDecimal("10")).setReviewStatus(WmsConstants.REVIEW_STATUS_PENDING);
         allocation.setId("a1");
-        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK,
-                WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW, WmsConstants.SYNC_STATUS_NOT_REQUIRED), allocation);
+        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK, WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW), allocation);
 
         WmsOutboundConfirmVO vo = service.confirmPick("o1", new WmsOutboundConfirmDTO());
 
@@ -197,8 +159,7 @@ class WmsOutboundConfirmTest {
 
     @Test
     void confirm_negativeActualQty_isRejected() {
-        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK,
-                        WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW, WmsConstants.SYNC_STATUS_NOT_REQUIRED),
+        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK, WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW),
                 allocation(WmsConstants.REVIEW_STATUS_PENDING, "10", "10"));
         WmsOutboundConfirmDTO.Item item = new WmsOutboundConfirmDTO.Item();
         item.setAllocationId("a1");
@@ -216,8 +177,7 @@ class WmsOutboundConfirmTest {
     /** 设备已完成但未确认出库时关单：锁定也必须释放，否则库位永久占用。 */
     @Test
     void close_finishedTask_stillReleasesLock() {
-        WmsOutboundOrder order = order(WmsConstants.OUTBOUND_TYPE_PICK,
-                WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW, WmsConstants.SYNC_STATUS_NOT_REQUIRED);
+        WmsOutboundOrder order = order(WmsConstants.OUTBOUND_TYPE_PICK, WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW);
         when(orderMapper.selectById("o1")).thenReturn(order);
         WmsOutboundAllocation allocation = allocation(WmsConstants.REVIEW_STATUS_PENDING, "10", "0");
         allocation.setTaskNo("T1");
@@ -232,8 +192,7 @@ class WmsOutboundConfirmTest {
 
     @Test
     void close_releasesAllLocks() {
-        WmsOutboundOrder order = order(WmsConstants.OUTBOUND_TYPE_PICK,
-                WmsConstants.OUTBOUND_STATUS_ALLOCATED, WmsConstants.SYNC_STATUS_NOT_REQUIRED);
+        WmsOutboundOrder order = order(WmsConstants.OUTBOUND_TYPE_PICK, WmsConstants.OUTBOUND_STATUS_ALLOCATED);
         when(orderMapper.selectById("o1")).thenReturn(order);
         WmsOutboundAllocation allocation = allocation(WmsConstants.REVIEW_STATUS_PENDING, "10", "10");
         allocation.setTaskNo("T1");

@@ -16,12 +16,15 @@ import org.jeecg.modules.wms.dto.WmsOutboundDetailDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundPickCreateDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundReviewDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSalesCreateDTO;
+import org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO;
 import org.jeecg.modules.wms.entity.WmsInventory;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsOutboundAllocation;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
+import org.jeecg.modules.wms.entity.WmsSalesOrder;
+import org.jeecg.modules.wms.entity.WmsSalesOrderDetail;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
@@ -29,6 +32,8 @@ import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsWorkOrderMapper;
 import org.jeecg.modules.wms.service.IWmsOutboundAllocator;
 import org.jeecg.modules.wms.service.IWmsOutboundService;
+import org.jeecg.modules.wms.service.IWmsSalesOrderService;
+import org.jeecg.modules.wms.vo.WmsSalesOrderVO;
 import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsOutboundConfirmVO;
 import org.jeecg.modules.wms.vo.WmsOutboundDetailVO;
@@ -77,6 +82,9 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
 
     @Autowired
     private org.jeecg.modules.wms.sync.IWmsKingdeePpbomReader ppbomReader;
+
+    @Autowired
+    private IWmsSalesOrderService salesOrderService;
 
     @Autowired
     private org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService kingdeeWorkOrderSyncService;
@@ -416,12 +424,7 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                     throw new RuntimeException("请先完成复核");
                 }
             }
-            boolean saleSynced = WmsConstants.SYNC_STATUS_SUCCESS.equals(order.getSaleSyncStatus());
-            boolean override = dto != null && dto.isOverrideSaleOrderSync();
-            if (!saleSynced && !override) {
-                return WmsOutboundConfirmVO.needConfirm(order.getOutboundNo(),
-                        "销售订单未同步到金蝶，请确认后继续出库");
-            }
+            // CK-002 方向反转后不再有「销售订单未同步」门槛（销售订单由 ERP → WMS 只读）
         }
         Set<String> specified = applyConfirmQty(allocations, dto);
         // 未复核且未传实收数量时按分配数量处理：分配时 actual_qty 只是占位 0，
@@ -476,14 +479,13 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                 .setSyncStatus(WmsConstants.SYNC_STATUS_PENDING);
         patch.setUpdateTime(new Date());
         patch.setCompleteTime(new Date());
-        boolean override = dto != null && dto.isOverrideSaleOrderSync();
-        if (override) {
-            patch.setOverrideBy(WmsUtils.currentUsername());
-            patch.setOverrideReason(truncate(dto.getOverrideReason()));
-            patch.setOverrideTime(new Date());
-        }
         baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>().eq("id", id));
-        log.info("出库单[{}]确认完成：类型={}，override={}", order.getOutboundNo(), order.getOutboundType(), override);
+        if (WmsConstants.OUTBOUND_TYPE_SALES.equals(order.getOutboundType())
+                && oConvertUtils.isNotEmpty(order.getSalesOrderNo())) {
+            // 刷新销售订单快照的已出库数量，供下次出库校验剩余量
+            salesOrderService.refreshShippedQty(order.getSalesOrderNo());
+        }
+        log.info("出库单[{}]确认完成：类型={}", order.getOutboundNo(), order.getOutboundType());
         return WmsOutboundConfirmVO.ok(order.getOutboundNo());
     }
 
@@ -695,7 +697,6 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                         ? WmsConstants.REQUIREMENT_SOURCE_MANUAL : dto.getRequirementSource().trim())
                 .setStatus(WmsConstants.OUTBOUND_STATUS_PENDING_ALLOCATE)
                 .setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED)
-                .setSaleSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED)
                 .setRetryCount(0)
                 .setSyncFailCount(0)
                 .setOperator(WmsUtils.currentUsername())
@@ -713,35 +714,82 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
         if (dto == null || oConvertUtils.isEmpty(dto.getSalesOrderNo())) {
             throw new RuntimeException("销售订单号不能为空");
         }
-        if (oConvertUtils.isEmpty(dto.getCustomerCode())) {
-            throw new RuntimeException("客户编码不能为空");
-        }
-        if (oConvertUtils.isEmpty(dto.getCustomerName())) {
-            throw new RuntimeException("客户名称不能为空");
+        String salesOrderNo = dto.getSalesOrderNo().trim();
+        // CK-002 方向反转：明细与客户一律取金蝶快照，WMS 不再造单
+        List<WmsSalesOrderDetail> snapshotLines = salesOrderService.requireApprovedDetails(salesOrderNo);
+        WmsSalesOrder snapshot = salesOrderService.getById(snapshotLines.get(0).getSalesOrderId());
+        if (snapshot == null) {
+            throw new RuntimeException("销售订单快照不存在：" + salesOrderNo);
         }
         if (dto.getDetails() == null || dto.getDetails().isEmpty()) {
-            throw new RuntimeException("销售明细不能为空");
+            throw new RuntimeException("出库明细不能为空");
         }
+        Map<String, WmsSalesOrderDetail> lineByMaterial = new LinkedHashMap<>();
+        for (WmsSalesOrderDetail line : snapshotLines) {
+            lineByMaterial.put(line.getMaterialCode(), line);
+        }
+        for (WmsOutboundDetailDTO item : dto.getDetails()) {
+            WmsSalesOrderDetail line = lineByMaterial.get(item.getMaterialCode());
+            if (line == null) {
+                throw new RuntimeException("物料[" + item.getMaterialCode() + "]不在销售订单 " + salesOrderNo + " 中");
+            }
+            if (oConvertUtils.isEmpty(line.getMaterialId())) {
+                throw new RuntimeException("物料[" + line.getMaterialCode()
+                        + "]未在 WMS 建档（请先在物料管理建档或同步物料）");
+            }
+            BigDecimal remaining = nvl(line.getOrderQty()).subtract(nvl(line.getShippedQty()));
+            if (nvl(item.getRequiredQty()).compareTo(remaining) > 0) {
+                throw new RuntimeException("物料[" + line.getMaterialCode() + "]申请数量 "
+                        + strip(nvl(item.getRequiredQty())) + " 超过订单剩余可出数量 " + strip(remaining));
+            }
+            item.setUnit(oConvertUtils.isEmpty(item.getUnit()) ? line.getUnit() : item.getUnit());
+            // 快照里存的是金蝶物料编码；落出库明细时转回 WMS 物料编码（FK 校验用 WMS 码）
+            WmsMaterial material = materialMapper.selectById(line.getMaterialId());
+            if (material == null) {
+                throw new RuntimeException("物料[" + line.getMaterialCode() + "]未在 WMS 建档");
+            }
+            item.setMaterialCode(material.getMaterialCode());
+        }
+
         WmsOutboundOrder order = new WmsOutboundOrder()
                 .setOutboundNo(nextNo(WmsConstants.OUTBOUND_NO_PREFIX_SALES))
                 .setOutboundType(WmsConstants.OUTBOUND_TYPE_SALES)
-                .setSalesOrderNo(dto.getSalesOrderNo().trim())
-                .setCustomerCode(dto.getCustomerCode().trim())
-                .setCustomerName(dto.getCustomerName().trim())
-                .setDeliveryDate(dto.getDeliveryDate() == null ? new Date() : dto.getDeliveryDate())
+                .setSalesOrderNo(salesOrderNo)
+                .setCustomerCode(snapshot.getCustomerCode())
+                .setCustomerName(snapshot.getCustomerName())
+                .setDeliveryDate(dto.getDeliveryDate() != null ? dto.getDeliveryDate()
+                        : (snapshot.getDeliveryDate() != null ? snapshot.getDeliveryDate() : new Date()))
                 .setStatus(WmsConstants.OUTBOUND_STATUS_PENDING_ALLOCATE)
                 .setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED)
-                .setSaleSyncStatus(WmsConstants.SYNC_STATUS_PENDING)
                 .setRetryCount(0)
                 .setSyncFailCount(0)
                 .setOperator(WmsUtils.currentUsername())
                 .setSubmitTime(new Date())
                 .setRemark(dto.getRemark());
         persist(order, dto.getDetails());
-        log.info("销售出库单创建：单号={}，销售订单={}，客户={}，明细={}",
-                order.getOutboundNo(), order.getSalesOrderNo(), order.getCustomerCode(),
-                dto.getDetails().size());
+        log.info("销售出库单创建（基于 ERP 销售订单）：单号={}，销售订单={}，明细={}",
+                order.getOutboundNo(), salesOrderNo, dto.getDetails().size());
         return order;
+    }
+
+    @Override
+    public WmsSalesOrderVO previewSalesOrder(String salesOrderNo) {
+        return salesOrderService.preview(salesOrderNo);
+    }
+
+    @Override
+    public int syncSalesOrder(WmsSalesOrderSyncDTO dto) {
+        if (dto == null) {
+            throw new RuntimeException("拉取参数不能为空");
+        }
+        if (oConvertUtils.isNotEmpty(dto.getNo())) {
+            salesOrderService.syncByBillNo(dto.getNo().trim());
+            return 1;
+        }
+        if (dto.getBeginDate() == null || dto.getEndDate() == null) {
+            throw new RuntimeException("请提供销售订单号，或起始/结束日期");
+        }
+        return salesOrderService.syncByWindow(dto.getBeginDate(), dto.getEndDate());
     }
 
     @Override
@@ -810,5 +858,9 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
 
     private BigDecimal nvl(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private String strip(BigDecimal value) {
+        return nvl(value).stripTrailingZeros().toPlainString();
     }
 }

@@ -40,12 +40,8 @@ class WmsOutboundSyncRetryJobTest {
         when(syncService.syncStaleBefore()).thenReturn(new Date());
         when(syncService.selectUndispatchedBefore(any(), anyInt())).thenReturn(List.of(order("o1")));
         when(syncService.selectSyncCandidates(any(), anyInt())).thenReturn(List.of(order("o2")));
-        when(syncService.selectSaleSyncCandidates(any(), anyInt())).thenReturn(List.of(order("o3")));
         when(syncService.claimForSync(eq("o2"), any())).thenReturn(1);
-        when(syncService.claimSaleForSync(eq("o3"), any())).thenReturn(1);
         when(syncService.sync(eq("o2"), eq(false))).thenReturn(new WmsOrderSyncAttempt(true, null, 0));
-        when(syncService.syncSaleOrder(eq("o3"), eq(false)))
-                .thenReturn(new WmsOrderSyncAttempt(true, null, 0));
     }
 
     private WmsOutboundOrder order(String id) {
@@ -60,9 +56,7 @@ class WmsOutboundSyncRetryJobTest {
 
         verify(taskService).dispatch("o1");
         verify(syncService).sync("o2", false);
-        verify(syncService).syncSaleOrder("o3", false);
         verify(syncService).persistResult(eq("o2"), any());
-        verify(syncService).persistSaleResult(eq("o3"), any());
     }
 
     @Test
@@ -71,7 +65,6 @@ class WmsOutboundSyncRetryJobTest {
 
         job.scanAndResyncForTest();
 
-        verify(syncService).syncSaleOrder("o3", false);
     }
 
     @Test
@@ -81,8 +74,7 @@ class WmsOutboundSyncRetryJobTest {
 
         job.scanAndResyncForTest();
 
-        verify(syncService).announceFailureIfNeeded("o2", false);
-        verify(syncService).syncSaleOrder("o3", false);
+        verify(syncService).announceFailureIfNeeded("o2");
     }
 
     @Test

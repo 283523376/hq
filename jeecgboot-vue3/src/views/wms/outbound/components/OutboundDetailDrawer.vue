@@ -23,14 +23,6 @@
           :description="order.lastSyncError || '请检查库存、库位/料箱或设备状态后重新分配/下发'"
         />
         <a-alert
-          v-if="order.saleSyncStatus === '同步失败'"
-          type="warning"
-          show-icon
-          class="wms-outbound-detail__alert"
-          message="销售订单未同步到金蝶"
-          :description="`${order.saleSyncError || '同步失败'}。出库单可继续流转，但确认出库时需操作员显式确认。`"
-        />
-        <a-alert
           v-if="order.status === '已完成' && order.syncStatus === '同步失败'"
           type="warning"
           show-icon
@@ -50,13 +42,9 @@
           <a-descriptions-item label="客户">{{ order.customerName || order.customerCode || '-' }}</a-descriptions-item>
           <a-descriptions-item label="需求来源">{{ order.requirementSource || '-' }}</a-descriptions-item>
           <a-descriptions-item label="同步状态">{{ order.syncStatus || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="销售单同步">{{ order.saleSyncStatus || '-' }}</a-descriptions-item>
           <a-descriptions-item label="创建时间">{{ order.createTime || '-' }}</a-descriptions-item>
           <a-descriptions-item label="提交时间">{{ order.submitTime || '-' }}</a-descriptions-item>
           <a-descriptions-item label="完成时间">{{ order.completeTime || '-' }}</a-descriptions-item>
-          <a-descriptions-item v-if="order.overrideBy" label="越权出库确认人">{{ order.overrideBy }}</a-descriptions-item>
-          <a-descriptions-item v-if="order.overrideTime" label="确认时间">{{ order.overrideTime }}</a-descriptions-item>
-          <a-descriptions-item v-if="order.overrideReason" label="确认原因">{{ order.overrideReason }}</a-descriptions-item>
           <a-descriptions-item v-if="order.closeReason" label="关单原因" :span="3">{{ order.closeReason }}</a-descriptions-item>
           <a-descriptions-item v-if="order.remark" label="备注" :span="3">{{ order.remark }}</a-descriptions-item>
         </a-descriptions>
@@ -155,9 +143,6 @@
             确认出库
           </a-button>
           <a-button v-if="canResync" :loading="acting" v-auth="'wms:outbound:sync'" @click="handleResync">重新同步</a-button>
-          <a-button v-if="canResyncSale" :loading="acting" v-auth="'wms:outbound:sync'" @click="handleResyncSale">
-            重新同步销售订单
-          </a-button>
           <a-button v-if="canClose" danger :loading="acting" v-auth="'wms:outbound:close'" @click="handleClose">关单</a-button>
         </div>
       </template>
@@ -178,7 +163,6 @@
     getOutboundDetail,
     reviewOutbound,
     syncOutbound,
-    syncSaleOrder,
   } from '../outbound.api';
 
   const props = defineProps<{ outboundId: string }>();
@@ -245,7 +229,6 @@
   );
   const canConfirm = computed(() => order.value.outboundType === '销售出库' && order.value.status === '待复核');
   const canResync = computed(() => order.value.status === '已完成' && order.value.syncStatus === '同步失败');
-  const canResyncSale = computed(() => order.value.saleSyncStatus === '同步失败');
   const canClose = computed(() => !['已完成', '已关闭'].includes(order.value.status));
 
   const reviewExceptionText = computed(() => {
@@ -391,49 +374,7 @@
   async function handleConfirm() {
     await withAction(async () => {
       const vo: any = await confirmOutbound(order.value.id, { details: buildConfirmDetails() });
-      if (vo?.needSaleOrderConfirm) {
-        promptSaleOrderOverride();
-        return;
-      }
       createMessage.success(vo?.message || '出库完成');
-    });
-  }
-
-  /** 销售订单未同步：二次确认 + 原因留痕，操作员确认后才能出库。 */
-  function promptSaleOrderOverride() {
-    let reason = '';
-    Modal.confirm({
-      title: '销售订单未同步到金蝶',
-      content: h('div', [
-        h('p', '继续出库将在金蝶生成销售出库单，但销售订单缺失。请填写继续出库的原因（将记录操作人）。'),
-        h('textarea', {
-          class: 'ant-input',
-          rows: 3,
-          placeholder: '继续出库原因（必填）',
-          onInput: (e: any) => (reason = e.target.value),
-        }),
-      ]),
-      okText: '确认继续出库',
-      okType: 'danger',
-      cancelText: '取消',
-      async onOk() {
-        if (!reason || !reason.trim()) {
-          createMessage.warning('继续出库原因不能为空');
-          return Promise.reject();
-        }
-        await withAction(async () => {
-          const vo: any = await confirmOutbound(order.value.id, {
-            overrideSaleOrderSync: true,
-            overrideReason: reason.trim(),
-            details: buildConfirmDetails(),
-          });
-          if (vo?.needSaleOrderConfirm) {
-            createMessage.error('仍无法确认出库，请刷新后重试');
-            return;
-          }
-          createMessage.success(vo?.message || '出库完成');
-        });
-      },
     });
   }
 
@@ -441,13 +382,6 @@
     await withAction(async () => {
       await syncOutbound(order.value.id);
       createMessage.success('同步成功');
-    });
-  }
-
-  async function handleResyncSale() {
-    await withAction(async () => {
-      await syncSaleOrder(order.value.id);
-      createMessage.success('销售订单同步成功');
     });
   }
 

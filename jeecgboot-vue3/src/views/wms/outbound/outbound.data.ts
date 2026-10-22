@@ -65,13 +65,6 @@ export const columns: BasicColumn[] = [
     width: 110,
     customRender: ({ text }) => h(Tag, { color: syncStatusColor[text] || 'default' }, () => text),
   },
-  {
-    title: '销售单同步',
-    align: 'center',
-    dataIndex: 'saleSyncStatus',
-    width: 110,
-    customRender: ({ text }) => h(Tag, { color: syncStatusColor[text] || 'default' }, () => text || '-'),
-  },
   { title: '创建时间', align: 'center', dataIndex: 'createTime', width: 170 },
 ];
 

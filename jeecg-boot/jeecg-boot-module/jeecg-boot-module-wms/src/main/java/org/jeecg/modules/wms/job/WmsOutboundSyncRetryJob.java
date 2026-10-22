@@ -53,7 +53,6 @@ public class WmsOutboundSyncRetryJob implements Job {
     void scanAndResyncForTest() {
         redispatchUndispatched();
         resyncCandidates();
-        resyncSaleCandidates();
     }
 
     /** 分配成功但事务提交后进程中断/下发前异常。 */
@@ -109,46 +108,12 @@ public class WmsOutboundSyncRetryJob implements Job {
                     success++;
                 } else {
                     // 后台不逐次告警，连续失败达到阈值补发一次
-                    syncService.announceFailureIfNeeded(order.getId(), false);
+                    syncService.announceFailureIfNeeded(order.getId());
                 }
             } catch (Exception e) {
                 log.error("出库同步补偿处理[{}]异常：{}", order.getOutboundNo(), e.getMessage(), e);
             }
         }
         log.info("出库同步补偿本轮结束：候选={}，认领={}，成功={}", candidates.size(), claimed, success);
-    }
-
-    private void resyncSaleCandidates() {
-        Date staleBefore = syncService.syncStaleBefore();
-        List<WmsOutboundOrder> candidates;
-        try {
-            candidates = syncService.selectSaleSyncCandidates(staleBefore, WmsConstants.SYNC_SCAN_BATCH);
-        } catch (Exception e) {
-            log.error("销售订单同步补偿取候选失败：{}", e.getMessage(), e);
-            return;
-        }
-        if (candidates == null || candidates.isEmpty()) {
-            return;
-        }
-        int claimed = 0;
-        int success = 0;
-        for (WmsOutboundOrder order : candidates) {
-            try {
-                if (syncService.claimSaleForSync(order.getId(), staleBefore) == 0) {
-                    continue;
-                }
-                claimed++;
-                WmsOrderSyncAttempt attempt = syncService.syncSaleOrder(order.getId(), false);
-                syncService.persistSaleResult(order.getId(), attempt);
-                if (attempt.isSuccess()) {
-                    success++;
-                } else {
-                    syncService.announceFailureIfNeeded(order.getId(), true);
-                }
-            } catch (Exception e) {
-                log.error("销售订单同步补偿处理[{}]异常：{}", order.getSalesOrderNo(), e.getMessage(), e);
-            }
-        }
-        log.info("销售订单同步补偿本轮结束：候选={}，认领={}，成功={}", candidates.size(), claimed, success);
     }
 }

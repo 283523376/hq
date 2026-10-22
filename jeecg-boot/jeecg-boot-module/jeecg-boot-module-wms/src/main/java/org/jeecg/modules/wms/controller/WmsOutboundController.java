@@ -13,6 +13,7 @@ import org.jeecg.modules.wms.dto.WmsOutboundConfirmDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundPickCreateDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundReviewDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSalesCreateDTO;
+import org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.service.IWmsOutboundService;
 import org.jeecg.modules.wms.service.IWmsOutboundSyncService;
@@ -21,6 +22,7 @@ import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
 import org.jeecg.modules.wms.vo.WmsOutboundConfirmVO;
 import org.jeecg.modules.wms.vo.WmsOutboundDetailVO;
 import org.jeecg.modules.wms.vo.WmsOutboundScanVO;
+import org.jeecg.modules.wms.vo.WmsSalesOrderVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -76,13 +78,7 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
     public Result<WmsOutboundOrder> createSales(@RequestBody WmsOutboundSalesCreateDTO dto) {
         try {
             WmsOutboundOrder order = service.createSales(dto);
-            WmsOrderSyncAttempt attempt = syncService.syncSaleOrder(order.getId(), true);
-            syncService.persistSaleResult(order.getId(), attempt);
-            String message = attempt.isSuccess()
-                    ? (attempt.isMocked() ? "创建成功，销售订单已模拟同步（未启用金蝶）"
-                            : "创建成功，销售订单已同步金蝶")
-                    : "创建成功，但销售订单同步失败：" + attempt.getErrorMessage();
-            return Result.OK(message, service.getById(order.getId()));
+            return Result.OK("创建成功（基于 ERP 销售订单）", service.getById(order.getId()));
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }
@@ -196,23 +192,24 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
         }
     }
 
-    @Operation(summary = "出库-手工重新同步销售订单")
-    @PostMapping(value = "/{id}/sync-sale")
-    @RequiresPermissions("wms:outbound:sync")
-    public Result<WmsOrderSyncAttempt> resyncSale(@PathVariable("id") String id) {
+    @Operation(summary = "出库-预览 ERP 销售订单（含剩余可出数量）")
+    @GetMapping(value = "/sales-order")
+    @RequiresPermissions("wms:outbound:sales")
+    public Result<WmsSalesOrderVO> previewSalesOrder(@RequestParam("no") String no) {
         try {
-            WmsOutboundOrder order = service.getById(id);
-            if (order == null) {
-                return Result.error("单据不存在");
-            }
-            if (!WmsConstants.OUTBOUND_TYPE_SALES.equals(order.getOutboundType())) {
-                return Result.error("仅销售出库单可同步销售订单");
-            }
-            WmsOrderSyncAttempt attempt = syncService.syncSaleOrder(id, true);
-            syncService.persistSaleResult(id, attempt);
-            return attempt.isSuccess()
-                    ? Result.OK(attempt.isMocked() ? "销售订单模拟同步成功（未启用金蝶）" : "销售订单同步成功", attempt)
-                    : Result.error("销售订单同步失败：" + attempt.getErrorMessage());
+            return Result.OK(service.previewSalesOrder(no));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @Operation(summary = "出库-拉取 ERP 销售订单（按单号或时间段）")
+    @PostMapping(value = "/sales-order/sync")
+    @RequiresPermissions("wms:outbound:sales-sync")
+    public Result<String> syncSalesOrder(@RequestBody WmsSalesOrderSyncDTO dto) {
+        try {
+            int count = service.syncSalesOrder(dto);
+            return Result.OK("已拉取 " + count + " 张销售订单", String.valueOf(count));
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }

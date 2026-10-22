@@ -76,30 +76,15 @@ class WmsOutboundControllerTest {
     }
 
     @Test
-    void createSales_triggersSaleOrderSync() {
+    void createSales_returnsCreatedOrder() {
         when(service.createSales(any(WmsOutboundSalesCreateDTO.class))).thenReturn(order("o1", "XS001"));
         when(service.getById("o1")).thenReturn(order("o1", "XS001"));
-        when(syncService.syncSaleOrder("o1", true)).thenReturn(new WmsOrderSyncAttempt(true, null, 0));
 
         Result<WmsOutboundOrder> result = controller.createSales(new WmsOutboundSalesCreateDTO());
 
         assertEquals(200, result.getCode());
         assertNotNull(result.getResult());
-        verify(syncService).syncSaleOrder("o1", true);
-        verify(syncService).persistSaleResult(eq("o1"), any(WmsOrderSyncAttempt.class));
-    }
-
-    @Test
-    void createSales_syncFailureStillCreatesOrder() {
-        when(service.createSales(any(WmsOutboundSalesCreateDTO.class))).thenReturn(order("o1", "XS001"));
-        when(service.getById("o1")).thenReturn(order("o1", "XS001"));
-        when(syncService.syncSaleOrder("o1", true))
-                .thenReturn(new WmsOrderSyncAttempt(false, "金蝶不可用", 3));
-
-        Result<WmsOutboundOrder> result = controller.createSales(new WmsOutboundSalesCreateDTO());
-
-        assertEquals(200, result.getCode());
-        assertTrue(result.getMessage().contains("金蝶不可用"), "实际文案：" + result.getMessage());
+        verify(syncService, never()).sync(any(), eq(true));
     }
 
     @Test
@@ -143,29 +128,22 @@ class WmsOutboundControllerTest {
     }
 
     @Test
-    void syncSale_triggersSaleOrderSync() {
-        when(service.getById("o1")).thenReturn(order("o1", "XS001"));
-        when(syncService.syncSaleOrder("o1", true)).thenReturn(new WmsOrderSyncAttempt(true, null, 0));
+    void previewSalesOrder_returnsPreview() {
+        when(service.previewSalesOrder("XSDD1")).thenReturn(new org.jeecg.modules.wms.vo.WmsSalesOrderVO());
 
-        Result<WmsOrderSyncAttempt> result = controller.resyncSale("o1");
+        Result<org.jeecg.modules.wms.vo.WmsSalesOrderVO> result = controller.previewSalesOrder("XSDD1");
 
         assertEquals(200, result.getCode());
-        verify(syncService).syncSaleOrder("o1", true);
-        verify(syncService).persistSaleResult(eq("o1"), any(WmsOrderSyncAttempt.class));
     }
 
     @Test
-    void syncSale_rejectsNonSalesOrder() {
-        WmsOutboundOrder pick = new WmsOutboundOrder().setOutboundNo("LL001")
-                .setOutboundType(org.jeecg.modules.wms.constant.WmsConstants.OUTBOUND_TYPE_PICK);
-        pick.setId("o1");
-        when(service.getById("o1")).thenReturn(pick);
+    void syncSalesOrder_returnsCount() {
+        when(service.syncSalesOrder(any(org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO.class))).thenReturn(3);
 
-        Result<WmsOrderSyncAttempt> result = controller.resyncSale("o1");
+        Result<String> result = controller.syncSalesOrder(new org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO());
 
-        assertEquals(500, result.getCode());
-        assertEquals("仅销售出库单可同步销售订单", result.getMessage());
-        verify(syncService, never()).syncSaleOrder(any(), eq(true));
+        assertEquals(200, result.getCode());
+        assertEquals("3", result.getResult());
     }
 
     @Test
@@ -204,7 +182,8 @@ class WmsOutboundControllerTest {
         assertPermission("confirmPick", "wms:outbound:confirm");
         assertPermission("confirm", "wms:outbound:confirm");
         assertPermission("resync", "wms:outbound:sync");
-        assertPermission("resyncSale", "wms:outbound:sync");
+        assertPermission("previewSalesOrder", "wms:outbound:sales");
+        assertPermission("syncSalesOrder", "wms:outbound:sales-sync");
         assertPermission("close", "wms:outbound:close");
     }
 

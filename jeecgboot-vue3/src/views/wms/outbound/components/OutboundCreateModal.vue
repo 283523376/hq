@@ -37,28 +37,38 @@
       <a-alert v-if="scan && scan.warning" type="warning" :message="scan.warning" show-icon class="wms-outbound-create__alert" />
     </template>
 
-    <!-- ---------------------------------------------------------- CK-002 销售 -->
+    <!-- ---------------------------------------------------------- CK-002 销售（ERP → WMS） -->
     <template v-else>
       <a-form layout="inline">
         <a-form-item label="销售订单号" required>
-          <a-input v-model:value="salesForm.salesOrderNo" placeholder="金蝶销售订单号" style="width: 220px" />
+          <a-input v-model:value="salesForm.salesOrderNo" placeholder="金蝶销售订单号，如 XSDD1000002318" style="width: 260px" />
         </a-form-item>
-        <a-form-item label="客户编码" required>
-          <a-input v-model:value="salesForm.customerCode" placeholder="如 01.001" style="width: 180px" />
-        </a-form-item>
-        <a-form-item label="客户名称" required>
-          <a-input v-model:value="salesForm.customerName" style="width: 220px" />
+        <a-form-item>
+          <a-button :loading="salesLoading" @click="loadSalesOrder">从 ERP 拉取</a-button>
         </a-form-item>
         <a-form-item label="要货日期">
           <a-date-picker v-model:value="salesForm.deliveryDate" value-format="YYYY-MM-DD" style="width: 160px" />
         </a-form-item>
       </a-form>
+      <a-alert
+        v-if="salesPreview && salesPreview.order?.erpDocumentStatus !== 'C'"
+        type="error"
+        show-icon
+        style="margin-bottom: 12px"
+        :message="`该订单金蝶状态为 ${salesPreview.order?.erpDocumentStatus || '未知'}，只有已审核(C)的订单可以出库`"
+      />
+      <a-descriptions v-if="salesPreview" :column="3" size="small" bordered class="wms-outbound-create__info">
+        <a-descriptions-item label="客户">{{ salesPreview.order?.customerName }}（{{ salesPreview.order?.customerCode }}）</a-descriptions-item>
+        <a-descriptions-item label="销售组织">{{ salesPreview.order?.saleOrgNumber || '-' }}</a-descriptions-item>
+        <a-descriptions-item label="金蝶状态">{{ salesPreview.order?.erpDocumentStatus }}</a-descriptions-item>
+        <a-descriptions-item label="订单日期">{{ salesPreview.order?.orderDate || '-' }}</a-descriptions-item>
+      </a-descriptions>
     </template>
 
     <!-- ---------------------------------------------------------- 明细 -->
     <div class="wms-outbound-create__details-title">
-      <span>出库明细</span>
-      <a-button type="link" size="small" @click="addRow">+ 手工添加明细</a-button>
+      <span>出库明细{{ mode === 'sales' ? '（来自 ERP 销售订单）' : '' }}</span>
+      <a-button v-if="mode === 'pick'" type="link" size="small" @click="addRow">+ 手工添加明细</a-button>
     </div>
     <a-table :data-source="rows" :columns="rowColumns" :pagination="false" size="small" row-key="_key" bordered>
       <template #bodyCell="{ column, record, index }">
@@ -103,7 +113,7 @@
 <script lang="ts" setup>
   import { computed, reactive, ref, watch } from 'vue';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import { createPick, createSales, listMaterialOptions, scanPick } from '../outbound.api';
+  import { createPick, createSales, listMaterialOptions, previewSalesOrder, scanPick } from '../outbound.api';
 
   const props = defineProps<{ mode: 'pick' | 'sales' }>();
   const emit = defineEmits(['update:open', 'success']);
@@ -122,10 +132,12 @@
   const pickForm = reactive({ workOrderNo: '' });
   const salesForm = reactive<{
     salesOrderNo: string;
-    customerCode: string;
-    customerName: string;
     deliveryDate?: string;
-  }>({ salesOrderNo: '', customerCode: '', customerName: '', deliveryDate: undefined });
+  }>({ salesOrderNo: '', deliveryDate: undefined });
+
+  /** ERP 销售订单预览（CK-002 方向反转）：明细只读来自金蝶 */
+  const salesPreview = ref<any>(null);
+  const salesLoading = ref(false);
 
   type Row = {
     _key: number;
@@ -161,9 +173,8 @@
     rows.value = [];
     pickForm.workOrderNo = '';
     salesForm.salesOrderNo = '';
-    salesForm.customerCode = '';
-    salesForm.customerName = '';
     salesForm.deliveryDate = undefined;
+    salesPreview.value = null;
   }
 
   // 每次打开时重置（父组件通过 v-model:open 控制）
@@ -311,12 +322,12 @@
       createMessage.warning('请填写销售订单号');
       return;
     }
-    if (!salesForm.customerCode || !salesForm.customerCode.trim()) {
-      createMessage.warning('请填写客户编码');
+    if (!salesPreview.value) {
+      createMessage.warning('请先从 ERP 拉取销售订单');
       return;
     }
-    if (!salesForm.customerName || !salesForm.customerName.trim()) {
-      createMessage.warning('请填写客户名称');
+    if (salesPreview.value.order?.erpDocumentStatus !== 'C') {
+      createMessage.error('该销售订单未审核（非 C），不能出库');
       return;
     }
     if (!validateRows()) {
@@ -326,25 +337,42 @@
     try {
       const res: any = await createSales({
         salesOrderNo: salesForm.salesOrderNo.trim(),
-        customerCode: salesForm.customerCode.trim(),
-        customerName: salesForm.customerName || undefined,
         deliveryDate: salesForm.deliveryDate || undefined,
         details: buildDetails(),
       });
-      if (res?.success === false) {
-        createMessage.error(res.message || '创建失败');
-        return;
-      }
-      // 后端在「销售订单未同步金蝶」时仍返回成功，但 message 里带失败原因，必须让操作员看到
-      if (res.message && res.message.includes('同步失败')) {
-        createMessage.warning(res.message, 8);
-      } else {
-        createMessage.success(res.message || '创建成功');
-      }
+      createMessage.success(`创建成功：${res.outboundNo}`);
       open.value = false;
       emit('success');
     } finally {
       submitting.value = false;
+    }
+  }
+
+  /** 从 ERP 拉取销售订单并带出分录（数量默认取剩余可出量）。 */
+  async function loadSalesOrder() {
+    if (!salesForm.salesOrderNo || !salesForm.salesOrderNo.trim()) {
+      createMessage.warning('请填写销售订单号');
+      return;
+    }
+    salesLoading.value = true;
+    try {
+      const res: any = await previewSalesOrder(salesForm.salesOrderNo.trim());
+      salesPreview.value = res;
+      rows.value = (res?.lines || []).map((d: any) => ({
+        _key: ++rowSeq,
+        materialCode: d.materialCode,
+        materialName: d.materialName,
+        batchNo: '',
+        requiredQty: Number(d.remainingQty || 0),
+        unit: d.unit,
+        matched: true,
+        manual: false,
+      }));
+      if (!rows.value.length) {
+        createMessage.warning('该销售订单没有可出库分录');
+      }
+    } finally {
+      salesLoading.value = false;
     }
   }
 </script>

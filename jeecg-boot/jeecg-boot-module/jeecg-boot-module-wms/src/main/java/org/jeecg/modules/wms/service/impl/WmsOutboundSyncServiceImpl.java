@@ -84,35 +84,6 @@ public class WmsOutboundSyncServiceImpl implements IWmsOutboundSyncService {
     }
 
     @Override
-    public WmsOrderSyncAttempt syncSaleOrder(String outboundId, boolean announce) {
-        WmsOutboundOrder order = orderMapper.selectById(outboundId);
-        if (order == null) {
-            return new WmsOrderSyncAttempt(false, "出库单不存在", 0);
-        }
-        List<WmsOutboundDetail> details = detailMapper.selectList(Wrappers.<WmsOutboundDetail>query()
-                .eq("outbound_id", outboundId).orderByAsc("line_no"));
-        WmsOrderSyncResult last = null;
-        for (int i = 0; i <= WmsConstants.SYNC_MAX_RETRY; i++) {
-            last = gateway.syncSaleOrder(order, details);
-            if (last.isSuccess()) {
-                log.info("销售订单[{}]同步成功，重试次数={}，mocked={}",
-                        order.getSalesOrderNo(), i, last.isMocked());
-                return new WmsOrderSyncAttempt(true, null, i, last.isMocked());
-            }
-            if (i < WmsConstants.SYNC_MAX_RETRY) {
-                sleepBeforeRetry(i, order.getSalesOrderNo());
-            }
-        }
-        String error = truncate(last == null ? "未知原因" : last.getErrorMessage());
-        log.error("销售订单[{}]同步失败，已重试{}次，原因：{}",
-                order.getSalesOrderNo(), WmsConstants.SYNC_MAX_RETRY, error);
-        if (announce) {
-            alert(WmsConstants.SALE_ORDER_SYNC_ALERT_TITLE, order, error);
-        }
-        return new WmsOrderSyncAttempt(false, error, WmsConstants.SYNC_MAX_RETRY);
-    }
-
-    @Override
     public void persistResult(String id, WmsOrderSyncAttempt attempt) {
         orderMapper.persistSyncResult(id,
                 attempt.isSuccess() ? WmsConstants.SYNC_STATUS_SUCCESS : WmsConstants.SYNC_STATUS_FAILED,
@@ -120,30 +91,19 @@ public class WmsOutboundSyncServiceImpl implements IWmsOutboundSyncService {
     }
 
     @Override
-    public void persistSaleResult(String id, WmsOrderSyncAttempt attempt) {
-        orderMapper.persistSaleSyncResult(id, attempt.isSuccess()
-                        ? WmsConstants.SYNC_STATUS_SUCCESS : WmsConstants.SYNC_STATUS_FAILED,
-                truncate(attempt.getErrorMessage()));
-    }
-
-    @Override
-    public boolean announceFailureIfNeeded(String outboundId, boolean saleOrder) {
+    public boolean announceFailureIfNeeded(String outboundId) {
         WmsOutboundOrder order = orderMapper.selectById(outboundId);
         if (order == null) {
             return false;
         }
-        String status = saleOrder ? order.getSaleSyncStatus() : order.getSyncStatus();
-        if (!WmsConstants.SYNC_STATUS_FAILED.equals(status)) {
+        if (!WmsConstants.SYNC_STATUS_FAILED.equals(order.getSyncStatus())) {
             return false;
         }
-        int count = saleOrder ? nvl(order.getSaleSyncFailCount()) : nvl(order.getSyncFailCount());
         // 只在恰好达到阈值那一轮发一次，避免每 5 分钟重复轰炸
-        if (count != WmsConstants.SYNC_ALERT_AFTER_FAILS) {
+        if (nvl(order.getSyncFailCount()) != WmsConstants.SYNC_ALERT_AFTER_FAILS) {
             return false;
         }
-        String error = saleOrder ? order.getSaleSyncError() : order.getLastSyncError();
-        alert(saleOrder ? WmsConstants.SALE_ORDER_SYNC_ALERT_TITLE : WmsConstants.OUTBOUND_SYNC_ALERT_TITLE,
-                order, truncate(error));
+        alert(WmsConstants.OUTBOUND_SYNC_ALERT_TITLE, order, truncate(order.getLastSyncError()));
         return true;
     }
 
@@ -163,18 +123,8 @@ public class WmsOutboundSyncServiceImpl implements IWmsOutboundSyncService {
     }
 
     @Override
-    public int claimSaleForSync(String id, Date staleBefore) {
-        return orderMapper.claimSaleForSync(id, staleBefore);
-    }
-
-    @Override
     public List<WmsOutboundOrder> selectSyncCandidates(Date staleBefore, int limit) {
         return orderMapper.selectSyncCandidates(staleBefore, limit);
-    }
-
-    @Override
-    public List<WmsOutboundOrder> selectSaleSyncCandidates(Date staleBefore, int limit) {
-        return orderMapper.selectSaleSyncCandidates(staleBefore, limit);
     }
 
     @Override

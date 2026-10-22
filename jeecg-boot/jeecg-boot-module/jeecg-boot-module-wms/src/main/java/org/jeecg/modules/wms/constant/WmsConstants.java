@@ -560,4 +560,27 @@ public final class WmsConstants {
     public static final int TRANSFER_SYNC_BATCH_SIZE = 50;
     /** 调拨同步最大重试次数（超过转人工）。 */
     public static final int TRANSFER_SYNC_MAX_RETRY = 3;
+
+    // ==================== CK-002 销售订单（ERP → WMS） ====================
+
+    /** 销售订单拉取任务在 sys_quartz_job 中的主键；必须与 Flyway 种子行一致。 */
+    public static final String SALES_ORDER_SYNC_JOB_ID = "1920000000000000360";
+    /** 销售订单拉取任务类名；必须与 Flyway 种子行一致。 */
+    public static final String SALES_ORDER_SYNC_JOB_CLASS = "org.jeecg.modules.wms.job.WmsSalesOrderSyncJob";
+    /** 销售订单拉取 cron：每 15 分钟落在 :29，与其它任务错峰。 */
+    public static final String SALES_ORDER_SYNC_JOB_CRON = "0 29/15 * * * ? *";
+    /** 每轮回看天数（拉「近 N 天 + 状态 C」的销售订单）。 */
+    public static final int SALES_ORDER_SYNC_DAYS = 7;
+    /** 每轮拉取上限。 */
+    public static final int SALES_ORDER_SYNC_LIMIT = 200;
+    /** 快照拉取状态：待拉取。 */
+    public static final String SALES_FETCH_PENDING = "待拉取";
+    /** 快照拉取状态：成功。 */
+    public static final String SALES_FETCH_SUCCESS = "成功";
+    /** 快照拉取状态：失败。 */
+    public static final String SALES_FETCH_FAILED = "失败";
+    /** 销售订单可出库的金蝶状态：已审核。 */
+    public static final String SALES_ORDER_STATUS_APPROVED = "C";
+    /** 销售订单拉取失败告警标题。 */
+    public static final String SALES_ORDER_SYNC_ALERT_TITLE = "WMS销售订单拉取失败告警";
 }

@@ -41,8 +41,11 @@ export const confirmOutbound = (id: string, params) =>
 /** 手工重新同步出库单 */
 export const syncOutbound = (id: string) => defHttp.post({ url: `${OUTBOUND}/${id}/sync` });
 
-/** 手工重新同步销售订单 */
-export const syncSaleOrder = (id: string) => defHttp.post({ url: `${OUTBOUND}/${id}/sync-sale` });
+/** CK-002：预览金蝶销售订单（含分录与剩余可出数量） */
+export const previewSalesOrder = (no: string) => defHttp.get({ url: `${OUTBOUND}/sales-order`, params: { no } });
+
+/** CK-002：拉取金蝶销售订单（按单号或日期窗口） */
+export const syncSalesOrder = (params) => defHttp.post({ url: `${OUTBOUND}/sales-order/sync`, params });
 
 /** 关单 */
 export const closeOutbound = (id: string, params) =>

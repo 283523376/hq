@@ -95,41 +95,14 @@ class WmsOutboundSyncServiceImplTest {
         order.setSyncFailCount(2);
         when(orderMapper.selectById("o1")).thenReturn(order);
 
-        assertFalse(service.announceFailureIfNeeded("o1", false));
+        assertFalse(service.announceFailureIfNeeded("o1"));
         verify(sysBaseAPI, never()).sendSysAnnouncement(any());
 
         order.setSyncFailCount(WmsConstants.SYNC_ALERT_AFTER_FAILS);
-        assertTrue(service.announceFailureIfNeeded("o1", false));
+        assertTrue(service.announceFailureIfNeeded("o1"));
         ArgumentCaptor<MessageDTO> captor = ArgumentCaptor.forClass(MessageDTO.class);
         verify(sysBaseAPI).sendSysAnnouncement(captor.capture());
         assertEquals(WmsConstants.OUTBOUND_SYNC_ALERT_TITLE, captor.getValue().getTitle());
     }
 
-    @Test
-    void announceFailure_saleOrder_usesSaleCounterAndTitle() {
-        WmsOutboundOrder order = new WmsOutboundOrder().setOutboundNo("OUT1")
-                .setSaleSyncStatus(WmsConstants.SYNC_STATUS_FAILED).setSaleSyncError("客户不存在");
-        order.setId("o1");
-        order.setSaleSyncFailCount(WmsConstants.SYNC_ALERT_AFTER_FAILS);
-        when(orderMapper.selectById("o1")).thenReturn(order);
-
-        assertTrue(service.announceFailureIfNeeded("o1", true));
-
-        ArgumentCaptor<MessageDTO> captor = ArgumentCaptor.forClass(MessageDTO.class);
-        verify(sysBaseAPI).sendSysAnnouncement(captor.capture());
-        assertEquals(WmsConstants.SALE_ORDER_SYNC_ALERT_TITLE, captor.getValue().getTitle());
-    }
-
-    @Test
-    void syncSaleOrder_persistsSaleStatusFields() {
-        when(gateway.syncSaleOrder(any(), any())).thenReturn(WmsOrderSyncResult.ok());
-
-        WmsOrderSyncAttempt attempt = service.syncSaleOrder("o1", false);
-        service.persistSaleResult("o1", attempt);
-
-        assertTrue(attempt.isSuccess());
-        verify(orderMapper).persistSaleSyncResult(eq("o1"), eq(WmsConstants.SYNC_STATUS_SUCCESS),
-                isNull());
-        verify(orderMapper, never()).persistSyncResult(anyString(), anyString(), any(Integer.class), any());
-    }
 }

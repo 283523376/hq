@@ -4,6 +4,10 @@ import org.jeecg.modules.wms.dto.WmsOutboundDetailDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundPickCreateDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSalesCreateDTO;
 import org.jeecg.modules.wms.entity.WmsMaterial;
+import org.jeecg.modules.wms.entity.WmsSalesOrder;
+import org.jeecg.modules.wms.entity.WmsSalesOrderDetail;
+import org.jeecg.modules.wms.entity.WmsSalesOrder;
+import org.jeecg.modules.wms.entity.WmsSalesOrderDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
@@ -11,6 +15,7 @@ import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsWorkOrderMapper;
+import org.jeecg.modules.wms.service.IWmsSalesOrderService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -129,33 +134,75 @@ class WmsOutboundCreateTest {
         assertEquals("物料编码不存在：NOPE", e.getMessage());
     }
 
+    /** CK-002 方向反转：客户与明细来自金蝶快照，数量受剩余可出量约束。 */
     @Test
-    void createSales_requiresCustomerAndSetsSaleSyncPending() {
+    void createSales_usesErpSnapshotAndValidatesRemaining() {
+        WmsSalesOrderDetail line = new WmsSalesOrderDetail()
+                .setSalesOrderId("so1")
+                .setMaterialId("mat1")
+                .setMaterialCode("PBC001")
+                .setMaterialName("未加工集成电路板")
+                .setUnit("PCS")
+                .setOrderQty(new BigDecimal("10"))
+                .setShippedQty(new BigDecimal("4"));
+        WmsSalesOrder snapshot = new WmsSalesOrder();
+        snapshot.setId("so1");
+        snapshot.setSalesOrderNo("SO1");
+        snapshot.setCustomerCode("01.001");
+        snapshot.setCustomerName("湖南屹华科技有限公司");
+        snapshot.setErpDocumentStatus("C");
+        IWmsSalesOrderService salesOrderService = mock(IWmsSalesOrderService.class);
+        when(salesOrderService.requireApprovedDetails("SO1")).thenReturn(List.of(line));
+        when(salesOrderService.getById("so1")).thenReturn(snapshot);
+        WmsTestSupport.inject(service, "salesOrderService", salesOrderService);
+        WmsMaterial lineMaterial = new WmsMaterial();
+        lineMaterial.setId("mat1");
+        lineMaterial.setMaterialCode("PBC001");
+        lineMaterial.setMaterialName("未加工集成电路板");
+        lineMaterial.setUnit("PCS");
+        when(materialMapper.selectById("mat1")).thenReturn(lineMaterial);
+
         WmsOutboundSalesCreateDTO dto = new WmsOutboundSalesCreateDTO();
         dto.setSalesOrderNo("SO1");
-        dto.setCustomerCode("01.001");
-        dto.setCustomerName("湖南屹华科技有限公司");
         dto.setDetails(List.of(detail("PBC001", "5")));
 
         WmsOutboundOrder order = service.createSales(dto);
 
         assertTrue(order.getOutboundNo().startsWith("XS"));
         assertEquals("销售出库", order.getOutboundType());
-        assertEquals("待同步", order.getSaleSyncStatus());
+        assertEquals("湖南屹华科技有限公司", order.getCustomerName());
         assertEquals("无需同步", order.getSyncStatus());
         verify(detailMapper, times(1)).insert(any(WmsOutboundDetail.class));
     }
 
     @Test
-    void createSales_negativeQty_throws() {
+    void createSales_exceedsRemainingQuantity_throws() {
+        WmsSalesOrderDetail line = new WmsSalesOrderDetail()
+                .setSalesOrderId("so1")
+                .setMaterialId("mat1")
+                .setMaterialCode("PBC001")
+                .setOrderQty(new BigDecimal("10"))
+                .setShippedQty(new BigDecimal("9"));
+        WmsSalesOrder snapshot = new WmsSalesOrder();
+        snapshot.setId("so1");
+        snapshot.setSalesOrderNo("SO1");
+        IWmsSalesOrderService salesOrderService = mock(IWmsSalesOrderService.class);
+        when(salesOrderService.requireApprovedDetails("SO1")).thenReturn(List.of(line));
+        when(salesOrderService.getById("so1")).thenReturn(snapshot);
+        WmsTestSupport.inject(service, "salesOrderService", salesOrderService);
+        WmsMaterial lineMaterial = new WmsMaterial();
+        lineMaterial.setId("mat1");
+        lineMaterial.setMaterialCode("PBC001");
+        lineMaterial.setMaterialName("未加工集成电路板");
+        lineMaterial.setUnit("PCS");
+        when(materialMapper.selectById("mat1")).thenReturn(lineMaterial);
+
         WmsOutboundSalesCreateDTO dto = new WmsOutboundSalesCreateDTO();
         dto.setSalesOrderNo("SO1");
-        dto.setCustomerCode("01.001");
-        dto.setCustomerName("湖南屹华科技有限公司");
-        dto.setDetails(List.of(detail("PBC001", "-1")));
+        dto.setDetails(List.of(detail("PBC001", "5")));
 
         RuntimeException e = assertThrows(RuntimeException.class, () -> service.createSales(dto));
-        assertEquals("数量必须大于 0", e.getMessage());
+        assertTrue(e.getMessage().contains("超过订单剩余可出数量"), e.getMessage());
     }
 
     @Test

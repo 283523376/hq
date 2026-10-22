@@ -18,16 +18,9 @@ public interface WmsOutboundOrderMapper extends BaseMapper<WmsOutboundOrder> {
     /** 乐观认领出库单同步。 */
     int claimForSync(@Param("id") String id, @Param("staleBefore") Date staleBefore);
 
-    /** 乐观认领销售订单同步。 */
-    int claimSaleForSync(@Param("id") String id, @Param("staleBefore") Date staleBefore);
-
     /** 出库单同步候选。 */
     List<WmsOutboundOrder> selectSyncCandidates(@Param("staleBefore") Date staleBefore,
                                                 @Param("limit") int limit);
-
-    /** 销售订单同步候选。 */
-    List<WmsOutboundOrder> selectSaleSyncCandidates(@Param("staleBefore") Date staleBefore,
-                                                    @Param("limit") int limit);
 
     /** 已分配但超过阈值仍未下发的单据。 */
     List<WmsOutboundOrder> selectUndispatchedBefore(@Param("before") Date before,
@@ -36,8 +29,4 @@ public interface WmsOutboundOrderMapper extends BaseMapper<WmsOutboundOrder> {
     /** 回写出库单同步结果。 */
     int persistSyncResult(@Param("id") String id, @Param("status") String status,
                           @Param("retryCount") Integer retryCount, @Param("error") String error);
-
-    /** 回写销售订单同步结果。 */
-    int persistSaleSyncResult(@Param("id") String id, @Param("status") String status,
-                              @Param("error") String error);
 }

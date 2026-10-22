@@ -19,12 +19,6 @@ public class WmsOutboundConfirmDTO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    @Schema(description = "销售订单未同步时，操作员确认继续出库")
-    private boolean overrideSaleOrderSync;
-
-    @Schema(description = "确认继续出库的原因")
-    private String overrideReason;
-
     @Schema(description = "实收数量调整（可空）")
     private List<Item> details;
 
