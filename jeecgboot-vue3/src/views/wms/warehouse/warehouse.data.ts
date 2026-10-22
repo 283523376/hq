@@ -5,7 +5,7 @@ import { checkWarehouseCode } from './warehouse.api';
 export const WAREHOUSE_TYPE_OPTIONS = [
   { label: '立库', value: '立库' },
   { label: '敏捷仓', value: '敏捷仓' },
-  { label: '线边柜', value: '线边柜' },
+  // 线边柜已随方案 A 移出项目范围（2026-10-19），不再提供新建选项
 ];
 
 export const STATUS_OPTIONS = [

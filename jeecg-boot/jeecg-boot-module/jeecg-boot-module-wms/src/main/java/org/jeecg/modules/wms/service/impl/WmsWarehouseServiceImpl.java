@@ -47,6 +47,8 @@ public class WmsWarehouseServiceImpl extends ServiceImpl<WmsWarehouseMapper, Wms
     @Override
     public List<SelectTreeModel> queryTreeList() {
         List<WmsWarehouse> all = this.list(new QueryWrapper<WmsWarehouse>()
+                // 范围收窄（2026-10-19）：线边柜方案 A 已移出，库区树不再展示（数据保留可回滚）
+                .ne("warehouse_type", WmsConstants.WAREHOUSE_TYPE_LINE_SIDE)
                 .orderByAsc("warehouse_type")
                 .orderByAsc("warehouse_code"));
         Map<String, List<WmsWarehouse>> byType = new LinkedHashMap<>();

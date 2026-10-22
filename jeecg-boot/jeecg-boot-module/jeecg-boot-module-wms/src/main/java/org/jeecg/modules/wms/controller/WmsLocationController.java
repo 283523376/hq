@@ -11,6 +11,7 @@ import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsLocationAttrDTO;
 import org.jeecg.modules.wms.dto.WmsLocationGenDTO;
 import org.jeecg.modules.wms.entity.WmsLocation;
@@ -71,6 +72,10 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
         // 非持久化字段必须先置空，否则 QueryGenerator 会拼出不存在的 warehouse_name 列条件
         wmsLocation.setWarehouseName(null);
         QueryWrapper<WmsLocation> queryWrapper = QueryGenerator.initQueryWrapper(wmsLocation, req.getParameterMap());
+        // 范围收窄（2026-10-19）：线边柜方案 A 已移出，其库位不再展示（数据保留可回滚）
+        queryWrapper.notInSql("warehouse_id",
+                "SELECT id FROM wms_warehouse WHERE warehouse_type = '" + WmsConstants.WAREHOUSE_TYPE_LINE_SIDE
+                        + "' AND deleted_at = 0");
         // 具体库区 id 优先：树上选中库区节点会同时带 warehouseId 与 warehouseType（M2），
         // 此时类型分支会冗余拼一个「该类型全部库区」的 IN 子句。id 已是最精确过滤，跳过类型分支。
         if (oConvertUtils.isEmpty(wmsLocation.getWarehouseId())

@@ -12,6 +12,7 @@ import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.vo.SelectTreeModel;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.service.IWmsLocationService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
@@ -59,6 +60,8 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
                                                      @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
                                                      HttpServletRequest req) {
         QueryWrapper<WmsWarehouse> queryWrapper = QueryGenerator.initQueryWrapper(wmsWarehouse, req.getParameterMap());
+        // 范围收窄（2026-10-19）：线边柜方案 A 已移出项目，库区列表不再展示线边柜（数据保留可回滚）
+        queryWrapper.ne("warehouse_type", WmsConstants.WAREHOUSE_TYPE_LINE_SIDE);
         queryWrapper.orderByAsc("warehouse_code");
         Page<WmsWarehouse> page = new Page<>(pageNo, pageSize);
         return Result.OK(service.page(page, queryWrapper));
