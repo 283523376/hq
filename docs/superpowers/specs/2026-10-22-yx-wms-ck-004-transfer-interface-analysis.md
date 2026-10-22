@@ -14,7 +14,7 @@
 | 金蝶调拨单 FormId | **`STK_TransferDirect`（直接调拨单）**，标准单据类型 **`ZJDB01_SYS`**；`STK_TransferApply` 是调拨申请单，不作为执行单据 |
 | 金蝶调拨单能力 | 支持调出/调入仓库 + 仓位、批号、数量、货主/保管者；实测样本 `ZJDB000001` 已审核（C） |
 | 101 同组织跨仓 | `FTransferBizType=InnerOrgTransfer` 可用；D.01→D.02 **不传仓位**可 Save（A）并 Submit（B） |
-| 金蝶审批 | `ZJDB01_SYS` 关联工作流，WebAPI `Audit` 被拒；Submit 后停在 B（审核中），需 ERP 工作流审批后才变 C 并移动库存 |
+| 金蝶审批 | `ZJDB01_SYS` 关联工作流，WebAPI `Audit` 被拒；Submit 后停在 B（审核中），需 ERP 工作流审批后才变 C 并移动库存。**用户已确认：WMS 必须等 C 才算调拨完成** |
 | 米塔移库 API | **`POST /api/v2/task/transfer`（搬运任务下发）**，只能指定目标**区域**（`zoneCode`），不能指定目标库位；**米塔只同仓使用** |
 | 关键口径 | ERP/WMS 调拨是**跨仓仓库级**；米塔只负责**同仓区域级**搬运；跨仓段由业务/人工/其他物流完成，不经过米塔 |
 | 建议 | 金蝶统一 `STK_TransferDirect`；WMS 记录“调出仓/调入仓 + 区域”，执行时再分配库位；同仓区域搬运用 `task/transfer`，跨仓段走 WMS 在途/人工确认 |
@@ -156,7 +156,7 @@ FSrcStockId.FNumber,FDestStockId.FNumber
 2. `Submit` 后是 **B（审核中）**，不是 C；`ZJDB01_SYS` 关联工作流，WebAPI 不能直接 Audit。WMS 只能 Save + Submit，**C（已审核）与库存移动由 ERP 工作流审批完成**；WMS 需轮询 `FDocumentStatus` 或接受 B 作为“已提交”。
 3. `FStockerId` 引用的是 **`BD_WAREHOUSEWORKERS`（仓管员）**，不是 `BD_Empinfo`。测试用 `2040421005` 在 101 下是**禁用**（`FForbidStatus=B`、`ISUSE=false`），Save 报“仓管员必填”；改用 101 启用仓管员 `0050 熊丹妮`（FID 279082）后 Save 成功。因此配置 `stocker-number` 必须填 `BD_WAREHOUSEWORKERS` 的编码，且该记录对目标组织启用。
 
-> **测试单残留**：`WMS-TEST-TR-20261022-02` 目前停在 B（审核中），因工作流无法通过 WebAPI 撤回/删除；需在金蝶 UI 或工作流中撤回后删除。该单未审批，库存未移动（D.02 仍为 0）。
+> **测试单**：`WMS-TEST-TR-20261022-02` 停在 B（审核中）。**用户已确认不需要删除，保留为实测证据**；该单未审批，库存未移动（D.02 仍为 0）。
 
 ### 2.7 待金蝶确认
 
@@ -217,7 +217,9 @@ FSrcStockId.FNumber,FDestStockId.FNumber
 
 - `transfer_no`（唯一）、`source`（WMS/ERP）、`erp_bill_no`、`erp_document_status`
 - `out_warehouse_id/out_zone_code`、`in_warehouse_id/in_zone_code`：**单据只到仓库/区域**，不预分配库位
-- `status`：待执行/在途/待入库/已完成/异常/已关闭
+- `status`：待执行/执行中/待入库/**待ERP审核**/已完成/异常/已关闭
+  - **用户已确认（2026-10-22）：WMS 调拨单必须等 ERP `FDocumentStatus=C` 才算“已完成”**；
+  - 实物执行完成但 ERP 未审核时，状态停在“待ERP审核”，不置“已完成”。
 - `sync_status/retry_count/sync_fail_count/last_sync_error/last_sync_time`
 - `operator/complete_time`、审计列
 
@@ -236,9 +238,31 @@ FSrcStockId.FNumber,FDestStockId.FNumber
 | 方向 | 动作 |
 |---|---|
 | ERP→WMS | 查 `STK_TransferDirect`（建议只取 `FDocumentStatus=C`），按 `FBillNo` upsert；映射组织/仓库/物料/批号/数量；**不取仓位** |
-| WMS→ERP | `Save + Submit` `STK_TransferDirect`（仓库级，不传 `FSrcStockLocId/FDestStockLocId`）；幂等键 `FBillNo`；Submit 后为 `B`，等待 ERP 工作流审批到 `C`；失败重试/告警 |
+| WMS→ERP | `Save + Submit` `STK_TransferDirect`（仓库级，不传 `FSrcStockLocId/FDestStockLocId`）；幂等键 `FBillNo`；Submit 后为 `B`；**Job 轮询 `FDocumentStatus`，只有到 `C` 才把 WMS 调拨单置“已完成”**；驳回/作废置“异常/ERP驳回”；失败重试/告警 |
 | WMS→RMS | 仅同仓区域搬运调用 `task/transfer`；跨仓不下发 RMS |
 | RMS→WMS | `task-feedback` 更新任务状态；`料箱位置更新` 回调实际 `stackCode`，WMS 执行时落库位 |
+
+### 4.3.1 ERP 审批口径（用户已确认 2026-10-22）
+
+**决策：WMS 调拨单必须等 ERP 到 `C`（已审核）才算完成。**
+
+状态机（两个时钟，不要混）：
+
+| 时钟 | 字段 | 流转 |
+|---|---|---|
+| 实物执行 | `exec_status` | 待执行 → 执行中/在途 → 待入库 → **实物完成** → 异常 |
+| ERP 审批 | `erp_sync_status` | 待同步 → 已提交(B) → **已审核(C)** → ERP驳回/同步失败 |
+| 单据总状态 | `status` | 实物完成且 `erp_sync_status=C` → **已完成**；实物完成但 ERP 未审 → **待ERP审核** |
+
+规则：
+
+1. 实物完成时，WMS 本地库存按实际动作更新（源仓扣减、目标仓增加），但单据总状态停在“待ERP审核”，**不置“已完成”**。
+2. `WmsTransferSyncJob` 轮询 B 状态的单据，`FDocumentStatus=C` → 置“已完成”；`rejected/作废` → 置“异常/ERP驳回”，并生成待处理事项。
+3. 审批超时（如 B 超过 `transfer-approval-timeout-hours`，默认 24h）→ 站内告警；不自动关单。
+4. 若 ERP 驳回，WMS 实物调拨可能已发生：需要生成反向调拨或人工冲销，**不能简单把单据改回“待执行”**。
+5. 对账：WMS 库存与 ERP 库存在“待ERP审核”窗口会存在时间差，由 SB-001 差异清单/对账任务兜底。
+
+**必须同步确认的运营前提**：`ZJDB01_SYS` 的审批人/角色、审批时效、驳回后的处理责任人；否则“已完成”会长期停在“待ERP审核”。
 
 ### 4.4 需要新增的配置
 
@@ -253,7 +277,8 @@ FSrcStockId.FNumber,FDestStockId.FNumber
 | # | 问题 | 责任方 | 影响 |
 |---|---|---|---|
 | 1 | 生产用哪个 `BD_WAREHOUSEWORKERS` 编码（对 101 启用） | 业务/金蝶 | `FStockerId` 必填 |
-| 2 | `ZJDB01_SYS` 工作流由谁审批；WMS 到 B 是否可接受，还是必须等 C | 业务/金蝶 | WMS→ERP 完成判定 |
+| 2 | `ZJDB01_SYS` 工作流的审批人/角色、审批时效、驳回处理责任人（WMS 已确认必须等 C） | 业务/金蝶 | “已完成”判定与超时告警 |
+| 2b | B 状态超过默认 24h 未审的告警接收人 | 业务 | 审批超时兜底 |
 | 3 | 跨仓段（D.01↔D.02）由谁/什么设备搬运，WMS 如何确认“在途/到达” | 业务 | 跨仓执行模型 |
 | 4 | 同仓 `zoneCode` 的业务区域编码（成品区/半成品区等）与位置回调是否覆盖 transfer | 米塔 | 同仓区域搬运 |
 | 5 | 测试单 `WMS-TEST-TR-20261022-02` 需在金蝶 UI/工作流撤回并删除 | 金蝶/业务 | 测试数据清理 |
