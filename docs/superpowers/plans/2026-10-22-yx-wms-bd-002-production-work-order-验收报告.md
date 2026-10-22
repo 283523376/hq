@@ -3,7 +3,7 @@
 日期：2026-10-22
 依据：`docs/superpowers/specs/2026-10-21-yx-wms-bd-002-production-work-order-design.md`（评审通过待排期，2026-10-22 修订）
 计划：`docs/superpowers/plans/2026-10-22-yx-wms-bd-002-production-work-order.md`
-状态：**代码与自动化验收通过；真实金蝶联调待补（环境缺凭据）**
+状态：**代码、自动化与真实金蝶联调均通过；RMS 设备侧为模拟受理**
 
 ## 1. 交付范围
 
@@ -52,15 +52,31 @@
 - `/wms/work-order/add` 带登录态返回 `{"code":404,"message":"路径不存在…"}`；`/list` 返回新字段 `source/syncStatus/erpDocumentStatus/lastSyncTime`。
 - 手动同步失败（金蝶未配置）返回 `金蝶工单查询失败：调用金蝶异常：URI is not absolute`，并落一条 `ERP_TO_WMS/KINGDEE/同步失败` 日志（脱敏可查）。
 
+### 3.3 真实金蝶联调（2026-10-22）
+
+环境：`KINGDEE_ERP_BASE_URL=http://219.139.47.222:2021/k3cloud`、账套 `6a9aaaadaf7ee6`、集成用户 `WMS`、`allow-http=true`。
+
+| 步骤 | 结果 |
+|---|---|
+| Job 自动增量（09:51） | 金蝶返回 2026-10-20 的 5 张 `PRD_MO`，`A` 状态全部按门槛落为「待生产」，`source=ERP`、`sync_status=同步成功` |
+| 按单号同步 `FG001173` | `queried=1、updated=1`，`erp_document_status=C`；既有 `source=MES` 未被覆盖，既有「生产中」未被回退（rank-max 生效） |
+| RK-002 查询 | `/wms/production/work-order?workOrderNo=FG001173` 返回计划 10000、已入 2、剩余 9998，状态「生产中」 |
+| RK-002 提交 | 良品 1、载具 `E2E-BOX-20261022`，创建 `SC2113086273030565890`；RMS 下发 `mocked=true`（RMS 地址未配置）、任务号 `RMS2113086273030565891` |
+| 设备回执 | 按 RMS 契约模拟 `FINISHED`（`stackCode=MJ-DEFAULT`）→ `status=已入库、task_status=已完成` |
+| 金蝶回写 | 日志 `WmsKingdeeInboundWriterImpl`：`FBillNo=SC2113086273030565890` 写入成功；`WmsProductionSyncServiceImpl`：`mocked=false`、同步成功 |
+| 负向门槛 | 对 `A` 状态 `MO1002646157` 提交 → `工单状态不允许入库`（未创建入库单） |
+| 关联记录 | `/wms/work-order/inbound-records?workOrderNo=FG001173` 返回 2 条 |
+| 同步日志 | `WORK_ORDER` 成功 6 条（5 张 A 单 + FG001173）；失败 5 条均为配置前旧记录，配置后无新增失败 |
+
 ## 4. 未完成项与风险
 
 | 项 | 说明 | 处理 |
 |---|---|---|
-| **真实金蝶联调** | 本机未配置 `KINGDEE_ERP_BASE_URL`/`appId`/`appSecret`，`PRD_MO` 拉取无法实际执行；Task 10 的「同步 FG001173 → 入库 → 再同步」未做 | 在配置齐全的测试环境执行一次，补录报文与截图；在此之前**不得对外宣称已完成上线验收** |
-| 金蝶 `FDate` 过滤 | 逐日窗口依赖 `FDate` 支持范围过滤；仅通过单测/构造验证，未对真实表单验证 | 联调时先按单号同步，再开日期窗口 |
+| **RMS 物理执行** | `wms.sync.rms.url` 为空，下发走模拟受理（`mocked=true`）；入库完成由按契约模拟的 `FINISHED` 回执驱动 | 现场接入米塔 RMS 后重跑一次真实移库；本次已真实验证 ERP 写回（`mocked=false`） |
+| 金蝶 `FDate` 过滤 | **已验证**：Job 逐日窗口在 2026-10-20 拉到 5 张工单，2026-10-21/22 返回 0 行，窗口生效 | 无 |
 | `D` 状态语义 | 按评审 B1 整单跳过；`D` 的准确含义待金蝶顾问确认 | 确认后如需放行再改 `gateStatus` |
 | `V3.9.5_19` 回滚注释 | 已应用迁移不可改（Flyway checksum），回滚段缺少角色授权恢复 INSERT | 已在脚本头说明；如需完整回滚，另写运维手册 |
-| RK-002 正向断言 | `releasedWorkOrder_passesGate` 只断言“不是门槛异常”，全链路正向依赖 E2E | 金蝶联调时补生产入库全链路用例 |
+| RK-002 正向断言 | **已由 §3.3 真实联调覆盖**：提交→RMS 模拟受理→FINISHED→已入库→ERP 写回 | 无 |
 | 前端浏览器实测 | 仅 `pnpm build` + ESLint；未启动浏览器逐页点击 | 上线前用真实浏览器走一遍工单页/详情抽屉 |
 
 ## 5. 回滚
@@ -80,4 +96,10 @@
 
 ## 6. 结论
 
-代码、迁移、菜单/权限、自动化测试与运行态冒烟均通过；**真实金蝶联调是唯一未闭环项**，属环境凭据缺失，不是代码失败。补齐凭据并按 §4 执行后，可转入 V2.2 的下一流程（CK-002/CK-004）。
+代码、迁移、菜单/权限、自动化测试、运行态冒烟与**真实金蝶联调**均通过：
+
+- `PRD_MO → WMS` 真实拉取，`A` 状态按门槛落「待生产」，`C` 状态落「已下达」且不回退既有状态；
+- `RK-002` 提交 → RMS 模拟受理 → 模拟 `FINISHED` 回执 → `已入库` → 真实写入金蝶 `PRD_INSTOCK`（`mocked=false`）；
+- `A` 状态工单被门槛拒绝。
+
+剩余未闭环仅 **RMS 真实物理移库**（当前 RMS 地址为空，按契约模拟回执），接入米塔后补一次即可。可转入 V2.2 的下一流程（CK-002/CK-004）。
