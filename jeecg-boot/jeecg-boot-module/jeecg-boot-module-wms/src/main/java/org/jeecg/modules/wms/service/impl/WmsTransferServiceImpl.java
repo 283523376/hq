@@ -24,6 +24,7 @@ import org.jeecg.modules.wms.mapper.WmsTransferTaskMapper;
 import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
 import org.jeecg.modules.wms.service.IWmsTransferInventoryService;
 import org.jeecg.modules.wms.service.IWmsTransferService;
+import org.jeecg.modules.wms.service.IWmsTransferSyncService;
 import org.jeecg.modules.wms.sync.IWmsRmsGateway;
 import org.jeecg.modules.wms.sync.WmsRmsTransferTask;
 import org.jeecg.modules.wms.sync.WmsTaskDispatchResult;
@@ -86,6 +87,9 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
     private WmsTransferStatusResolver statusResolver;
 
     @Autowired
+    private IWmsTransferSyncService transferSyncService;
+
+    @Autowired
     private ISysBaseAPI sysBaseAPI;
 
     @Value("${wms.transfer.transit-location-id:}")
@@ -138,7 +142,10 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
                 .setInZoneCode(inZone)
                 .setTransferMode(sameWarehouse ? WmsConstants.TRANSFER_MODE_SAME : WmsConstants.TRANSFER_MODE_CROSS)
                 .setExecStatus(WmsConstants.TRANSFER_EXEC_PENDING)
-                .setSyncStatus(WmsConstants.SYNC_STATUS_PENDING)
+                // 同仓区域搬运是 WMS 内部库位移动，金蝶无法表达「同仓移库」→ 无需 ERP 同步；
+                // 只有跨仓调拨才回写直接调拨单并等 C
+                .setSyncStatus(sameWarehouse
+                        ? WmsConstants.SYNC_STATUS_NOT_REQUIRED : WmsConstants.SYNC_STATUS_PENDING)
                 .setStatus(WmsConstants.TRANSFER_STATUS_PENDING)
                 .setTransitLocationId(sameWarehouse ? null : transitLocationId)
                 .setRetryCount(0)
@@ -448,14 +455,63 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
 
     @Override
     public WmsTransferOrder syncErp(String id) {
-        requireOrder(id);
-        throw new RuntimeException("金蝶调拨单回写将在 CK-004 Phase B 上线（需先确认审批人/时效/驳回责任人）");
+        WmsTransferOrder order = requireOrder(id);
+        if (WmsConstants.TRANSFER_MODE_SAME.equals(order.getTransferMode())) {
+            throw new RuntimeException("同仓区域搬运是 WMS 内部库位移动，不生成金蝶调拨单（只有跨仓调拨回写 ERP）");
+        }
+        if (statusResolver.isTerminal(order.getStatus())) {
+            throw new RuntimeException("调拨单已是终态（" + order.getStatus() + "），无需再同步");
+        }
+        if (!WmsConstants.TRANSFER_EXEC_COMPLETED.equals(order.getExecStatus())) {
+            throw new RuntimeException("实物尚未完成，暂不能提交金蝶（当前实物状态：" + order.getExecStatus() + "）");
+        }
+        // 已提交过 -> 只回读状态；否则提交（含重试）
+        if (WmsConstants.TRANSFER_SYNC_SUBMITTED.equals(order.getSyncStatus())) {
+            transferSyncService.pollStatus();
+        } else {
+            transferSyncService.submitPending();
+        }
+        return requireOrder(id);
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public WmsTransferOrder reverse(String id) {
-        requireOrder(id);
-        throw new RuntimeException("反向冲销将在 CK-004 Phase B 上线（需先确认驳回处置责任人）");
+        WmsTransferOrder source = requireOrder(id);
+        if (!WmsConstants.TRANSFER_SYNC_REJECTED.equals(source.getSyncStatus())) {
+            throw new RuntimeException("只有 ERP 驳回/作废的调拨单可生成反向调拨单（当前 ERP 状态："
+                    + source.getSyncStatus() + "）");
+        }
+        if (oConvertUtils.isNotEmpty(source.getReverseTransferNo())) {
+            throw new RuntimeException("该单已生成过反向调拨单：" + source.getReverseTransferNo());
+        }
+        // 反向单：调出/调入互换，明细数量取实发数量；执行流程与原单一致
+        WmsTransferCreateDTO dto = new WmsTransferCreateDTO();
+        dto.setOutWarehouseId(source.getInWarehouseId());
+        dto.setOutZoneCode(source.getInZoneCode());
+        dto.setInWarehouseId(source.getOutWarehouseId());
+        dto.setInZoneCode(source.getOutZoneCode());
+        dto.setRemark("反向冲销：" + source.getTransferNo());
+        List<WmsTransferCreateDTO.Detail> detailDTOs = new ArrayList<>();
+        for (WmsTransferDetail detail : listDetails(id)) {
+            WmsTransferCreateDTO.Detail item = new WmsTransferCreateDTO.Detail();
+            item.setMaterialId(detail.getMaterialId());
+            item.setBatchNo(detail.getBatchNo());
+            item.setContainerCode(detail.getContainerCode());
+            item.setUnit(detail.getUnit());
+            item.setTransferQty(nvl(detail.getActualQty()).signum() > 0
+                    ? detail.getActualQty() : detail.getTransferQty());
+            item.setRemark("冲销原单第 " + detail.getLineNo() + " 行");
+            detailDTOs.add(item);
+        }
+        dto.setDetails(detailDTOs);
+        WmsTransferOrder reverseOrder = create(dto);
+
+        source.setReverseTransferNo(reverseOrder.getTransferNo())
+                .setRejectHandleStatus(WmsConstants.TRANSFER_REJECT_REVERSED);
+        updateById(source);
+        log.info("调拨单[{}]已生成反向冲销单[{}]", source.getTransferNo(), reverseOrder.getTransferNo());
+        return reverseOrder;
     }
 
     // ==================== 内部方法 ====================

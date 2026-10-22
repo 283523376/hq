@@ -95,4 +95,17 @@ public class WmsKingdeeProperties {
     private String deliveryDeptId;
     /** 仓管员编码（BD_Empinfo.FNumber）。 */
     private String stockerId;
+
+    // ---------------------------------------------------------------- 库存调拨（CK-004）
+
+    /** 调拨单单据类型（标准直接调拨单 ZJDB01_SYS）。 */
+    private String transferBillType;
+    /** 调拨类型（同组织内部调拨 InnerOrgTransfer；跨组织未实测）。 */
+    private String transferBizType;
+    /** 调拨方向（普通 GENERAL）。 */
+    private String transferDirect;
+    /** 调拨单仓管员编码（BD_WAREHOUSEWORKERS.FNumber，必须对目标组织启用）。 */
+    private String transferStockerNumber;
+    /** 审批超时告警阈值（小时，默认 24）；0 表示不告警。 */
+    private int transferApprovalTimeoutHours = 24;
 }

@@ -544,6 +544,9 @@ wms:
           "101":             # 宜昌永鑫（新造测试数据默认组织；以下仓库均未启用仓位）
             stereo: "D.02"
             agile: "D.01"
+            # CK-004 调拨按 WMS 库区编码取值（调拨单只到库区级）
+            LB: "D.02"      # 半成品立库
+            MJ: "D.01"      # 成品敏捷仓
         # 启用仓位管理的仓库：仓库编码 → 仓位编号（BD_FLEXVALUES 分录编号），回写时解析为内码传 FStockLocId
         stock-loc:
           "02.001": "01"     # 产成品仓-仓位A
@@ -574,6 +577,14 @@ wms:
         # 测试环境 BD_Department / BD_Empinfo 样例；生产按实际发货部门/仓管员覆盖
         delivery-dept-id: "${KINGDEE_DELIVERY_DEPT_ID:201012}"
         stocker-id: "${KINGDEE_STOCKER_ID:1040401001}"
+        # CK-004 库存调拨：标准直接调拨单 / 同组织调拨 / 普通方向
+        transfer-bill-type: "${KINGDEE_TRANSFER_BILL_TYPE:ZJDB01_SYS}"
+        transfer-biz-type: "${KINGDEE_TRANSFER_BIZ_TYPE:InnerOrgTransfer}"
+        transfer-direct: "${KINGDEE_TRANSFER_DIRECT:GENERAL}"
+        # 调拨单仓管员编码（BD_WAREHOUSEWORKERS，非员工编码；必须对组织 101 启用）
+        transfer-stocker-number: "${KINGDEE_STOCKER_NUMBER:0050}"
+        # 审批（B）超时告警阈值（小时），0 = 不告警
+        transfer-approval-timeout-hours: "${KINGDEE_TRANSFER_APPROVAL_TIMEOUT_HOURS:24}"
     # 同步上级 WMS 地址（占位）
     wms:
       production-inbound-url: ""

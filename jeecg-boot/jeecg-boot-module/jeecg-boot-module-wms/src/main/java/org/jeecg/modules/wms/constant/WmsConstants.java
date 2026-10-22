@@ -549,4 +549,15 @@ public final class WmsConstants {
     public static final String TRANSFER_DEVICE_ALERT_TITLE = "WMS调拨设备异常告警";
     /** 调拨 ERP 同步失败告警标题。 */
     public static final String TRANSFER_SYNC_ALERT_TITLE = "WMS调拨同步失败告警";
+
+    /** 调拨同步任务在 sys_quartz_job 中的主键；必须与 Flyway 种子行一致。 */
+    public static final String TRANSFER_SYNC_JOB_ID = "1920000000000000350";
+    /** 调拨同步任务类名；必须与 Flyway 种子行一致。 */
+    public static final String TRANSFER_SYNC_JOB_CLASS = "org.jeecg.modules.wms.job.WmsTransferSyncJob";
+    /** 调拨同步 cron：每 10 分钟落在 :23，与其它补偿任务错峰。 */
+    public static final String TRANSFER_SYNC_JOB_CRON = "0 23/10 * * * ? *";
+    /** 调拨同步单批处理条数。 */
+    public static final int TRANSFER_SYNC_BATCH_SIZE = 50;
+    /** 调拨同步最大重试次数（超过转人工）。 */
+    public static final int TRANSFER_SYNC_MAX_RETRY = 3;
 }
