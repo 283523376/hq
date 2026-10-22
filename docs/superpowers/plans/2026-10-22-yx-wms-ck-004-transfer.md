@@ -22,6 +22,19 @@
 
 A 段做完即可演示「实物能调、账能对、单据停在待ERP审核」；B 段把「已完成」闭环补上。
 
+### 执行状态（2026-10-22）
+
+| Task | 状态 | 提交 |
+| --- | --- | --- |
+| 1 迁移 `V3.9.5_21` | ✅ 完成（`success=1`） | `7dcbd083` |
+| 2–8 模型/状态机/库存/RMS/跨仓/接口/前端 | ✅ 完成 | `40a90438`、`0495f664` |
+| 9 Phase A 全链路验证 | ✅ 完成（722/722 单测 + `pnpm build` + 同仓 E2E + 4 条负向/回归） | 见验收报告 |
+| 10–13 Phase B | ⬜ 未开工（待 spec §2 前置条件） | — |
+
+> 验收证据与 3 个执行期缺陷（容器未过滤 / FINISHED 字面值 / 关单漏释放锁定）见
+> `docs/superpowers/plans/2026-10-22-yx-wms-ck-004-transfer-验收报告.md`。
+> 偏差：Task 6 执行器合并进 `WmsTransferServiceImpl`；`wms_transfer_task` 增 `inventory_id`/`allocated_qty` 两列。
+
 ## Global Constraints
 
 - 状态常量一律进 `WmsConstants`，禁止魔法值。新增：`exec_status`（`待执行/执行中/在途/待入库/实物完成/异常`）、`sync_status`（沿用现有 5 个 + `已提交待审核/已审核/ERP驳回`）、`status`（`待执行/执行中/待ERP审核/已完成/异常/已关闭`）、`transfer_mode`（`跨仓/同仓区域`）。
