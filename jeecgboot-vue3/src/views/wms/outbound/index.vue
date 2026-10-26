@@ -9,6 +9,12 @@
         <a-button type="primary" preIcon="ant-design:shopping-cart-outlined" v-auth="'wms:outbound:sales'" @click="openCreate('sales')">
           新建销售
         </a-button>
+        <a-button type="primary" preIcon="ant-design:sync-outlined" v-auth="'wms:outbound:add'" :loading="syncingSub" @click="handleSyncSubcontract">
+          同步委外订单
+        </a-button>
+        <a-button type="primary" preIcon="ant-design:experiment-outlined" v-auth="'wms:outbound:add'" @click="openCreate('sample')">
+          新建样品
+        </a-button>
       </template>
       <template #action="{ record }">
         <TableAction :actions="getTableAction(record)" />
@@ -27,7 +33,7 @@
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { columns, searchFormSchema } from './outbound.data';
-  import { allocateOutbound, closeOutbound, dispatchOutbound, listOutbound, syncOutbound } from './outbound.api';
+  import { allocateOutbound, closeOutbound, dispatchOutbound, listOutbound, syncOutbound, syncSubcontractOrders } from './outbound.api';
   import OutboundCreateModal from './components/OutboundCreateModal.vue';
   import OutboundDetailDrawer from './components/OutboundDetailDrawer.vue';
 
@@ -47,11 +53,25 @@
   // ------------------------------------------------------------ 新建
 
   const createOpen = ref(false);
-  const createMode = ref<'pick' | 'sales'>('pick');
+  const createMode = ref<'pick' | 'sales' | 'sample'>('pick');
+  const syncingSub = ref(false);
 
-  function openCreate(mode: 'pick' | 'sales') {
+  function openCreate(mode: 'pick' | 'sales' | 'sample') {
     createMode.value = mode;
     createOpen.value = true;
+  }
+
+  /** 外协出库：从金蝶同步委外订单为只读草稿（本期不含明细） */
+  async function handleSyncSubcontract() {
+    syncingSub.value = true;
+    try {
+      const res: any = await syncSubcontractOrders(50);
+      const msg = res?.messages?.length ? res.messages.join('；') : `新增 ${res?.created ?? 0}，更新 ${res?.updated ?? 0}`;
+      createMessage.success(`同步完成：${msg}`);
+      reload();
+    } finally {
+      syncingSub.value = false;
+    }
   }
 
   // ------------------------------------------------------------ 详情

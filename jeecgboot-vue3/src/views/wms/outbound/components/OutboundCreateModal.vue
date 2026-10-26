@@ -68,7 +68,7 @@
     <!-- ---------------------------------------------------------- 明细 -->
     <div class="wms-outbound-create__details-title">
       <span>出库明细{{ mode === 'sales' ? '（来自 ERP 销售订单）' : '' }}</span>
-      <a-button v-if="mode === 'pick'" type="link" size="small" @click="addRow">+ 手工添加明细</a-button>
+      <a-button v-if="mode !== 'sales'" type="link" size="small" @click="addRow">+ 手工添加明细</a-button>
     </div>
     <a-table :data-source="rows" :columns="rowColumns" :pagination="false" size="small" row-key="_key" bordered>
       <template #bodyCell="{ column, record, index }">
@@ -113,9 +113,9 @@
 <script lang="ts" setup>
   import { computed, reactive, ref, watch } from 'vue';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import { createPick, createSales, listMaterialOptions, previewSalesOrder, scanPick } from '../outbound.api';
+  import { createPick, createSales, createSample, listMaterialOptions, previewSalesOrder, scanPick } from '../outbound.api';
 
-  const props = defineProps<{ mode: 'pick' | 'sales' }>();
+  const props = defineProps<{ mode: 'pick' | 'sales' | 'sample' }>();
   const emit = defineEmits(['update:open', 'success']);
 
   const { createMessage } = useMessage();
@@ -292,6 +292,29 @@
 
   async function handleSubmit() {
     if (submitting.value) {
+      return;
+    }
+    // 样品出库：单物料单批次，不绑工单
+    if (props.mode === 'sample') {
+      const rows = rows.value.filter((r: any) => r.materialCode && r.requiredQty > 0);
+      if (rows.length !== 1) {
+        createMessage.warning('样品出库需且仅需一行明细');
+        return;
+      }
+      submitting.value = true;
+      try {
+        const res: any = await createSample({
+          materialCode: rows[0].materialCode,
+          qty: rows[0].requiredQty,
+          batchNo: rows[0].batchNo,
+          remark: '样品出库',
+        });
+        createMessage.success(`创建成功：${res.outboundNo}`);
+        open.value = false;
+        emit('success');
+      } finally {
+        submitting.value = false;
+      }
       return;
     }
     if (props.mode === 'pick') {

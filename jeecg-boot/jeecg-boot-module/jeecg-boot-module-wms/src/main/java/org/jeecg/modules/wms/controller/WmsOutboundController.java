@@ -11,6 +11,7 @@ import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsOutboundCloseDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundConfirmDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundPickCreateDTO;
+import org.jeecg.modules.wms.dto.WmsOutboundSampleCreateDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundReviewDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSalesCreateDTO;
 import org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO;
@@ -18,10 +19,12 @@ import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.service.IWmsOutboundService;
 import org.jeecg.modules.wms.service.IWmsOutboundSyncService;
 import org.jeecg.modules.wms.service.IWmsOutboundTaskService;
+import org.jeecg.modules.wms.service.IWmsSubcontractOrderSyncService;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
 import org.jeecg.modules.wms.vo.WmsOutboundConfirmVO;
 import org.jeecg.modules.wms.vo.WmsOutboundDetailVO;
 import org.jeecg.modules.wms.vo.WmsOutboundScanVO;
+import org.jeecg.modules.wms.vo.WmsSubcontractSyncResultVO;
 import org.jeecg.modules.wms.vo.WmsSalesOrderVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,6 +52,32 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
 
     @Autowired
     private IWmsOutboundTaskService taskService;
+
+    @Autowired
+    private IWmsSubcontractOrderSyncService subcontractOrderSyncService;
+
+    @Operation(summary = "出库-同步金蝶委外订单为外协出库草稿")
+    @PostMapping(value = "/sync-subcontract")
+    @RequiresPermissions("wms:outbound:add")
+    public Result<WmsSubcontractSyncResultVO> syncSubcontract(
+            @RequestParam(name = "top", defaultValue = "50") Integer top) {
+        try {
+            return Result.OK("同步完成", subcontractOrderSyncService.syncFromKingdee(top));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @Operation(summary = "出库-创建样品出库单")
+    @PostMapping(value = "/sample")
+    @RequiresPermissions("wms:outbound:add")
+    public Result<WmsOutboundOrder> createSample(@RequestBody WmsOutboundSampleCreateDTO dto) {
+        try {
+            return Result.OK("创建成功", service.createSample(dto));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
 
     @Operation(summary = "出库-扫码校验工单并调出需求明细（CK-001）")
     @GetMapping(value = "/pick/scan")

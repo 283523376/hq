@@ -3,6 +3,13 @@ import { defHttp } from '/@/utils/http/axios';
 /** 接口前缀（出库单各动作共用 /wms/outbound） */
 const OUTBOUND = '/wms/outbound';
 
+/** 外协出库：从金蝶同步已审核委外订单为只读草稿（本期不含明细） */
+export const syncSubcontractOrders = (top = 50) =>
+  defHttp.post({ url: `${OUTBOUND}/sync-subcontract`, params: { top } }, { joinParamsToUrl: true });
+
+/** 样品出库：创建样品出库单 */
+export const createSample = (params) => defHttp.post({ url: `${OUTBOUND}/sample`, params });
+
 /** CK-001 扫码校验工单并调出需求明细 */
 export const scanPick = (workOrderNo: string) =>
   defHttp.get({ url: `${OUTBOUND}/pick/scan`, params: { workOrderNo } });

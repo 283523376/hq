@@ -3,7 +3,7 @@ import { h } from 'vue';
 import { BasicColumn, FormSchema } from '/@/components/Table';
 
 /** 出库类型选项 */
-export const OUTBOUND_TYPE_OPTIONS = ['生产领料', '销售出库'].map((v) => ({ label: v, value: v }));
+export const OUTBOUND_TYPE_OPTIONS = ['生产领料', '销售出库', '外协出库', '样品出库'].map((v) => ({ label: v, value: v }));
 
 /** 出库单状态选项 */
 export const OUTBOUND_STATUS_OPTIONS = [
