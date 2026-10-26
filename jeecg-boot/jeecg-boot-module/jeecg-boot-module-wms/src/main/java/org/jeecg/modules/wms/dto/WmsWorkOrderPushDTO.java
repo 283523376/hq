@@ -24,6 +24,9 @@ public class WmsWorkOrderPushDTO {
     @Schema(description = "产品类型：半成品/成品")
     private String productType;
 
+    /** 工单类型：客户订单/备库订单/委外订单/受托订单（ERP 同步，缺省空）。 */
+    private String orderType;
+
     @Schema(description = "计划数量")
     private BigDecimal planQty;
 

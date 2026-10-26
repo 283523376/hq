@@ -322,4 +322,63 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
         service.syncSingleFromKingdee("WO1");
         verify(formClient).executeBillQuery(eq("PRD_MO"), anyString(), anyString(), eq(200));
     }
+
+    // ------------------------------------------------------------ order_type（spec 2026-10-26 §5.3）
+
+    @Test
+    void orderTypeStaysNullWhenFieldNotConfigured() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of(List.of("WORK00080", "C", "1",
+                        "WA.2206.2201.02000430.A003", "半成品", "0", new BigDecimal("10"),
+                        "2026-10-01"))));
+        when(materialMapper.selectOne(any())).thenReturn(pbc001());
+        when(workOrderService.getByWorkOrderNo("WORK00080")).thenReturn(null);
+
+        service.syncFromKingdee("WORK00080", null, null, 50);
+
+        ArgumentCaptor<WmsWorkOrderPushDTO> captor = ArgumentCaptor.forClass(WmsWorkOrderPushDTO.class);
+        verify(workOrderService).push(captor.capture());
+        assertNull(captor.getValue().getOrderType());
+        // 未配置类型字段时，查询字段串不得追加
+        verify(formClient).executeBillQuery(eq("PRD_MO"),
+                eq("FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty,FDate"),
+                anyString(), anyInt());
+    }
+
+    @Test
+    void orderTypeMappedFromConfiguredKingdeeField() {
+        properties.getMasterData().setOrderTypeField("F_UNW_Text_hp8");
+        properties.getMasterData().getOrderTypeValueMap().put("客户订单", "客户订单");
+        when(formClient.executeBillQuery(eq("PRD_MO"),
+                eq("FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty,FDate,F_UNW_Text_hp8"),
+                anyString(), anyInt()))
+                .thenReturn(rows(List.of(List.of("WORK00081", "C", "1",
+                        "WA.2206.2201.02000430.A003", "半成品", "0", new BigDecimal("10"),
+                        "2026-10-01", "客户订单"))));
+        when(materialMapper.selectOne(any())).thenReturn(pbc001());
+        when(workOrderService.getByWorkOrderNo("WORK00081")).thenReturn(null);
+
+        service.syncFromKingdee("WORK00081", null, null, 50);
+
+        ArgumentCaptor<WmsWorkOrderPushDTO> captor = ArgumentCaptor.forClass(WmsWorkOrderPushDTO.class);
+        verify(workOrderService).push(captor.capture());
+        assertEquals("客户订单", captor.getValue().getOrderType());
+    }
+
+    @Test
+    void orderTypeUnknownValueFallsBackToNull() {
+        properties.getMasterData().setOrderTypeField("F_UNW_Text_hp8");
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of(List.of("WORK00082", "C", "1",
+                        "WA.2206.2201.02000430.A003", "半成品", "0", new BigDecimal("10"),
+                        "2026-10-01", "未知值"))));
+        when(materialMapper.selectOne(any())).thenReturn(pbc001());
+        when(workOrderService.getByWorkOrderNo("WORK00082")).thenReturn(null);
+
+        service.syncFromKingdee("WORK00082", null, null, 50);
+
+        ArgumentCaptor<WmsWorkOrderPushDTO> captor = ArgumentCaptor.forClass(WmsWorkOrderPushDTO.class);
+        verify(workOrderService).push(captor.capture());
+        assertNull(captor.getValue().getOrderType());
+    }
 }

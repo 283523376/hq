@@ -49,6 +49,8 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
     private static final int MAX_TOP = 200;
     /** 手工同步未给窗口时的默认回看天数。 */
     private static final int DEFAULT_WINDOW_DAYS = 7;
+    /** 工单类型字段在查询结果中的下标（FIELD_KEYS 共 8 列，追加项固定排在第 8 位）。 */
+    private static final int ORDER_TYPE_INDEX = 8;
 
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
@@ -116,7 +118,7 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
             }
             filter = sb.toString();
         }
-        WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, FIELD_KEYS, filter, limit);
+        WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, resolveFieldKeys(), filter, limit);
         if (!result.isSuccess()) {
             syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS,
                     WmsConstants.SYNC_LOG_TYPE_WORK_ORDER, null,
@@ -140,12 +142,13 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
             byBill.computeIfAbsent(str(row.get(0)), k -> new ArrayList<>()).add(row);
         }
 
+        Set<String> unknownOrderTypes = new LinkedHashSet<>();
         for (Map.Entry<String, List<List<Object>>> entry : byBill.entrySet()) {
             String workOrderNo = entry.getKey();
             List<List<Object>> rows = entry.getValue();
             long begin = System.currentTimeMillis();
             try {
-                if (syncOne(workOrderNo, rows, vo)) {
+                if (syncOne(workOrderNo, rows, vo, unknownOrderTypes)) {
                     syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS,
                             WmsConstants.SYNC_LOG_TYPE_WORK_ORDER, workOrderNo,
                             WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, 0, null, null, null,
@@ -200,7 +203,7 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
 
     /** @return true=已处理（含 MES/ERP 已有单更新），false=整单跳过（原因已写入 messages） */
     private boolean syncOne(String workOrderNo, List<List<Object>> rows,
-                            WmsKingdeeWorkOrderSyncResultVO vo) {
+                            WmsKingdeeWorkOrderSyncResultVO vo, Set<String> unknownOrderTypes) {
         // 审核门槛最先判：门槛外状态整单跳过（评审 B1，不默认已完成）
         String documentStatus = str(rows.get(0).get(1));
         String gatedStatus = gateStatus(documentStatus);
@@ -264,6 +267,7 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         dto.setWorkOrderNo(workOrderNo);
         dto.setMaterialCode(wmsMaterialCode);
         dto.setProductType(productType);
+        dto.setOrderType(resolveOrderType(rows.get(0), unknownOrderTypes));
         dto.setPlanQty(planQty);
         dto.setBatchNo(batchNo);
         dto.setWorkOrderStatus(gatedStatus);
@@ -277,6 +281,43 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
             vo.setUpdated(vo.getUpdated() + 1);
         }
         return true;
+    }
+
+    /**
+     * 查询字段串：配置了工单类型字段（外部依赖 E1）时追加到末尾，避免打乱既有下标。
+     */
+    private String resolveFieldKeys() {
+        String orderTypeField = properties.getMasterData().getOrderTypeField();
+        if (oConvertUtils.isEmpty(orderTypeField)) {
+            return FIELD_KEYS;
+        }
+        return FIELD_KEYS + "," + orderTypeField.trim();
+    }
+
+    /**
+     * 从行里解析工单类型。
+     *
+     * <p>字段未配置 → 一律 null（不臆测）；配置了但值不在映射表 → null 并告警一次，
+     * 避免未定义的取值被当成合法类型落库。
+     */
+    private String resolveOrderType(List<Object> row, Set<String> unknownOrderTypes) {
+        String orderTypeField = properties.getMasterData().getOrderTypeField();
+        if (oConvertUtils.isEmpty(orderTypeField) || row.size() <= ORDER_TYPE_INDEX) {
+            return null;
+        }
+        String raw = str(row.get(ORDER_TYPE_INDEX));
+        if (oConvertUtils.isEmpty(raw)) {
+            return null;
+        }
+        Map<String, String> valueMap = properties.getMasterData().getOrderTypeValueMap();
+        String mapped = valueMap == null ? null : valueMap.get(raw);
+        if (oConvertUtils.isEmpty(mapped)) {
+            if (unknownOrderTypes.add(raw)) {
+                log.warn("工单类型取值[{}]未在 order-type-value-map 中定义，按空值处理", raw);
+            }
+            return null;
+        }
+        return mapped;
     }
 
     /** 金蝶物料编码 → WMS 物料编码（materialMap 的反向映射）。 */

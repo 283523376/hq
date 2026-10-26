@@ -49,6 +49,10 @@ public class WmsWorkOrder extends JeecgEntity {
     @Schema(description = "产品类型")
     private String productType;
 
+    /** 工单类型：客户订单/备库订单/委外订单/受托订单（ERP 同步，缺省空，展示层兜底）。 */
+    @Schema(description = "工单类型：客户订单/备库订单/委外订单/受托订单")
+    private String orderType;
+
     /** 计划数量 */
     @Schema(description = "计划数量")
     private BigDecimal planQty;

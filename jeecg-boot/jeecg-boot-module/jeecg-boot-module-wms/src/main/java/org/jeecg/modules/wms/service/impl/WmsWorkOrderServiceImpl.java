@@ -146,6 +146,7 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
                 .setMaterialCode(material.getMaterialCode())
                 .setMaterialName(material.getMaterialName())
                 .setProductType(dto.getProductType())
+                .setOrderType(dto.getOrderType())
                 .setPlanQty(dto.getPlanQty())
                 .setBatchNo(dto.getBatchNo())
                 .setWorkOrderStatus(status)
