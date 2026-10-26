@@ -433,11 +433,19 @@ public final class WmsConstants {
     /** 出库类型：销售出库（成品敏捷仓）。 */
     public static final String OUTBOUND_TYPE_SALES = "销售出库";
 
+    /** 出库类型：外协出库（委外订单驱动；本期仅建只读草稿，不拣货不回写）。 */
+    public static final String OUTBOUND_TYPE_SUBCONTRACT = "外协出库";
+
+    /** 出库类型：样品出库（对接研发仓，回写形态待 E5 确认）。 */
+    public static final String OUTBOUND_TYPE_SAMPLE = "样品出库";
+
     /** 领料出库单号前缀。 */
     public static final String OUTBOUND_NO_PREFIX_PICK = "LL";
     /** 销售出库单号前缀。 */
     public static final String OUTBOUND_NO_PREFIX_SALES = "XS";
 
+    /** 出库单状态：草稿（外协出库同步生成的只读单，不可分配）。 */
+    public static final String OUTBOUND_STATUS_DRAFT = "草稿";
     /** 出库单状态：待分配。 */
     public static final String OUTBOUND_STATUS_PENDING_ALLOCATE = "待分配";
     /** 出库单状态：已分配。 */

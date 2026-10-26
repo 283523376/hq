@@ -116,6 +116,37 @@ public class WmsKingdeeProperties {
     /** 主数据同步配置（仓库 / 物料分类 / 工单类型）。 */
     private MasterData masterData = new MasterData();
 
+    /** 委外订单同步配置（外协出库，spec 2026-10-26 §5.1）。 */
+    private Subcontract subcontract = new Subcontract();
+
+    /** 样品出库回写配置（spec §5.2）。 */
+    private Sample sample = new Sample();
+
+    /**
+     * 委外订单同步配置。
+     *
+     * <p>{@code orgFilter} 是**原始 filter 片段**（如 {@code FPrdOrgId.FNumber='101'}）：
+     * 委外订单的组织字段名在测试账套尚未 pin（外部依赖 E4），因此不做字段名硬编码；
+     * 留空即拒绝同步（与仓库同步同款 fail-safe）。
+     */
+    @Data
+    public static class Subcontract {
+
+        /** 委外订单组织过滤片段；空 = 不同步。 */
+        private String orgFilter;
+
+        /** 金蝶 FPickMtrlStatus 表示「已领料完成」的取值；空 = 不自动作废草稿。 */
+        private String pickStatusDone;
+    }
+
+    /** 样品出库回写配置。 */
+    @Data
+    public static class Sample {
+
+        /** 回写用的金蝶仓库编码（测试期 YF 研发仓，生产切新仓）；空 = 回写明确报错。 */
+        private String stockCode;
+    }
+
     /**
      * 主数据同步配置。
      *
