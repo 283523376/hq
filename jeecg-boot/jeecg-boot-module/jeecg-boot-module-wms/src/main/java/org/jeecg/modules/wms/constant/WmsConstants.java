@@ -155,6 +155,31 @@ public final class WmsConstants {
     /** 库区类型-线边柜（格子柜，不适用排/列/层网格）。 */
     public static final String WAREHOUSE_TYPE_LINE_SIDE = "线边柜";
 
+    // ---------------------------------------------------------------- 库存盘点（2026-10-26）
+
+    /** 盘点单状态：草稿。 */
+    public static final String STOCKTAKE_STATUS_DRAFT = "草稿";
+    /** 盘点单状态：盘点中。 */
+    public static final String STOCKTAKE_STATUS_COUNTING = "盘点中";
+    /** 盘点单状态：差异确认。 */
+    public static final String STOCKTAKE_STATUS_DIFF_CONFIRMED = "差异确认";
+    /** 盘点单状态：复核中。 */
+    public static final String STOCKTAKE_STATUS_REVIEWING = "复核中";
+    /** 盘点单状态：已调整。 */
+    public static final String STOCKTAKE_STATUS_ADJUSTED = "已调整";
+    /** 盘点单状态：已归档（终态）。 */
+    public static final String STOCKTAKE_STATUS_ARCHIVED = "已归档";
+
+    /** 盘点类型：定期（日历触发，全仓或指定仓）。 */
+    public static final String STOCKTAKE_TYPE_PERIODIC = "定期";
+    /** 盘点类型：周期（滚动圈定部分库位）。 */
+    public static final String STOCKTAKE_TYPE_CYCLE = "周期";
+
+    /** 库位盘点冻结：是。 */
+    public static final String STOCKTAKE_FROZEN = "1";
+    /** 库位盘点冻结：否。 */
+    public static final String STOCKTAKE_UNFROZEN = "0";
+
     /** 库区类型-普通仓（初级产成品仓 / 涂层产成品仓：既非立库也非敏捷仓）。 */
     public static final String WAREHOUSE_TYPE_NORMAL = "普通仓";
 
