@@ -46,23 +46,45 @@ public class WmsKingdeeFormClient {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public WmsKingdeeFormClient(WmsKingdeeProperties properties, IWmsKingdeeAuthService authService) {
+        this(properties, authService, newRestTemplate(properties));
+    }
+
+    /** 仅供单测注入 RestTemplate（MockRestServiceServer 需要拿到同一实例）。 */
+    WmsKingdeeFormClient(WmsKingdeeProperties properties, IWmsKingdeeAuthService authService,
+                         RestTemplate restTemplate) {
         this.properties = properties;
         this.authService = authService;
+        this.restTemplate = restTemplate;
+    }
+
+    private static RestTemplate newRestTemplate(WmsKingdeeProperties properties) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         int timeout = properties.getTimeoutMs() > 0 ? properties.getTimeoutMs() : 30_000;
         factory.setConnectTimeout(timeout);
         factory.setReadTimeout(timeout);
-        this.restTemplate = new RestTemplate(factory);
+        return new RestTemplate(factory);
     }
 
-    /** 通用单据查询。 */
+    /** 通用单据查询（单页，从第 0 行开始）。 */
     public WmsKingdeeResult executeBillQuery(String formId, String fieldKeys, String filter, int top) {
+        return executeBillQuery(formId, fieldKeys, filter, top, 0);
+    }
+
+    /**
+     * 通用单据查询（带翻页起点）。
+     *
+     * <p>金蝶 ExecuteBillQuery 用 {@code StartRow} 指定偏移、{@code TopRowCount} 指定本页条数；
+     * 调用方按「返回行数 < 页大小」判断已到末页。
+     */
+    public WmsKingdeeResult executeBillQuery(String formId, String fieldKeys, String filter, int top,
+                                             int startRow) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("FormId", formId);
         data.put("FieldKeys", fieldKeys);
         data.put("FilterString", filter == null ? "" : filter);
         data.put("OrderString", "");
         data.put("TopRowCount", top <= 0 ? 100 : top);
+        data.put("StartRow", Math.max(startRow, 0));
         return post(QUERY_PATH, Map.of("data", data), true);
     }
 
