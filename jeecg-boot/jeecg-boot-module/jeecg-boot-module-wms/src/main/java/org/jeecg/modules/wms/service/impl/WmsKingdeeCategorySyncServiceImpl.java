@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeCategorySyncService;
@@ -64,10 +65,12 @@ public class WmsKingdeeCategorySyncServiceImpl implements IWmsKingdeeCategorySyn
     @Override
     public WmsKingdeeStockSyncResultVO syncCategory() {
         WmsKingdeeStockSyncResultVO vo = new WmsKingdeeStockSyncResultVO();
+        if (!properties.isEnabled()) {
+            return skip(vo, "金蝶同步总开关 wms.sync.erp.kingdee.enabled=false，跳过");
+        }
         Map<String, String> rules = parseRules(properties.getMasterData().getCategoryMap());
         if (rules.isEmpty()) {
-            vo.setMessage("分类映射未配置（外部依赖 E2），跳过");
-            return vo;
+            return skip(vo, "分类映射未配置（外部依赖 E2），跳过");
         }
 
         long start = System.currentTimeMillis();
@@ -97,8 +100,18 @@ public class WmsKingdeeCategorySyncServiceImpl implements IWmsKingdeeCategorySyn
             }
         }
         vo.setMessage(String.format("扫描物料 %d 行，更新分类 %d 个", vo.getFetched(), vo.getRenamed()));
-        syncLogService.logSync("ERP->WMS", SYNC_OBJECT_TYPE, "BD_MATERIAL", SYNC_TARGET,
-                true, 0, rules.toString(), vo.getMessage(), null, System.currentTimeMillis() - start);
+        syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS, SYNC_OBJECT_TYPE,
+                "BD_MATERIAL", WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, 0,
+                rules.toString(), vo.getMessage(), null, System.currentTimeMillis() - start);
+        return vo;
+    }
+
+    /** 跳过分支也留日志，便于回查定时任务是否真的跑过。 */
+    private WmsKingdeeStockSyncResultVO skip(WmsKingdeeStockSyncResultVO vo, String message) {
+        log.info("分类同步跳过：{}", message);
+        vo.setMessage(message);
+        syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS, SYNC_OBJECT_TYPE,
+                "BD_MATERIAL", WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, 0, null, message, null, 0L);
         return vo;
     }
 

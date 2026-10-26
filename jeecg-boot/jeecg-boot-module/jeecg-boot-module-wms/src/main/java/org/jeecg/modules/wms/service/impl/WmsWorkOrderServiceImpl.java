@@ -146,7 +146,6 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
                 .setMaterialCode(material.getMaterialCode())
                 .setMaterialName(material.getMaterialName())
                 .setProductType(dto.getProductType())
-                .setOrderType(dto.getOrderType())
                 .setPlanQty(dto.getPlanQty())
                 .setBatchNo(dto.getBatchNo())
                 .setWorkOrderStatus(status)
@@ -155,6 +154,10 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         // ERP 原始状态只读留痕：仅同步方显式携带时刷新，MES 推送不得清空
         if (oConvertUtils.isNotEmpty(dto.getErpDocumentStatus())) {
             order.setErpDocumentStatus(dto.getErpDocumentStatus());
+        }
+        // 工单类型同理：只有携带值时才覆盖，MES 推送（永远不带 orderType）不得把它清空
+        if (oConvertUtils.isNotEmpty(dto.getOrderType())) {
+            order.setOrderType(dto.getOrderType());
         }
         // 同步状态（BD-002 V2.2）：ERP 同步成功即刷成功/时间/清零重试；MES 推送不动同步字段
         boolean erpSync = WmsConstants.WORK_ORDER_SOURCE_ERP.equals(source)

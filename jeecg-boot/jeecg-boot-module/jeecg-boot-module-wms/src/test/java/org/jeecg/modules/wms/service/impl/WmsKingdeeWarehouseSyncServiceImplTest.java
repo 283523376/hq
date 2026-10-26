@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -48,6 +49,7 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
     void setUp() {
         formClient = mock(WmsKingdeeFormClient.class);
         properties = new WmsKingdeeProperties();
+        properties.setEnabled(true);
         warehouseService = mock(IWmsWarehouseService.class);
         warehouseMapper = mock(WmsWarehouseMapper.class);
         syncLogService = mock(IWmsSyncLogService.class);
@@ -155,6 +157,79 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
         when(warehouseMapper.selectOne(any())).thenReturn(lb, mj, cj, tc);
         service.initLocalArchives();
         verify(warehouseService, times(2)).addWarehouse(any());
+    }
+
+    // ------------------------------------------------ 审查修复（Critical/Important）
+
+    @Test
+    void shouldSkipWhenGlobalKingdeeSwitchOff() {
+        properties.setEnabled(false);
+        properties.getMasterData().setStockWhitelist(new ArrayList<>(List.of("X.2.4")));
+
+        WmsKingdeeStockSyncResultVO vo = service.syncStock();
+
+        assertEquals(0, vo.getFetched());
+        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void shouldSkipWhenOrgIdBlank() {
+        properties.getMasterData().setOrgId("  ");
+        properties.getMasterData().setStockWhitelist(new ArrayList<>(List.of("X.2.4")));
+
+        WmsKingdeeStockSyncResultVO vo = service.syncStock();
+
+        assertEquals(0, vo.getFetched());
+        assertTrue(vo.getMessage().contains("组织"));
+        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void shouldSkipWhenWhitelistHasOnlyBlankEntries() {
+        properties.getMasterData().setStockWhitelist(new ArrayList<>(List.of(" ", "")));
+
+        WmsKingdeeStockSyncResultVO vo = service.syncStock();
+
+        assertEquals(0, vo.getFetched());
+        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void shouldRejectMappingWhenErpCodeAlreadyTakenByAnotherWarehouse() {
+        properties.getMasterData().setStockWhitelist(new ArrayList<>(List.of("X.2.4")));
+        properties.getMasterData().getStockCodeMap().put("X.2.4", "TC");
+
+        WmsWarehouse mapped = warehouse("wh-tc", "TC", "涂层产成品仓");
+        WmsWarehouse squatter = warehouse("wh-x24", "X.2.4", "涂层产成品仓");
+        when(warehouseMapper.selectOne(any())).thenReturn(mapped, squatter);
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", rows(List.of("X.2.4", "涂层产成品仓")), null, null));
+
+        RuntimeException e = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> service.syncStock());
+        assertTrue(e.getMessage().contains("X.2.4"), e.getMessage());
+        assertTrue(e.getMessage().contains("占用"), e.getMessage());
+    }
+
+    @Test
+    void shouldWriteSyncLogWithProjectVocabulary() {
+        properties.getMasterData().setStockWhitelist(new ArrayList<>(List.of("X.2.4")));
+        when(warehouseMapper.selectOne(any())).thenReturn(null);
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", rows(List.of("X.2.4", "涂层产成品仓")), null, null));
+
+        service.syncStock();
+
+        verify(syncLogService).logSync(eq("ERP_TO_WMS"), eq("WAREHOUSE"), anyString(),
+                eq("KINGDEE"), eq(true), anyInt(), any(), any(), any(), anyLong());
+    }
+
+    @Test
+    void shouldLogSkippedSync() {
+        service.syncStock();
+
+        verify(syncLogService).logSync(eq("ERP_TO_WMS"), eq("WAREHOUSE"), anyString(),
+                eq("KINGDEE"), eq(true), anyInt(), any(), any(), any(), anyLong());
     }
 
     private static WmsWarehouse warehouse(String id, String code, String name) {

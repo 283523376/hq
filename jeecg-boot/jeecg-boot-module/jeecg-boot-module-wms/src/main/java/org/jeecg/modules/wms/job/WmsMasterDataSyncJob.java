@@ -66,6 +66,11 @@ public class WmsMasterDataSyncJob implements Job {
             log.debug("主数据同步任务跳过：master-data.enabled=false");
             return;
         }
+        // 全局总闸：wms.sync.erp.kingdee.enabled 关闭时，master-data 单独开着也不得打金蝶
+        if (!properties.isEnabled()) {
+            log.debug("主数据同步任务跳过：wms.sync.erp.kingdee.enabled=false");
+            return;
+        }
         if (kingdeeAuthService != null && !kingdeeAuthService.isConfigured()) {
             log.warn("主数据同步任务跳过：金蝶未配置");
             return;

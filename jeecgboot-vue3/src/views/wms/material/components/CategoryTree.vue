@@ -12,6 +12,16 @@
         >
           新增
         </a-button>
+        <a-button
+          type="link"
+          size="small"
+          preIcon="ant-design:sync-outlined"
+          v-auth="'wms:materialCategory:edit'"
+          :loading="syncing"
+          @click="handleSyncKingdee"
+        >
+          同步金蝶
+        </a-button>
       </div>
       <a-tree
         v-if="treeData.length"
@@ -54,7 +64,7 @@
   import { useModal } from '/@/components/Modal';
   import { useMessage } from '/@/hooks/web/useMessage';
   import CategoryModal from './CategoryModal.vue';
-  import { queryTreeList, deleteCategory, disableCategory, checkCategoryDelete } from '../category.api';
+  import { queryTreeList, deleteCategory, disableCategory, checkCategoryDelete, syncCategoryFromKingdee } from '../category.api';
   import { showDeleteBlocked } from '../../common/useWmsDeleteCheck';
 
   const emit = defineEmits(['select', 'refresh']);
@@ -62,10 +72,26 @@
   const [registerModal, { openModal }] = useModal();
 
   const loading = ref(false);
+  const syncing = ref(false);
   const treeData = ref<any[]>([]);
   /** 虚拟根：用于清除分类过滤 */
   const selectedKeys = ref<any[]>(['__all__']);
   const expandedKeys = ref<any[]>(['__all__']);
+
+  /** 从金蝶同步物料分组映射；category-map 未配置时后端只空转并返回提示 */
+  async function handleSyncKingdee() {
+    syncing.value = true;
+    try {
+      const res: any = await syncCategoryFromKingdee();
+      createMessage.success(res?.message || '同步完成');
+      await loadTree();
+      emit('refresh');
+    } catch (e: any) {
+      createMessage.error(e?.message || '同步失败');
+    } finally {
+      syncing.value = false;
+    }
+  }
 
   async function loadTree() {
     loading.value = true;

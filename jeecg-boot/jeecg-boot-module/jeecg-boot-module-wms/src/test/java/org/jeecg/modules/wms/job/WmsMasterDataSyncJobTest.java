@@ -45,6 +45,19 @@ class WmsMasterDataSyncJobTest {
     }
 
     @Test
+    void shouldDoNothingWhenGlobalKingdeeSwitchOff() {
+        properties.getMasterData().setEnabled(true);
+        // 全局总闸关闭：master-data 单独开着也不得打金蝶
+        properties.setEnabled(false);
+        when(authService.isConfigured()).thenReturn(true);
+
+        job.syncForTest();
+
+        verify(warehouseSyncService, never()).syncStock();
+        verify(categorySyncService, never()).syncCategory();
+    }
+
+    @Test
     void shouldDoNothingWhenKingdeeNotConfigured() {
         properties.getMasterData().setEnabled(true);
         when(authService.isConfigured()).thenReturn(false);
@@ -58,6 +71,7 @@ class WmsMasterDataSyncJobTest {
     @Test
     void shouldRunBothSyncsWhenEnabledAndConfigured() {
         properties.getMasterData().setEnabled(true);
+        properties.setEnabled(true);
         when(authService.isConfigured()).thenReturn(true);
         when(warehouseSyncService.syncStock()).thenReturn(new WmsKingdeeStockSyncResultVO());
         when(categorySyncService.syncCategory()).thenReturn(new WmsKingdeeStockSyncResultVO());
@@ -71,6 +85,7 @@ class WmsMasterDataSyncJobTest {
     @Test
     void shouldSwallowSyncExceptions() {
         properties.getMasterData().setEnabled(true);
+        properties.setEnabled(true);
         when(authService.isConfigured()).thenReturn(true);
         when(warehouseSyncService.syncStock()).thenThrow(new RuntimeException("金蝶超时"));
 

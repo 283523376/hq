@@ -42,6 +42,7 @@ class WmsKingdeeCategorySyncServiceImplTest {
     void setUp() {
         formClient = mock(WmsKingdeeFormClient.class);
         properties = new WmsKingdeeProperties();
+        properties.setEnabled(true);
         categoryService = mock(IWmsMaterialCategoryService.class);
         categoryMapper = mock(WmsMaterialCategoryMapper.class);
         IWmsSyncLogService syncLogService = mock(IWmsSyncLogService.class);

@@ -64,14 +64,20 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
     @Override
     public WmsKingdeeStockSyncResultVO syncStock() {
         WmsKingdeeProperties.MasterData masterData = properties.getMasterData();
-        WmsKingdeeStockSyncResultVO vo = new WmsKingdeeStockSyncResultVO();
-        List<String> whitelist = masterData.getStockWhitelist();
-        if (whitelist == null || whitelist.isEmpty()) {
-            vo.setMessage("仓库同步白名单未配置，跳过（spec 反目标：不得整表灌入）");
-            return vo;
+        if (!properties.isEnabled()) {
+            return skip("金蝶同步总开关 wms.sync.erp.kingdee.enabled=false，跳过");
+        }
+        // 组织过滤是硬约束：留空等于取消过滤，跨组织同码会互相覆盖 → 视为未配置
+        if (masterData.getOrgId() == null || masterData.getOrgId().trim().isEmpty()) {
+            return skip("组织未配置（master-data.org-id 为空），拒绝无组织过滤的查询，跳过");
+        }
+        List<String> whitelist = effectiveWhitelist(masterData.getStockWhitelist());
+        if (whitelist.isEmpty()) {
+            return skip("仓库同步白名单未配置，跳过（spec 反目标：不得整表灌入）");
         }
 
         String filter = buildFilter(masterData.getOrgId(), whitelist);
+        WmsKingdeeStockSyncResultVO vo = new WmsKingdeeStockSyncResultVO();
         long start = System.currentTimeMillis();
         WmsKingdeeResult result = formClient.executeBillQuery(
                 FORM_ID, FIELD_KEYS, filter, whitelist.size() + TOP_MARGIN);
@@ -115,23 +121,31 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         createIfAbsent("TC", "涂层产成品仓");
     }
 
+    /** 去掉空白项后的白名单；全空白等价于未配置，防止「留个空格」退化成拉全组织。 */
+    static List<String> effectiveWhitelist(List<String> raw) {
+        if (raw == null) {
+            return List.of();
+        }
+        return raw.stream()
+                .filter(code -> code != null && !code.trim().isEmpty())
+                .map(String::trim)
+                .collect(Collectors.toList());
+    }
+
     /** 组织 + 白名单过滤。组织过滤是硬约束：同码不同组织是两份档案。 */
     static String buildFilter(String orgId, List<String> whitelist) {
         String codes = whitelist.stream()
                 .filter(code -> code != null && !code.trim().isEmpty())
                 .map(code -> "'" + code.trim().replace("'", "''") + "'")
                 .collect(Collectors.joining(","));
-        StringBuilder sb = new StringBuilder();
-        if (orgId != null && !orgId.trim().isEmpty()) {
-            sb.append("FUseOrgId.FNumber='").append(orgId.trim().replace("'", "''")).append("'");
+        if (codes.isEmpty()) {
+            // 调用方已保证不走到这里；真走到了宁可报错也不要退化成无白名单的全量查询
+            throw new IllegalStateException("仓库同步滤条件缺少白名单编码");
         }
-        if (!codes.isEmpty()) {
-            if (sb.length() > 0) {
-                sb.append(" AND ");
-            }
-            sb.append("FNumber in (").append(codes).append(")");
-        }
-        return sb.toString();
+        String orgPart = (orgId != null && !orgId.trim().isEmpty())
+                ? "FUseOrgId.FNumber='" + orgId.trim().replace("'", "''") + "' AND "
+                : "";
+        return orgPart + "FNumber in (" + codes + ")";
     }
 
     /** 命中映射：只改名称与 ERP 列，仓库编码保持不变。 */
@@ -140,6 +154,15 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         if (existing == null) {
             log.warn("仓库映射 {} -> {} 指向不存在的 WMS 仓库，跳过", erpCode, warehouseCode);
             return false;
+        }
+        // 该金蝶编码可能已被「早先未配置映射时自动建出的仓」占用；
+        // 直接盖过去会撞 uk_wms_warehouse_erp，报的是 MySQL 原始错误，运维看不出是映射冲突
+        WmsWarehouse squatter = findByErpStockCode(erpCode);
+        if (squatter != null && !squatter.getId().equals(existing.getId())) {
+            throw new RuntimeException(String.format(
+                    "金蝶仓库编码 %s 已被 WMS 仓库 %s（id=%s）占用，无法映射到 %s；"
+                            + "请先停用/清理该仓或调整 stock-code-map 后重试",
+                    erpCode, squatter.getWarehouseCode(), squatter.getId(), warehouseCode));
         }
         existing.setWarehouseName(erpName);
         existing.setErpStockCode(erpCode);
@@ -214,13 +237,23 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         return value == null ? "" : String.valueOf(value).trim();
     }
 
+    /** 跳过（开关未开/白名单或组织未配）：也留一条成功日志，便于回查「昨晚到底跑没跑」。 */
+    private WmsKingdeeStockSyncResultVO skip(String message) {
+        log.info("仓库同步跳过：{}", message);
+        WmsKingdeeStockSyncResultVO vo = new WmsKingdeeStockSyncResultVO();
+        vo.setMessage(message);
+        syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS, SYNC_OBJECT_TYPE,
+                "BD_STOCK", WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, 0, null, message, null, 0L);
+        return vo;
+    }
+
     private void logSyncSuccess(String filter, String summary, long costMs) {
-        syncLogService.logSync("ERP->WMS", SYNC_OBJECT_TYPE, "BD_STOCK", SYNC_TARGET,
-                true, 0, filter, summary, null, costMs);
+        syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS, SYNC_OBJECT_TYPE,
+                "BD_STOCK", WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, 0, filter, summary, null, costMs);
     }
 
     private void logSyncFailed(String filter, String error, long costMs) {
-        syncLogService.logSync("ERP->WMS", SYNC_OBJECT_TYPE, "BD_STOCK", SYNC_TARGET,
-                false, 0, filter, null, error, costMs);
+        syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS, SYNC_OBJECT_TYPE,
+                "BD_STOCK", WmsConstants.SYNC_LOG_TARGET_KINGDEE, false, 0, filter, null, error, costMs);
     }
 }

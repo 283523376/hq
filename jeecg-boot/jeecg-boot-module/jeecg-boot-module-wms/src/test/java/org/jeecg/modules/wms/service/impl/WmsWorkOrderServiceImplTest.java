@@ -181,6 +181,25 @@ class WmsWorkOrderServiceImplTest {
     }
 
     @Test
+    void pushMesUpdateKeepsErpOrderType() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("ERP")
+                .setWorkOrderStatus("已下达").setErpDocumentStatus("C")
+                .setOrderType("备库订单"));
+        WmsWorkOrderPushDTO dto = baseDto();
+        dto.setSource("MES");
+        dto.setWorkOrderStatus("生产中");
+        dto.setOrderType(null);
+        service.push(dto);
+        assertEquals("备库订单", capturedOnUpdate().getOrderType());
+    }
+
+    @Test
     void pushFromErpMarksSyncSuccess() {
         WmsMaterial material = new WmsMaterial();
         material.setId("m1");

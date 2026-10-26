@@ -12,8 +12,24 @@
         >
           新增库区
         </a-button>
-        <a-button type="link" size="small" preIcon="ant-design:sync-outlined" :loading="syncing" @click="handleSyncKingdee"> 同步金蝶 </a-button>
-        <a-button type="link" size="small" preIcon="ant-design:database-outlined" :loading="initializing" @click="handleInitMasterData">
+        <a-button
+          type="link"
+          size="small"
+          preIcon="ant-design:sync-outlined"
+          v-auth="'wms:warehouse:edit'"
+          :loading="syncing"
+          @click="handleSyncKingdee"
+        >
+          同步金蝶
+        </a-button>
+        <a-button
+          type="link"
+          size="small"
+          preIcon="ant-design:database-outlined"
+          v-auth="'wms:warehouse:edit'"
+          :loading="initializing"
+          @click="handleInitMasterData"
+        >
           初始化档案
         </a-button>
       </div>
@@ -84,9 +100,9 @@
   async function handleSyncKingdee() {
     syncing.value = true;
     try {
+      // defHttp 默认 isTransformResponse，res 本身就是 Result.result
       const res: any = await syncWarehouseFromKingdee();
-      const vo = res?.result ?? {};
-      createMessage.success(vo?.message || '同步完成');
+      createMessage.success(res?.message || '同步完成');
       await loadTree();
       emit('refresh');
     } catch (e: any) {

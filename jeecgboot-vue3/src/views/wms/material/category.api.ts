@@ -10,7 +10,11 @@ enum Api {
   deleteOne = '/wms/materialCategory/delete',
   checkCode = '/wms/materialCategory/checkCode',
   checkDelete = '/wms/materialCategory/checkDelete',
+  syncKingdee = '/wms/materialCategory/sync-kingdee',
 }
+
+/** 从金蝶同步物料分组映射（未配置 category-map 时后端仅空转） */
+export const syncCategoryFromKingdee = () => defHttp.post({ url: Api.syncKingdee });
 
 /** 删除预检：分类下有物料/子分类时返回不可删原因（树形单删，无批量端点） */
 export const checkCategoryDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });
@@ -25,7 +29,7 @@ export const queryCategoryById = (params) => defHttp.get({ url: Api.queryById, p
 export const checkCategoryCode = (params) => defHttp.get({ url: Api.checkCode, params }, { isTransformResponse: false });
 
 export const saveOrUpdateCategory = (params, isUpdate) => {
-  let url = isUpdate ? Api.edit : Api.add;
+  const url = isUpdate ? Api.edit : Api.add;
   return defHttp.post({ url: url, params });
 };
 
