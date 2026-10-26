@@ -591,6 +591,12 @@ public final class WmsConstants {
 
     /** 销售订单拉取任务在 sys_quartz_job 中的主键；必须与 Flyway 种子行一致。 */
     public static final String SALES_ORDER_SYNC_JOB_ID = "1920000000000000360";
+
+    /** 主数据（仓库/分类）同步任务：默认不注册（{@code master-data.enabled=false}）。 */
+    public static final String MASTER_DATA_SYNC_JOB_ID = "1920000000000000370";
+
+    /** 每天 03:00，避开补偿任务的 :03/:08 节奏。 */
+    public static final String MASTER_DATA_SYNC_JOB_CRON = "0 0 3 * * ?";
     /** 销售订单拉取任务类名；必须与 Flyway 种子行一致。 */
     public static final String SALES_ORDER_SYNC_JOB_CLASS = "org.jeecg.modules.wms.job.WmsSalesOrderSyncJob";
     /** 销售订单拉取 cron：每 15 分钟落在 :29，与其它任务错峰。 */
