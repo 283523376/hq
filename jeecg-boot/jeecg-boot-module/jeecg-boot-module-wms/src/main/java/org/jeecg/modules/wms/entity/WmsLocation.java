@@ -80,6 +80,10 @@ public class WmsLocation extends JeecgEntity {
      *
      * <p>本表原先是「物理删除」，于 V3.9.5_9 并入统一方案。
      */
+    /** 盘点冻结：1冻结 0正常（冻结期间出库/移库/上架均被拦截）。 */
+    @Schema(description = "盘点冻结：1冻结 0正常")
+    private String stocktakeFrozen;
+
     @TableLogic(value = "0", delval = "UNIX_TIMESTAMP(NOW(3)) * 1000")
     @Schema(description = "删除时间戳(epoch ms)：0=未删除")
     private Long deletedAt;
