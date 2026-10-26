@@ -67,6 +67,14 @@ public class WmsOutboundOrder extends JeecgEntity {
     @Schema(description = "需求来源：金蝶用料清单/手工")
     private String requirementSource;
 
+    /** 金蝶委外订单号（外协出库草稿与 ERP 的关联键）。 */
+    @Schema(description = "金蝶委外订单号")
+    private String erpSubOrderNo;
+
+    /** 回写生成的金蝶单据号（样品出库等，E5 就位后使用）。 */
+    @Schema(description = "回写生成的金蝶单据号")
+    private String erpMisBillNo;
+
     /** 单据状态。 */
     @Excel(name = "状态", width = 12)
     @Schema(description = "单据状态：待分配/已分配/执行中/待复核/复核异常/异常待人工/已完成/已关闭")
