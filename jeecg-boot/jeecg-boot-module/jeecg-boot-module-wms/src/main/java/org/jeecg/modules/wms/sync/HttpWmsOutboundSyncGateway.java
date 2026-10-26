@@ -32,16 +32,19 @@ public class HttpWmsOutboundSyncGateway implements IWmsOutboundSyncGateway {
     private final WmsKingdeeProperties properties;
     private final IWmsKingdeePickWriter pickWriter;
     private final IWmsKingdeeOutstockWriter outstockWriter;
+    private final IWmsSampleOutboundErpWriter sampleWriter;
     private final String mesUrl;
     private final RestTemplate restTemplate;
 
     public HttpWmsOutboundSyncGateway(WmsKingdeeProperties properties,
                                       IWmsKingdeePickWriter pickWriter,
                                       IWmsKingdeeOutstockWriter outstockWriter,
+                                      IWmsSampleOutboundErpWriter sampleWriter,
                                       @Value("${wms.sync.mes.outbound-url:}") String mesUrl) {
         this.properties = properties;
         this.pickWriter = pickWriter;
         this.outstockWriter = outstockWriter;
+        this.sampleWriter = sampleWriter;
         this.mesUrl = mesUrl == null ? "" : mesUrl.trim();
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(30_000);
@@ -52,9 +55,18 @@ public class HttpWmsOutboundSyncGateway implements IWmsOutboundSyncGateway {
     @Override
     public WmsOrderSyncResult sync(WmsOutboundOrder order, List<WmsOutboundDetail> details) {
         if (properties.isEnabled()) {
-            return WmsConstants.OUTBOUND_TYPE_PICK.equals(order.getOutboundType())
-                    ? pickWriter.write(order, details)
-                    : outstockWriter.write(order, details);
+            // 类型白名单：绝不能用「非领料即销售」的二元兜底——样品/外协会被误写成 SAL_OUTSTOCK
+            String type = order.getOutboundType();
+            if (WmsConstants.OUTBOUND_TYPE_PICK.equals(type)) {
+                return pickWriter.write(order, details);
+            }
+            if (WmsConstants.OUTBOUND_TYPE_SALES.equals(type)) {
+                return outstockWriter.write(order, details);
+            }
+            if (WmsConstants.OUTBOUND_TYPE_SAMPLE.equals(type)) {
+                return sampleWriter.write(order, details);
+            }
+            return WmsOrderSyncResult.fail("出库类型[" + type + "]没有对应的金蝶回写实现，请联系管理员");
         }
         if (oConvertUtils.isNotEmpty(mesUrl)) {
             return postMes(order, details);

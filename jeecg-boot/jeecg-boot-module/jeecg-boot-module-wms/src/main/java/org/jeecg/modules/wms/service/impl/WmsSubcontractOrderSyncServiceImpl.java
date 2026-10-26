@@ -14,8 +14,11 @@ import org.jeecg.modules.wms.vo.WmsSubcontractSyncResultVO;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @Description: 委外订单（SUB_SUBREQORDER）→ 外协出库只读草稿。
@@ -82,13 +85,19 @@ public class WmsSubcontractOrderSyncServiceImpl implements IWmsSubcontractOrderS
         }
 
         List<List<Object>> rows = result.getRows() == null ? List.of() : result.getRows();
-        vo.setQueried(rows.size());
-        String doneValue = properties.getSubcontract().getPickStatusDone();
+        // ExecuteBillQuery 对这种单据是「一分录一行」，必须按单号聚合，否则同一张单会被
+        // 反复 upsert（计数虚高），且任一分录领料完成就把整单置关闭（部分领料被当成整单完成）。
+        Map<String, List<List<Object>>> byBill = new LinkedHashMap<>();
         for (List<Object> row : rows) {
             if (row == null || row.isEmpty() || row.get(0) == null) {
                 continue;
             }
-            upsertDraft(row, doneValue, vo);
+            byBill.computeIfAbsent(asText(row.get(0)), k -> new ArrayList<>()).add(row);
+        }
+        vo.setQueried(byBill.size());
+        String doneValue = properties.getSubcontract().getPickStatusDone();
+        for (Map.Entry<String, List<List<Object>>> entry : byBill.entrySet()) {
+            upsertDraft(entry.getKey(), entry.getValue(), doneValue, vo);
         }
         syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS, "SUBCONTRACT", null,
                 WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, 0, filter,
@@ -98,10 +107,12 @@ public class WmsSubcontractOrderSyncServiceImpl implements IWmsSubcontractOrderS
         return vo;
     }
 
-    private void upsertDraft(List<Object> row, String doneValue, WmsSubcontractSyncResultVO vo) {
-        String billNo = asText(row.get(0));
-        String pickStatus = row.size() > PICK_STATUS_INDEX ? asText(row.get(PICK_STATUS_INDEX)) : "";
-        boolean done = StringUtils.hasText(doneValue) && doneValue.equals(pickStatus);
+    private void upsertDraft(String billNo, List<List<Object>> rows, String doneValue,
+                             WmsSubcontractSyncResultVO vo) {
+        // 整单完成 = 所有分录都到「已领料」；部分完成仍是未完成
+        boolean done = StringUtils.hasText(doneValue) && !rows.isEmpty()
+                && rows.stream().allMatch(row -> row.size() > PICK_STATUS_INDEX
+                        && doneValue.equals(asText(row.get(PICK_STATUS_INDEX))));
 
         WmsOutboundOrder existing = outboundOrderMapper.selectOne(
                 new LambdaQueryWrapper<WmsOutboundOrder>()

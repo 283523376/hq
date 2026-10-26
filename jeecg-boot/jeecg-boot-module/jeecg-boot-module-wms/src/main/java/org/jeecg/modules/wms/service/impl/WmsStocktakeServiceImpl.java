@@ -52,6 +52,10 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
     private final WmsInventoryMapper inventoryMapper;
     private final WmsLocationMapper locationMapper;
     private final WmsStocktakeStatusResolver statusResolver;
+
+    /** 整单复核阈值（%）；空阈值会让任何差异都强制复核，必须给默认值。 */
+    @org.springframework.beans.factory.annotation.Value("${wms.stocktake.diff-review-threshold:5}")
+    private java.math.BigDecimal diffReviewThreshold = new java.math.BigDecimal("5");
     private final WmsStocktakeDiffCalculator diffCalculator = new WmsStocktakeDiffCalculator();
 
     public WmsStocktakeServiceImpl(WmsStocktakeOrderMapper orderMapper,
@@ -85,6 +89,7 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
                 .setStocktakeType(type)
                 .setScopeDesc("库位数 " + dto.getLocationIds().size())
                 .setStatus(WmsConstants.STOCKTAKE_STATUS_DRAFT)
+                .setDiffReviewThreshold(diffReviewThreshold)
                 .setBookTotal(BigDecimal.ZERO)
                 .setGainTotal(BigDecimal.ZERO)
                 .setLossTotal(BigDecimal.ZERO)
@@ -112,14 +117,7 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
         order.setBookTotal(bookTotal);
         orderMapper.updateById(order);
 
-        // 冻结范围内库位：盘点期间任何写入路径都要被拦下
-        for (String locationId : dto.getLocationIds()) {
-            WmsLocation location = locationMapper.selectById(locationId);
-            if (location != null) {
-                location.setStocktakeFrozen(WmsConstants.STOCKTAKE_FROZEN);
-                locationMapper.updateById(location);
-            }
-        }
+        // 冻结刻意不在这里做：草稿态不该拦住业务。见 start()。
         log.info("盘点单创建：单号={}，类型={}，明细={}，账面合计={}",
                 order.getStocktakeNo(), type, stocks.size(), bookTotal);
         return order;
@@ -131,6 +129,22 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
         statusResolver.assertTransition(order.getStatus(), WmsConstants.STOCKTAKE_STATUS_COUNTING);
         order.setStatus(WmsConstants.STOCKTAKE_STATUS_COUNTING);
         orderMapper.updateById(order);
+        // 冻结范围内库位：只有真正开始盘点才拦，避免「建了草稿就永冻」
+        for (WmsStocktakeDetail detail : listDetails(order.getId())) {
+            freeze(detail.getLocationId());
+        }
+    }
+
+    /** 冻结库位（已冻结则跳过）。 */
+    private void freeze(String locationId) {
+        if (locationId == null) {
+            return;
+        }
+        WmsLocation location = locationMapper.selectById(locationId);
+        if (location != null && !WmsConstants.STOCKTAKE_FROZEN.equals(location.getStocktakeFrozen())) {
+            location.setStocktakeFrozen(WmsConstants.STOCKTAKE_FROZEN);
+            locationMapper.updateById(location);
+        }
     }
 
     @Override
@@ -167,7 +181,14 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
             if (detail == null || !id.equals(detail.getStocktakeId())) {
                 throw new RuntimeException("盘点明细不存在或不属于本盘点单：" + vo.getId());
             }
-            BigDecimal actual = vo.getActualQty() == null ? BigDecimal.ZERO : vo.getActualQty();
+            if (vo.getActualQty() == null) {
+                // 未录入 ≠ 实盘 0：留空的行保持 null，summarize 会跳过它，调整阶段也不会删库存
+                continue;
+            }
+            if (vo.getActualQty().signum() < 0) {
+                throw new RuntimeException("实盘数量不能为负：" + vo.getId());
+            }
+            BigDecimal actual = vo.getActualQty();
             detail.setActualQty(actual);
             detail.setDiffQty(actual.subtract(detail.getBookQty() == null ? BigDecimal.ZERO : detail.getBookQty()));
             detail.setDiffReason(vo.getDiffReason());

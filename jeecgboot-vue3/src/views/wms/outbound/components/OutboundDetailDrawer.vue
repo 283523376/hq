@@ -227,7 +227,10 @@
   const canConfirmPick = computed(
     () => order.value.outboundType === '生产领料' && order.value.status === '待复核'
   );
-  const canConfirm = computed(() => order.value.outboundType === '销售出库' && order.value.status === '待复核');
+  // 样品出库与销售出库共用「复核后确认」路径（样品不走生产领料的拣货确认）
+  const canConfirm = computed(
+    () => ['销售出库', '样品出库'].includes(order.value.outboundType) && order.value.status === '待复核',
+  );
   const canResync = computed(() => order.value.status === '已完成' && order.value.syncStatus === '同步失败');
   const canClose = computed(() => !['已完成', '已关闭'].includes(order.value.status));
 

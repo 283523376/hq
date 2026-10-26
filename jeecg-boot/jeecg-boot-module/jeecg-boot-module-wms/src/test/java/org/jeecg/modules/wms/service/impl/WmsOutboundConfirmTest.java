@@ -214,4 +214,33 @@ class WmsOutboundConfirmTest {
                 () -> service.close("o1", " "));
         assertEquals("关单原因不能为空", e.getMessage());
     }
+
+    @Test
+    void confirmSample_deductsAndMarksSyncNotRequired() {
+        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_SAMPLE, WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW),
+                allocation(WmsConstants.REVIEW_STATUS_MATCHED, "10", "10"));
+
+        WmsOutboundConfirmVO vo = service.confirm("o1", new WmsOutboundConfirmDTO());
+
+        assertTrue(vo.isConfirmed());
+        verify(inventoryMapper).deductLocked("i1", new BigDecimal("10"));
+        ArgumentCaptor<WmsOutboundOrder> captor = ArgumentCaptor.forClass(WmsOutboundOrder.class);
+        verify(orderMapper).update(captor.capture(), any());
+        assertEquals(WmsConstants.OUTBOUND_STATUS_COMPLETED, captor.getValue().getStatus());
+        // 样品本期没有回写实现（E5），不得置「待同步」——否则重试任务每 5 分钟刷一次失败
+        assertEquals(WmsConstants.SYNC_STATUS_NOT_REQUIRED, captor.getValue().getSyncStatus());
+    }
+
+    @Test
+    void review_acceptsSampleType() {
+        WmsOutboundOrder sampleOrder = order(WmsConstants.OUTBOUND_TYPE_SAMPLE,
+                WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW);
+        when(orderMapper.selectById("o1")).thenReturn(sampleOrder);
+
+        RuntimeException e = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> service.review("o1", new org.jeecg.modules.wms.dto.WmsOutboundReviewDTO()));
+
+        // 已通过类型闸门，卡在后续「复核明细不能为空」
+        assertEquals("复核明细不能为空", e.getMessage());
+    }
 }

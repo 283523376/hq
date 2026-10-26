@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -25,6 +26,7 @@ class HttpWmsOutboundSyncGatewayTest {
     private WmsKingdeeProperties properties;
     private IWmsKingdeePickWriter pickWriter;
     private IWmsKingdeeOutstockWriter outstockWriter;
+    private IWmsSampleOutboundErpWriter sampleWriter;
     private HttpWmsOutboundSyncGateway gateway;
 
     @BeforeEach
@@ -33,9 +35,11 @@ class HttpWmsOutboundSyncGatewayTest {
         properties.setEnabled(true);
         pickWriter = mock(IWmsKingdeePickWriter.class);
         outstockWriter = mock(IWmsKingdeeOutstockWriter.class);
-        gateway = new HttpWmsOutboundSyncGateway(properties, pickWriter, outstockWriter, "");
+        sampleWriter = mock(IWmsSampleOutboundErpWriter.class);
+        gateway = new HttpWmsOutboundSyncGateway(properties, pickWriter, outstockWriter, sampleWriter, "");
         when(pickWriter.write(any(), any())).thenReturn(WmsOrderSyncResult.ok());
         when(outstockWriter.write(any(), any())).thenReturn(WmsOrderSyncResult.ok());
+        when(sampleWriter.write(any(), any())).thenReturn(WmsOrderSyncResult.fail("E5"));
     }
 
     private WmsOutboundOrder order(String type) {
@@ -67,6 +71,24 @@ class HttpWmsOutboundSyncGatewayTest {
         properties.setEnabled(false);
 
         assertTrue(gateway.sync(order("生产领料"), details()).isMocked());
+        verify(pickWriter, never()).write(any(), any());
+    }
+
+    @Test
+    void sync_sample_usesSampleWriterNotSalesWriter() {
+        assertFalse(gateway.sync(order("样品出库"), details()).isSuccess());
+        verify(sampleWriter).write(any(), any());
+        verify(outstockWriter, never()).write(any(), any());
+        verify(pickWriter, never()).write(any(), any());
+    }
+
+    @Test
+    void sync_unknownType_failsExplicitlyInsteadOfFallingBackToSales() {
+        WmsOrderSyncResult result = gateway.sync(order("外协出库"), details());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("外协出库"), result.getErrorMessage());
+        verify(outstockWriter, never()).write(any(), any());
         verify(pickWriter, never()).write(any(), any());
     }
 }

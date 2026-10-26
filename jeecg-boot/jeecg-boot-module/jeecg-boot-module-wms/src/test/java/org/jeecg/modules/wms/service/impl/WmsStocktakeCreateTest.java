@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -69,16 +70,59 @@ class WmsStocktakeCreateTest {
         assertEquals(0, detailCaptor.getAllValues().get(0).getBookQty().compareTo(new BigDecimal("10")));
         assertEquals("C1", detailCaptor.getAllValues().get(1).getContainerCode());
 
-        ArgumentCaptor<WmsLocation> locCaptor = ArgumentCaptor.forClass(WmsLocation.class);
-        verify(locationMapper, atLeastOnce()).updateById(locCaptor.capture());
-        assertTrue(locCaptor.getAllValues().stream()
-                .anyMatch(l -> WmsConstants.STOCKTAKE_FROZEN.equals(l.getStocktakeFrozen())));
+        // 建单（草稿）不冻结——否则建了不盘就永冻
+        verify(locationMapper, never()).updateById(any(WmsLocation.class));
+        assertEquals(0, order.getDiffReviewThreshold().compareTo(new BigDecimal("5")));
     }
 
     @Test
     void shouldRejectEmptyScope() {
         WmsStocktakeCreateDTO dto = new WmsStocktakeCreateDTO();
         assertThrows(RuntimeException.class, () -> service.create(dto, "alice"));
+    }
+
+    @Test
+    void startShouldFreezeLocations() {
+        WmsStocktakeOrder order = new WmsStocktakeOrder();
+        order.setId("st-9");
+        order.setStatus(WmsConstants.STOCKTAKE_STATUS_DRAFT);
+        when(orderMapper.selectById("st-9")).thenReturn(order);
+        WmsStocktakeDetail d = new WmsStocktakeDetail();
+        d.setId("d9");
+        d.setStocktakeId("st-9");
+        d.setLocationId("loc-9");
+        when(detailMapper.selectList(any())).thenReturn(List.of(d));
+        WmsLocation loc = new WmsLocation();
+        loc.setId("loc-9");
+        loc.setStocktakeFrozen(WmsConstants.STOCKTAKE_UNFROZEN);
+        when(locationMapper.selectById("loc-9")).thenReturn(loc);
+
+        service.start("st-9");
+
+        assertEquals(WmsConstants.STOCKTAKE_FROZEN, loc.getStocktakeFrozen());
+    }
+
+    @Test
+    void recordActualShouldSkipUnrecordedRows() {
+        WmsStocktakeOrder order = new WmsStocktakeOrder();
+        order.setId("st-4");
+        order.setStatus(WmsConstants.STOCKTAKE_STATUS_COUNTING);
+        WmsStocktakeDetail d1 = new WmsStocktakeDetail();
+        d1.setId("d4");
+        d1.setStocktakeId("st-4");
+        d1.setBookQty(new BigDecimal("10"));
+        when(orderMapper.selectById("st-4")).thenReturn(order);
+        when(detailMapper.selectById("d4")).thenReturn(d1);
+        when(detailMapper.selectList(any())).thenReturn(List.of(d1));
+
+        org.jeecg.modules.wms.vo.WmsStocktakeDetailVO vo = new org.jeecg.modules.wms.vo.WmsStocktakeDetailVO();
+        vo.setId("d4");
+
+        service.recordActual("st-4", List.of(vo));
+
+        // 未录入保持 null，不能变成「盘亏 10」
+        org.junit.jupiter.api.Assertions.assertNull(d1.getActualQty());
+        assertEquals(0, order.getLossTotal().compareTo(BigDecimal.ZERO));
     }
 
     @Test

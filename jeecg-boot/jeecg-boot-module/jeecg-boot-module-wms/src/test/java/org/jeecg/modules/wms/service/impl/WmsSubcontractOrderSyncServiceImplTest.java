@@ -138,4 +138,34 @@ class WmsSubcontractOrderSyncServiceImplTest {
         rows.add(row);
         return rows;
     }
+
+    @Test
+    void shouldGroupEntriesByBillAndNotVoidOnPartialPick() {
+        properties.getSubcontract().setOrgFilter("FPrdOrgId.FNumber='101'");
+        properties.getSubcontract().setPickStatusDone("3");
+        WmsOutboundOrder existing = new WmsOutboundOrder();
+        existing.setId("ob-9");
+        existing.setErpSubOrderNo("WWJG009");
+        existing.setStatus(WmsConstants.OUTBOUND_STATUS_DRAFT);
+        when(outboundOrderMapper.selectOne(any())).thenReturn(existing);
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", rowsOf(
+                        List.of("WWJG009", "C", "普通委外订单", "2026-10-01", "M1", 10.0, "3"),
+                        List.of("WWJG009", "C", "普通委外订单", "2026-10-01", "M2", 5.0, "1")), null, null));
+
+        WmsSubcontractSyncResultVO vo = service.syncFromKingdee(50);
+
+        // 一分录一行 → 聚合成 1 单；部分领料不算整单完成
+        assertEquals(1, vo.getQueried());
+        assertEquals(0, vo.getVoided());
+        assertEquals(WmsConstants.OUTBOUND_STATUS_DRAFT, existing.getStatus());
+    }
+
+    private static List<List<Object>> rowsOf(List<Object>... items) {
+        List<List<Object>> out = new ArrayList<>();
+        for (List<Object> item : items) {
+            out.add(new ArrayList<>(item));
+        }
+        return out;
+    }
 }

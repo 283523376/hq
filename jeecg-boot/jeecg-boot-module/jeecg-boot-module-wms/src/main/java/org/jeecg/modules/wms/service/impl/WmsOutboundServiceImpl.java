@@ -260,8 +260,10 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
         if (order == null) {
             throw new RuntimeException("出库单不存在");
         }
-        if (!WmsConstants.OUTBOUND_TYPE_SALES.equals(order.getOutboundType())) {
-            throw new RuntimeException("仅销售出库支持复核");
+        String type = order.getOutboundType();
+        if (!WmsConstants.OUTBOUND_TYPE_SALES.equals(type)
+                && !WmsConstants.OUTBOUND_TYPE_SAMPLE.equals(type)) {
+            throw new RuntimeException("仅销售出库与样品出库支持复核");
         }
         boolean allowed = WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW.equals(order.getStatus())
                 || WmsConstants.OUTBOUND_STATUS_REVIEW_EXCEPTION.equals(order.getStatus());
@@ -475,9 +477,14 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                 detailMapper.updateById(detail);
             }
         }
+        // 只有真有回写实现的类型才置「待同步」；样品（E5 未定）与外协（E6 未定）置「无需同步」，
+        // 否则重试任务会每 5 分钟对着一个永远不会成功的回写刷失败。
+        boolean needsErpSync = WmsConstants.OUTBOUND_TYPE_PICK.equals(order.getOutboundType())
+                || WmsConstants.OUTBOUND_TYPE_SALES.equals(order.getOutboundType());
         WmsOutboundOrder patch = new WmsOutboundOrder()
                 .setStatus(WmsConstants.OUTBOUND_STATUS_COMPLETED)
-                .setSyncStatus(WmsConstants.SYNC_STATUS_PENDING);
+                .setSyncStatus(needsErpSync
+                        ? WmsConstants.SYNC_STATUS_PENDING : WmsConstants.SYNC_STATUS_NOT_REQUIRED);
         patch.setUpdateTime(new Date());
         patch.setCompleteTime(new Date());
         baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>().eq("id", id));

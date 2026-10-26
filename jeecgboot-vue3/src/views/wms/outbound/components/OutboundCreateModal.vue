@@ -296,17 +296,17 @@
     }
     // 样品出库：单物料单批次，不绑工单
     if (props.mode === 'sample') {
-      const rows = rows.value.filter((r: any) => r.materialCode && r.requiredQty > 0);
-      if (rows.length !== 1) {
+      const picked = rows.value.filter((r: any) => r.materialCode && r.requiredQty > 0);
+      if (picked.length !== 1) {
         createMessage.warning('样品出库需且仅需一行明细');
         return;
       }
       submitting.value = true;
       try {
         const res: any = await createSample({
-          materialCode: rows[0].materialCode,
-          qty: rows[0].requiredQty,
-          batchNo: rows[0].batchNo,
+          materialCode: picked[0].materialCode,
+          qty: picked[0].requiredQty,
+          batchNo: picked[0].batchNo,
           remark: '样品出库',
         });
         createMessage.success(`创建成功：${res.outboundNo}`);

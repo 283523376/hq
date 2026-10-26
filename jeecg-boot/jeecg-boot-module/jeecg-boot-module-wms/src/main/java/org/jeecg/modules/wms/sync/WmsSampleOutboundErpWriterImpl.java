@@ -39,7 +39,7 @@ public class WmsSampleOutboundErpWriterImpl implements IWmsSampleOutboundErpWrit
     public WmsOrderSyncResult write(WmsOutboundOrder order, List<WmsOutboundDetail> details) {
         String stockCode = properties.getSample().getStockCode();
         if (!StringUtils.hasText(stockCode)) {
-            return WmsOrderSyncResult.fail("样品回写未配置 wms.outbound.sample.stock-code（外部依赖 E5）");
+            return WmsOrderSyncResult.fail("样品回写未配置 wms.sync.erp.kingdee.sample.stock-code（外部依赖 E5）");
         }
         log.warn("样品出库回写被调用但单据形态未确认，单号={}", order == null ? null : order.getOutboundNo());
         return WmsOrderSyncResult.fail("样品回写单据形态待客户确认（外部依赖 E5）");
