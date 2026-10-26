@@ -52,6 +52,7 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
     private final WmsInventoryMapper inventoryMapper;
     private final WmsLocationMapper locationMapper;
     private final WmsStocktakeStatusResolver statusResolver;
+    private final WmsStocktakeDiffCalculator diffCalculator = new WmsStocktakeDiffCalculator();
 
     public WmsStocktakeServiceImpl(WmsStocktakeOrderMapper orderMapper,
                                    WmsStocktakeDetailMapper detailMapper,
@@ -149,8 +150,39 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void recordActual(String id, List<WmsStocktakeDetailVO> actuals) {
-        throw new UnsupportedOperationException("recordActual 由 Task 4 实现");
+        WmsStocktakeOrder order = requireById(id);
+        if (!WmsConstants.STOCKTAKE_STATUS_COUNTING.equals(order.getStatus())) {
+            throw new RuntimeException("只有「盘点中」的盘点单可以录入实盘数量");
+        }
+        if (CollectionUtils.isEmpty(actuals)) {
+            throw new RuntimeException("实盘数据不能为空");
+        }
+        for (WmsStocktakeDetailVO vo : actuals) {
+            if (vo == null || vo.getId() == null) {
+                continue;
+            }
+            WmsStocktakeDetail detail = detailMapper.selectById(vo.getId());
+            if (detail == null || !id.equals(detail.getStocktakeId())) {
+                throw new RuntimeException("盘点明细不存在或不属于本盘点单：" + vo.getId());
+            }
+            BigDecimal actual = vo.getActualQty() == null ? BigDecimal.ZERO : vo.getActualQty();
+            detail.setActualQty(actual);
+            detail.setDiffQty(actual.subtract(detail.getBookQty() == null ? BigDecimal.ZERO : detail.getBookQty()));
+            detail.setDiffReason(vo.getDiffReason());
+            detailMapper.updateById(detail);
+        }
+        refreshTotals(order);
+    }
+
+    /** 重算整单账面/盈亏合计并落库。 */
+    private void refreshTotals(WmsStocktakeOrder order) {
+        BigDecimal[] summary = diffCalculator.summarize(listDetails(order.getId()));
+        order.setBookTotal(summary[0]);
+        order.setGainTotal(summary[1]);
+        order.setLossTotal(summary[2]);
+        orderMapper.updateById(order);
     }
 
     @Override
