@@ -3,6 +3,7 @@ package org.jeecg.modules.wms.sync;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -45,6 +46,14 @@ public class WmsKingdeeFormClient {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * 生产用构造器。
+     *
+     * <p>显式 {@code @Autowired}：本类还有第二个包内可见的测试构造器，
+     * 不标注时 Spring 没有唯一候选，会在启动/首次注入时报
+     * 「No default constructor found」。
+     */
+    @Autowired
     public WmsKingdeeFormClient(WmsKingdeeProperties properties, IWmsKingdeeAuthService authService) {
         this(properties, authService, newRestTemplate(properties));
     }
