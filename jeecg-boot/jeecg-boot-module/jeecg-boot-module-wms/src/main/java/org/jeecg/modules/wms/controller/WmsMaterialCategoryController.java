@@ -13,8 +13,11 @@ import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.vo.SelectTreeModel;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
+import org.jeecg.modules.wms.service.IWmsKingdeeCategorySyncService;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
 import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsKingdeeStockSyncResultVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,6 +40,22 @@ import java.util.List;
 @RequestMapping("/wms/materialCategory")
 @Slf4j
 public class WmsMaterialCategoryController extends JeecgController<WmsMaterialCategory, IWmsMaterialCategoryService> {
+
+    /** 物料分组 → 分类映射同步（主数据骨架，spec 2026-10-26）。 */
+    @Autowired
+    private IWmsKingdeeCategorySyncService kingdeeCategorySyncService;
+
+    @AutoLog(value = "物料分类-金蝶分组同步", operateType = 2)
+    @Operation(summary = "物料分类-从金蝶同步分组映射（未配置映射时仅空转）")
+    @PostMapping(value = "/sync-kingdee")
+    public Result<WmsKingdeeStockSyncResultVO> syncKingdee() {
+        try {
+            return Result.OK("同步完成", kingdeeCategorySyncService.syncCategory());
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
+    }
 
     /**
      * 分类树（全量，含 children）

@@ -51,6 +51,18 @@ public class WmsMaterialCategory extends JeecgEntity {
     private String categoryType;
 
     /**
+     * 金蝶物料分组编码（命中该分类的**代表**分组，便于人工核对；多对一关系在配置里）
+     */
+    @Schema(description = "金蝶物料分组编码（代表来源）")
+    private String erpGroupNumber;
+
+    /**
+     * 金蝶物料分组名称（代表来源）
+     */
+    @Schema(description = "金蝶物料分组名称（代表来源）")
+    private String erpGroupName;
+
+    /**
      * 状态：1启用 0停用
      */
     @Excel(name = "状态", width = 10, replace = {"启用_1", "停用_0"})
