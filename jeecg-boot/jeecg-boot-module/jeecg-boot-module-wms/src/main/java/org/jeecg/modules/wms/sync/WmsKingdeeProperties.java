@@ -4,7 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -108,4 +110,40 @@ public class WmsKingdeeProperties {
     private String transferStockerNumber;
     /** 审批超时告警阈值（小时，默认 24）；0 表示不告警。 */
     private int transferApprovalTimeoutHours = 24;
+
+    // ---------------------------------------------------------------- 主数据同步（2026-10-26）
+
+    /** 主数据同步配置（仓库 / 物料分类 / 工单类型）。 */
+    private MasterData masterData = new MasterData();
+
+    /**
+     * 主数据同步配置。
+     *
+     * <p>与 {@code wms.kingdee.*} 总开关及鉴权 {@code isConfigured()} 取 AND：
+     * 本组只控制「是否同步主数据」，不重复表达连接是否可用。
+     */
+    @Data
+    public static class MasterData {
+
+        /** 主数据同步总开关（默认关，联调时开）。 */
+        private boolean enabled = false;
+
+        /** BD_STOCK 组织过滤（101 宜昌永鑫；100 江西兆鑫为历史组织）。 */
+        private String orgId = "101";
+
+        /** 仓库白名单（金蝶仓库编码）；空 = 不拉任何仓。 */
+        private List<String> stockWhitelist = new ArrayList<>();
+
+        /** 金蝶仓库编码 → 既有 WMS 仓库编码（命中则只改名不改码）。 */
+        private Map<String, String> stockCodeMap = new LinkedHashMap<>();
+
+        /** 分类映射规则，格式「金蝶分组前缀=WMS 分类编码」，如 {@code BC.1012=CP}。 */
+        private List<String> categoryMap = new ArrayList<>();
+
+        /** PRD_MO 上承载工单类型的字段名（外部依赖 E1 就位后配置）；空 = 不读类型。 */
+        private String orderTypeField;
+
+        /** 金蝶字段值 → WMS 工单类型，如 {@code 客户订单=客户订单}。 */
+        private Map<String, String> orderTypeValueMap = new LinkedHashMap<>();
+    }
 }

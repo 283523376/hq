@@ -50,6 +50,23 @@ public final class WmsConstants {
     /** 订单类型-委外订单。 */
     public static final String ORDER_TYPE_OUTSOURCE = "委外订单";
 
+    // ---------------------------------------------------------------- 工单类型（ERP 同步）
+
+    /**
+     * 工单类型四枚举（spec 2026-10-26 §5.3）。
+     *
+     * <p>与上面的 {@code ORDER_TYPE_*} 是不同维度：前者是 wms_order 的订单类型，
+     * 这里描述的是生产工单（{@code wms_work_order.order_type}）的业务来源类型。
+     * 前缀用 {@code WORK_ORDER_TYPE_} 以避开同名常量。
+     */
+    public static final String WORK_ORDER_TYPE_CUSTOMER = "客户订单";
+
+    public static final String WORK_ORDER_TYPE_STOCK = "备库订单";
+
+    public static final String WORK_ORDER_TYPE_OUTSOURCE = "委外订单";
+
+    public static final String WORK_ORDER_TYPE_TRUSTED = "受托订单";
+
     // ---------------------------------------------------------------- 订单状态
 
     /** 订单状态-待审核。 */
@@ -137,6 +154,9 @@ public final class WmsConstants {
 
     /** 库区类型-线边柜（格子柜，不适用排/列/层网格）。 */
     public static final String WAREHOUSE_TYPE_LINE_SIDE = "线边柜";
+
+    /** 库区类型-普通仓（初级产成品仓 / 涂层产成品仓：既非立库也非敏捷仓）。 */
+    public static final String WAREHOUSE_TYPE_NORMAL = "普通仓";
 
     /**
      * 库区树中「库区类型」节点的 key 前缀。
@@ -259,6 +279,12 @@ public final class WmsConstants {
     public static final String CATEGORY_TYPE_HALF_FINISHED = "半成品";
     /** 物料分类类型：辅料（自动分配到线边柜）。 */
     public static final String CATEGORY_TYPE_AUXILIARY = "辅料";
+    /** 物料分类类型：初级产成品（未上套环）。 */
+    public static final String CATEGORY_TYPE_PRIMARY = "初级产成品";
+    /** 物料分类类型：涂层产成品（未上套环）。 */
+    public static final String CATEGORY_TYPE_COATED = "涂层产成品";
+    /** 物料分类类型：产成品（已上套环）。 */
+    public static final String CATEGORY_TYPE_FINISHED = "产成品";
 
     /** 检验状态：待检验。 */
     public static final String INSPECT_STATUS_PENDING = "待检验";
