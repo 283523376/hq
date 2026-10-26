@@ -16,6 +16,7 @@ import org.jeecg.modules.wms.dto.WmsOutboundDetailDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundPickCreateDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundReviewDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSalesCreateDTO;
+import org.jeecg.modules.wms.dto.WmsOutboundSampleCreateDTO;
 import org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO;
 import org.jeecg.modules.wms.entity.WmsInventory;
 import org.jeecg.modules.wms.entity.WmsLocation;
@@ -710,6 +711,42 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public WmsOutboundOrder createSample(WmsOutboundSampleCreateDTO dto) {
+        if (dto == null || oConvertUtils.isEmpty(dto.getMaterialCode())) {
+            throw new RuntimeException("物料编码不能为空");
+        }
+        if (dto.getQty() == null || dto.getQty().signum() <= 0) {
+            throw new RuntimeException("样品数量必须大于 0");
+        }
+        WmsMaterial material = materialMapper.selectOne(Wrappers.<WmsMaterial>query()
+                .eq("material_code", dto.getMaterialCode().trim()).last("LIMIT 1"));
+        if (material == null) {
+            throw new RuntimeException("物料编码不存在");
+        }
+        WmsOutboundDetailDTO detail = new WmsOutboundDetailDTO();
+        detail.setMaterialCode(material.getMaterialCode());
+        detail.setBatchNo(oConvertUtils.isEmpty(dto.getBatchNo()) ? null : dto.getBatchNo().trim());
+        detail.setRequiredQty(dto.getQty());
+        detail.setUnit(material.getUnit());
+
+        // 样品出库刻意不绑工单/销售订单：这两条回写链路（生产领料/销售出库）都不适用
+        WmsOutboundOrder order = new WmsOutboundOrder()
+                .setOutboundNo(nextNo(WmsConstants.OUTBOUND_NO_PREFIX_SAMPLE))
+                .setOutboundType(WmsConstants.OUTBOUND_TYPE_SAMPLE)
+                .setStatus(WmsConstants.OUTBOUND_STATUS_PENDING_ALLOCATE)
+                .setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED)
+                .setRetryCount(0)
+                .setSyncFailCount(0)
+                .setOperator(WmsUtils.currentUsername())
+                .setSubmitTime(new Date())
+                .setRemark(dto.getRemark());
+        persist(order, List.of(detail));
+        log.info("样品出库单创建：单号={}，物料={}，数量={}",
+                order.getOutboundNo(), material.getMaterialCode(), dto.getQty());
+        return order;
+    }
+
+    @Override
     public WmsOutboundOrder createSales(WmsOutboundSalesCreateDTO dto) {
         if (dto == null || oConvertUtils.isEmpty(dto.getSalesOrderNo())) {
             throw new RuntimeException("销售订单号不能为空");

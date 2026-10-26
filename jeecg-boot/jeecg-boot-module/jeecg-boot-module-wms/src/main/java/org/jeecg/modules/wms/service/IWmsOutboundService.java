@@ -23,6 +23,11 @@ public interface IWmsOutboundService extends IService<WmsOutboundOrder> {
     /** CK-002：创建销售订单对应的出库单。 */
     WmsOutboundOrder createSales(WmsOutboundSalesCreateDTO dto);
 
+    /**
+     * 建样品出库单：不绑定工单/销售订单，出库后按 E5 确认的形态回写金蝶。
+     */
+    WmsOutboundOrder createSample(org.jeecg.modules.wms.dto.WmsOutboundSampleCreateDTO dto);
+
     /** CK-002：预览 ERP 销售订单（含分录与剩余可出数量）。 */
     org.jeecg.modules.wms.vo.WmsSalesOrderVO previewSalesOrder(String salesOrderNo);
 

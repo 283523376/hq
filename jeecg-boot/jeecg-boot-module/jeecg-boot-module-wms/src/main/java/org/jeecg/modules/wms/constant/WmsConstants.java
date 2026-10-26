@@ -444,6 +444,9 @@ public final class WmsConstants {
     /** 销售出库单号前缀。 */
     public static final String OUTBOUND_NO_PREFIX_SALES = "XS";
 
+    /** 样品出库单号前缀。 */
+    public static final String OUTBOUND_NO_PREFIX_SAMPLE = "YP";
+
     /** 出库单状态：草稿（外协出库同步生成的只读单，不可分配）。 */
     public static final String OUTBOUND_STATUS_DRAFT = "草稿";
     /** 出库单状态：待分配。 */
