@@ -12,6 +12,10 @@
         >
           新增库区
         </a-button>
+        <a-button type="link" size="small" preIcon="ant-design:sync-outlined" :loading="syncing" @click="handleSyncKingdee"> 同步金蝶 </a-button>
+        <a-button type="link" size="small" preIcon="ant-design:database-outlined" :loading="initializing" @click="handleInitMasterData">
+          初始化档案
+        </a-button>
       </div>
       <a-tree
         v-if="treeData.length"
@@ -52,7 +56,14 @@
   import { useModal } from '/@/components/Modal';
   import { useMessage } from '/@/hooks/web/useMessage';
   import WarehouseModal from './WarehouseModal.vue';
-  import { queryTreeList, deleteWarehouse, disableWarehouse, checkWarehouseDelete } from '../warehouse.api';
+  import {
+    queryTreeList,
+    deleteWarehouse,
+    disableWarehouse,
+    checkWarehouseDelete,
+    syncWarehouseFromKingdee,
+    initWarehouseMasterData,
+  } from '../warehouse.api';
   import { showDeleteBlocked } from '../../common/useWmsDeleteCheck';
 
   const emit = defineEmits(['select', 'refresh']);
@@ -60,12 +71,45 @@
   const [registerModal, { openModal }] = useModal();
 
   const loading = ref(false);
+  const syncing = ref(false);
+  const initializing = ref(false);
   const treeData = ref<any[]>([]);
   /** 虚拟根：用于清除库区过滤 */
   const selectedKeys = ref<any[]>(['__all__']);
   const expandedKeys = ref<any[]>(['__all__']);
   /** 扁平化的库区节点，供生成弹窗带出维度 */
   const warehouseNodes = ref<any[]>([]);
+
+  /** 从金蝶同步仓库档案；白名单未配置时后端直接返回 0 行 */
+  async function handleSyncKingdee() {
+    syncing.value = true;
+    try {
+      const res: any = await syncWarehouseFromKingdee();
+      const vo = res?.result ?? {};
+      createMessage.success(vo?.message || '同步完成');
+      await loadTree();
+      emit('refresh');
+    } catch (e: any) {
+      createMessage.error(e?.message || '同步失败');
+    } finally {
+      syncing.value = false;
+    }
+  }
+
+  /** 初始化本地档案：LB/MJ 改名、CJ/TC 建档（幂等） */
+  async function handleInitMasterData() {
+    initializing.value = true;
+    try {
+      await initWarehouseMasterData();
+      createMessage.success('初始化完成');
+      await loadTree();
+      emit('refresh');
+    } catch (e: any) {
+      createMessage.error(e?.message || '初始化失败');
+    } finally {
+      initializing.value = false;
+    }
+  }
 
   async function loadTree() {
     loading.value = true;

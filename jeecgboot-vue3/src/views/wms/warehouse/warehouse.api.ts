@@ -13,7 +13,15 @@ enum Api {
   outOfEnvelopeCount = '/wms/warehouse/outOfEnvelopeCount',
   checkDelete = '/wms/warehouse/checkDelete',
   checkDeleteBatch = '/wms/warehouse/checkDeleteBatch',
+  syncKingdee = '/wms/warehouse/sync-kingdee',
+  initMasterData = '/wms/warehouse/init-master-data',
 }
+
+/** 从金蝶同步仓库档案（白名单为空时后端不做任何查询） */
+export const syncWarehouseFromKingdee = () => defHttp.post({ url: Api.syncKingdee });
+
+/** 初始化本地仓库档案（LB/MJ 改名、CJ/TC 建档，幂等） */
+export const initWarehouseMasterData = () => defHttp.post({ url: Api.initMasterData });
 
 /** 删除预检：库区下有库位/已绑定设备时返回不可删原因 */
 export const checkWarehouseDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });

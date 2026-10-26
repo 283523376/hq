@@ -38,6 +38,14 @@ export const columns: BasicColumn[] = [
   { title: '物料编码', align: 'center', dataIndex: 'materialCode', width: 130 },
   { title: '物料名称', align: 'center', dataIndex: 'materialName', width: 150 },
   { title: '产品类型', align: 'center', dataIndex: 'productType', width: 90 },
+  {
+    title: '工单类型',
+    align: 'center',
+    dataIndex: 'orderType',
+    width: 100,
+    // 金蝶侧类型字段未启用（外部依赖 E1）时 order_type 为空，展示层兜底为「客户订单」
+    customRender: ({ text }) => text || '客户订单',
+  },
   { title: '计划数量', align: 'center', dataIndex: 'planQty', width: 90 },
   { title: '批次号', align: 'center', dataIndex: 'batchNo', width: 120 },
   {

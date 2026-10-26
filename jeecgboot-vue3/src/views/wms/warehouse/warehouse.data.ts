@@ -5,6 +5,8 @@ import { checkWarehouseCode } from './warehouse.api';
 export const WAREHOUSE_TYPE_OPTIONS = [
   { label: '立库', value: '立库' },
   { label: '敏捷仓', value: '敏捷仓' },
+  // 初级产成品仓 / 涂层产成品仓：既非立库也非敏捷仓（2026-10-26 主数据骨架）
+  { label: '普通仓', value: '普通仓' },
   // 线边柜已随方案 A 移出项目范围（2026-10-19），不再提供新建选项
 ];
 
