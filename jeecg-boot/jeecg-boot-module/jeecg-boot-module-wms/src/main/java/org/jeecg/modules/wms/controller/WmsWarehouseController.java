@@ -14,7 +14,9 @@ import org.jeecg.common.system.vo.SelectTreeModel;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
+import org.jeecg.modules.wms.service.IWmsKingdeeWarehouseSyncService;
 import org.jeecg.modules.wms.service.IWmsLocationService;
+import org.jeecg.modules.wms.vo.WmsKingdeeStockSyncResultVO;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
@@ -46,6 +48,35 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
     /** 越界库位数要查 wms_location，故由库位服务提供，避免库区服务反向依赖库位实体之外的东西。 */
     @Autowired
     private IWmsLocationService wmsLocationService;
+
+    /** 仓库档案 ERP 同步（主数据骨架，spec 2026-10-26）。 */
+    @Autowired
+    private IWmsKingdeeWarehouseSyncService kingdeeWarehouseSyncService;
+
+    @AutoLog(value = "库区-金蝶仓库同步", operateType = 2)
+    @Operation(summary = "库区-从金蝶同步仓库档案（白名单为空时不做任何查询）")
+    @PostMapping(value = "/sync-kingdee")
+    public Result<WmsKingdeeStockSyncResultVO> syncKingdee() {
+        try {
+            return Result.OK("同步完成", kingdeeWarehouseSyncService.syncStock());
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @AutoLog(value = "库区-初始化本地档案", operateType = 2)
+    @Operation(summary = "库区-初始化本地档案（LB/MJ 改名、CJ/TC 建档，幂等）")
+    @PostMapping(value = "/init-master-data")
+    public Result<String> initMasterData() {
+        try {
+            kingdeeWarehouseSyncService.initLocalArchives();
+            return Result.OK("初始化完成");
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
+    }
 
     @Operation(summary = "库区-库区树")
     @GetMapping(value = "/treeList")

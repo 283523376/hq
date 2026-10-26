@@ -61,6 +61,14 @@ public class WmsWarehouse extends JeecgEntity {
     @Schema(description = "状态：1启用 0停用")
     private String status;
 
+    /** 金蝶仓库编码（BD_STOCK.FNumber）；本地独立仓（如 CJ/TC）为空。 */
+    @Schema(description = "金蝶仓库编码")
+    private String erpStockCode;
+
+    /** 金蝶仓库名称（同步时的 FName，便于核对映射）。 */
+    @Schema(description = "金蝶仓库名称")
+    private String erpStockName;
+
     /**
      * 位于当前维度之外的库位数（非持久化，由控制器回填）。
      *
