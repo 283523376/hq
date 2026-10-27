@@ -92,17 +92,16 @@ public class WmsWcsCallbackController {
                     boolean completed = productionService.onTaskFeedback(detail.getTaskNo(), carrier,
                             detail.getTaskStatus(), stack, detail.getMessage(), false);
                     if (completed) {
-                        // 先乐观认领，避免与补偿任务重复投递
-                        if (productionService.claimForSync(record.getId(),
+                        // 开关判断必须在「认领」之前：认领会把状态置为「同步中」，
+                        // 若此时又不推送，记录会永远卡在同步中（手工同步也会被挡）。
+                        if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
+                            log.info("自动同步已关闭，回执后不推送，记录保持待同步：{}", record.getId());
+                        } else if (productionService.claimForSync(record.getId(),
                                 productionService.syncStaleBefore()) > 0) {
-                            // 自动同步关闭时只把记录留在「待同步」，由页面手工推送
-                            if (!WmsSyncAutoGate.isManualOnly(systemConfigService)) {
-                                WmsOrderSyncAttempt attempt =
-                                        productionSyncService.syncInbound(record.getId(), true);
-                                productionService.persistSyncResult(record.getId(), attempt);
-                            } else {
-                                log.info("自动同步已关闭，跳过设备回执后的即时回写：{}", record.getId());
-                            }
+                            // 先乐观认领，避免与补偿任务重复投递
+                            WmsOrderSyncAttempt attempt =
+                                    productionSyncService.syncInbound(record.getId(), true);
+                            productionService.persistSyncResult(record.getId(), attempt);
                         }
                     }
                     item.put("code", 0);
