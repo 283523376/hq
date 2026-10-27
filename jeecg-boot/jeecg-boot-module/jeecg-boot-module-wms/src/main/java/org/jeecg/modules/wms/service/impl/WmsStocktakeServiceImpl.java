@@ -124,6 +124,18 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
     }
 
     @Override
+    public com.baomidou.mybatisplus.core.metadata.IPage<WmsStocktakeOrder> listPage(int pageNo, int pageSize,
+                                                                                    String stocktakeType) {
+        LambdaQueryWrapper<WmsStocktakeOrder> wrapper = new LambdaQueryWrapper<>();
+        if (stocktakeType != null && !stocktakeType.isEmpty()) {
+            wrapper.eq(WmsStocktakeOrder::getStocktakeType, stocktakeType);
+        }
+        wrapper.orderByDesc(WmsStocktakeOrder::getCreateTime);
+        return orderMapper.selectPage(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNo, pageSize),
+                wrapper);
+    }
+
+    @Override
     public void start(String id) {
         WmsStocktakeOrder order = requireById(id);
         statusResolver.assertTransition(order.getStatus(), WmsConstants.STOCKTAKE_STATUS_COUNTING);
