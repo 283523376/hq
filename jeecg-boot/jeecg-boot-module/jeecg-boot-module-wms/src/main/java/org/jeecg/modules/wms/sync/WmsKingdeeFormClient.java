@@ -38,6 +38,8 @@ public class WmsKingdeeFormClient {
             "/k3cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Submit.common.kdsvc";
     static final String DELETE_PATH =
             "/k3cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Delete.common.kdsvc";
+    static final String PUSH_PATH =
+            "/k3cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Push.common.kdsvc";
     static final String VIEW_PATH =
             "/k3cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.View.common.kdsvc";
 
@@ -99,15 +101,46 @@ public class WmsKingdeeFormClient {
 
     /** 保存单据。金蝶要求 FormId 在顶层，业务数据放在 Data 下。 */
     public WmsKingdeeResult save(String formId, Map<String, Object> model) {
+        return save(formId, model, true);
+    }
+
+    /**
+     * 保存单据（可控是否清空未提交的分录）。
+     *
+     * <p>下推得到的草稿要**更新**而不是重建：{@code isDeleteEntry=false} 才不会把源单带过来的
+     * 其余分录删掉。
+     */
+    public WmsKingdeeResult save(String formId, Map<String, Object> model, boolean isDeleteEntry) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("NeedUpDateFields", new ArrayList<>());
-        data.put("IsDeleteEntry", true);
+        data.put("IsDeleteEntry", isDeleteEntry);
         data.put("IsEntryBatchFill", false);
         data.put("Model", model);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("FormId", formId);
         body.put("Data", data);
         return post(SAVE_PATH, body, false);
+    }
+
+    /**
+     * 下推：从源单生成目标单草稿（生产订单 → 生产入库单）。
+     *
+     * <p>为什么必须用它：物料启用 BOM 版本管理时，PRD_INSTOCK 的 FBomId 在 Save 时
+     * 被服务端忽略，只能由转换规则从源单带出（2026-10-27 实测，详见 spec）。
+     *
+     * <p>报文与 {@link #save} 同构：顶层 FormId 填**源单**标识，Data 放 Numbers 等参数。
+     * 目标单内码在 {@code ResponseStatus.SuccessEntitys[0].Id}，不在 {@code Result.Id}，
+     * 所以这里单独解析。
+     */
+    public WmsKingdeeResult push(String sourceFormId, Map<String, Object> data) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("FormId", sourceFormId);
+        body.put("Data", data);
+        WmsKingdeeResult result = post(PUSH_PATH, body, false);
+        if (!result.isSuccess()) {
+            return result;
+        }
+        return parsePushTarget(result);
     }
 
     /**
@@ -178,6 +211,35 @@ public class WmsKingdeeFormClient {
             return WmsKingdeeResult.ok(raw, rows, null, null);
         } catch (Exception e) {
             return WmsKingdeeResult.fail("解析金蝶查询结果失败：" + e.getMessage(), raw);
+        }
+    }
+
+    /** 从下推响应里取目标单内码：{@code Result.ResponseStatus.SuccessEntitys[0].Id}。 */
+    @SuppressWarnings("unchecked")
+    private WmsKingdeeResult parsePushTarget(WmsKingdeeResult base) {
+        String raw = base.getRaw();
+        try {
+            Map<String, Object> root = objectMapper.readValue(raw, new TypeReference<Map<String, Object>>() { });
+            Map<String, Object> result = root.get("Result") instanceof Map
+                    ? (Map<String, Object>) root.get("Result") : null;
+            Map<String, Object> status = result == null ? null
+                    : (result.get("ResponseStatus") instanceof Map
+                    ? (Map<String, Object>) result.get("ResponseStatus") : null);
+            List<Map<String, Object>> entities = status == null ? null
+                    : (status.get("SuccessEntitys") instanceof List
+                    ? (List<Map<String, Object>>) status.get("SuccessEntitys") : null);
+            if (entities == null || entities.isEmpty()) {
+                return WmsKingdeeResult.fail("下推未返回目标单内码", raw);
+            }
+            Map<String, Object> first = entities.get(0);
+            String id = first.get("Id") == null ? null : String.valueOf(first.get("Id"));
+            if (id == null || "null".equals(id)) {
+                return WmsKingdeeResult.fail("下推未返回目标单内码", raw);
+            }
+            String number = first.get("Number") == null ? null : String.valueOf(first.get("Number"));
+            return WmsKingdeeResult.ok(raw, null, number, id);
+        } catch (Exception e) {
+            return WmsKingdeeResult.fail("解析下推返回失败：" + e.getMessage(), raw);
         }
     }
 

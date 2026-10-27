@@ -569,6 +569,17 @@ wms:
           "A": "待生产"
           "B": "待生产"
           "C": "生产中"
+        # ---- RK-002 半成品生产入库：走「生产订单下推」带出 BOM 版本 ----
+        # 物料启用 BOM 版本管理时，PRD_INSTOCK 的 BOM 版本字段在 Save 时不可写，
+        # 必须从生产订单下推（Push）由转换规则带出；false = 退回旧的直接 Save 路径（回滚开关）
+        push-inbound-enabled: "${KINGDEE_PUSH_INBOUND:true}"
+        # 允许下推的业务流程 → 目标单据类型；键 __empty__ 表示「业务流程为空」
+        # 不在表里的流程一律拒绝下推，并把金蝶原文（含允许值清单）原样报给用户
+        push-flow-bill-type-map:
+          __empty__: "SCRKD01_SYS"
+          "生产直接入库流程": "SCRKD01_SYS"
+        # 默认业务流程：现网是否统一尚未确认、后续可能扩展；仅用于提示与将来 WMS 建单
+        default-business-flow: "${KINGDEE_DEFAULT_BUSINESS_FLOW:生产直接入库流程}"
         # ---- CK-001/CK-002 出库回写（单据类型均已实测存在） ----
         pick-bill-type: "${KINGDEE_PICK_BILL_TYPE:SCLLD01_SYS}"
         sale-order-bill-type: "${KINGDEE_SALE_ORDER_BILL_TYPE:XSDD01_SYS}"

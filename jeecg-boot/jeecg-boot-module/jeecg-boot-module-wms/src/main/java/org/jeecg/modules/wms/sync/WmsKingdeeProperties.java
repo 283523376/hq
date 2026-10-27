@@ -47,6 +47,27 @@ public class WmsKingdeeProperties {
     private String stockStatusId;
     private String inStockType;
 
+    // ---------------------------------------------------------------- 生产入库下推（半成品 BOM 版本）
+    /**
+     * 半成品生产入库是否走「生产订单下推」。
+     *
+     * <p>物料启用 BOM 版本管理时，PRD_INSTOCK 的 FBomId 在 Save 时被服务端忽略
+     * （元数据 IsEditVisible=false），只能由生产订单下推时由转换规则带出。
+     * false = 退回旧的直接 Save 路径（回滚开关，半成品仍会因 BOM 失败）。
+     */
+    private boolean pushInboundEnabled = true;
+
+    /**
+     * 允许下推的业务流程 → 目标单据类型。键 {@code __empty__} 表示「业务流程为空」。
+     *
+     * <p>用哨兵键而不是空串：空串键会让 Spring 的 Map 绑定抛 BindException（此前踩过）。
+     * 表里没有的流程一律拒绝下推，并把金蝶原文（含允许值清单）透传给用户。
+     */
+    private Map<String, String> pushFlowBillTypeMap = new LinkedHashMap<>();
+
+    /** 默认业务流程：现网是否统一尚未确认、后续可能扩展；仅用于提示与将来 WMS 建单。 */
+    private String defaultBusinessFlow = "生产直接入库流程";
+
     /** 库区类型 → 金蝶仓库编码，例如 stereo=02.002、agile=02.001、scrap=02.005。 */
     private Map<String, String> stockCode = new LinkedHashMap<>();
 

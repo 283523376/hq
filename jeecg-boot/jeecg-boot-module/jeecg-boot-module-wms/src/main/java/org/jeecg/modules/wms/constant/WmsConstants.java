@@ -95,14 +95,6 @@ public final class WmsConstants {
     /** 同步状态-同步失败。 */
     public static final String SYNC_STATUS_FAILED = "同步失败";
 
-    /**
-     * 同步被业务规则阻塞的固定前缀（写进 last_sync_error）。
-     *
-     * <p>当前只有一种：物料启用 BOM 版本管理的半成品——金蝶 PRD_INSTOCK 的 FBomId
-     * 在 Save 时不可写（元数据 IsEditVisible=false），必须由生产订单下推带出。
-     * 前端据此禁用「同步金蝶」按钮，避免用户对着必然失败的按钮反复重试。
-     */
-    public static final String SYNC_BLOCK_BOM_PENDING = "[BOM_PENDING]";
 
     // ---------------------------------------------------------------- 同步重试
 

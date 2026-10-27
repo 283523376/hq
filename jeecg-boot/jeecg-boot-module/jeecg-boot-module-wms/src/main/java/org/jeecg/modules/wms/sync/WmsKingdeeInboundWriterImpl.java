@@ -28,6 +28,8 @@ import java.util.Map;
 public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
 
     private static final String FORM_ID = "PRD_INSTOCK";
+    /** 业务流程为空时在映射表里的哨兵键（空串键会让 Spring 的 Map 绑定抛异常）。 */
+    private static final String FLOW_EMPTY_KEY = "__empty__";
 
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
@@ -66,7 +68,9 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             // 2) 生产订单来源分录（主产品行）：FMoId / FMoEntryId / FMoEntrySeq / 车间 / 生产组织
             WmsKingdeeResult moResult = formClient.executeBillQuery("PRD_MO",
                     "FID,FBillNo,FWorkShopID,FWorkShopID.FNumber,FQty,FProductType,"
-                            + "FTreeEntity_FEntryId,FTreeEntity_FSeq,FPrdOrgId,FPrdOrgId.FNumber",
+                            + "FTreeEntity_FEntryId,FTreeEntity_FSeq,FPrdOrgId,FPrdOrgId.FNumber,"
+                            // 业务流程：半成品下推时金蝶只允许「空值/生产直接入库流程」
+                            + "FBFLowId.FName",
                     "FBillNo='" + inbound.getWorkOrderNo().replace("'", "''") + "'", 10);
             if (!moResult.isSuccess() || moResult.getRows().isEmpty()) {
                 return WmsOrderSyncResult.fail("金蝶未找到生产订单：" + inbound.getWorkOrderNo());
@@ -100,6 +104,7 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             if (moOrgId == null) {
                 moOrgId = toLong(properties.getDefaultOrgId());
             }
+            String businessFlow = mo.size() > 10 ? str(mo.get(10)) : "";
 
             // 3) 物料 / 单位
             String kingdeeMaterialCode = properties.getMaterialMap()
@@ -172,6 +177,12 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
                 }
             }
 
+            // 半成品：物料启用 BOM 版本管理时 FBomId 在 Save 时被忽略，必须走「生产订单下推」
+            if (properties.isPushInboundEnabled()
+                    && WmsConstants.PRODUCT_TYPE_SEMI.equals(inbound.getProductType())) {
+                return writeByPush(inbound, goodQty, businessFlow, stockCode, stockLocId);
+            }
+
             // 4) 组装 Model
             Map<String, Object> model = new LinkedHashMap<>();
             model.put("FBillNo", billNo);
@@ -232,15 +243,6 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             WmsKingdeeResult saved = formClient.save(FORM_ID, model);
             if (!saved.isSuccess()) {
                 String savedMessage = saved.getMessage() == null ? "" : saved.getMessage();
-                // 半成品（物料启用 BOM 版本管理）目前无法回写：金蝶 PRD_INSTOCK 的
-                // FBomId 在 Save 时被服务端忽略（实测传任何值都报「BOM版本不能为空」，
-                // 字段元数据 IsEditVisible=false），必须由生产订单下推带出。
-                // 用固定前缀标识出来，前端据此禁用重试按钮。
-                if (savedMessage.contains("BOM版本")) {
-                    return WmsOrderSyncResult.fail(WmsConstants.SYNC_BLOCK_BOM_PENDING
-                            + "半成品回写需从生产订单下推带出 BOM 版本，正在与金蝶确认方案，暂不支持自动回写；"
-                            + "金蝶原文：" + savedMessage);
-                }
                 return WmsOrderSyncResult.fail("金蝶生产入库保存失败：" + savedMessage);
             }
             String number = oConvertUtils.isEmpty(saved.getNumber()) ? billNo : saved.getNumber();
@@ -249,6 +251,79 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             log.warn("生产入库[{}]回写金蝶异常：{}", billNo, e.getMessage());
             return WmsOrderSyncResult.fail("回写金蝶异常：" + e.getMessage());
         }
+    }
+
+    /**
+     * 半成品走「下推」：PRD_MO --Push--> PRD_INSTOCK 草稿 --Save--> Submit。
+     *
+     * <p>为什么不能直接 Save：物料启用 BOM 版本管理时 {@code FBomId} 在 Save 时被服务端忽略
+     * （元数据 IsEditVisible=false），只能由转换规则从生产订单带出（2026-10-27 实测）。
+     *
+     * <p>业务流程不在映射表里时**直接报金蝶原文**，不自动改工单流程、不静默重试。
+     */
+    private WmsOrderSyncResult writeByPush(WmsProductionInbound inbound, BigDecimal goodQty,
+                                           String businessFlow, String stockCode, Long stockLocId) {
+        String flowKey = oConvertUtils.isEmpty(businessFlow) ? FLOW_EMPTY_KEY : businessFlow.trim();
+        String targetBillType = properties.getPushFlowBillTypeMap().get(flowKey);
+        if (oConvertUtils.isEmpty(targetBillType)) {
+            return WmsOrderSyncResult.fail("生产订单[" + inbound.getWorkOrderNo() + "]的业务流程为「"
+                    + (oConvertUtils.isEmpty(businessFlow) ? "空" : businessFlow) + "」，不在允许下推的范围"
+                    + properties.getPushFlowBillTypeMap().keySet() + "。"
+                    + "金蝶原文：业务流程字段的值，必须是如下值之一：空值, " + properties.getDefaultBusinessFlow()
+                    + "。请调整生产订单的业务流程，或补充 push-flow-bill-type-map 配置");
+        }
+
+        Map<String, Object> pushData = new LinkedHashMap<>();
+        // 下推接口的 Numbers 必须是字符串：传数组会报「编码值[...]不存在」
+        pushData.put("Numbers", inbound.getWorkOrderNo());
+        pushData.put("TargetFormId", FORM_ID);
+        pushData.put("TargetBillTypeId", targetBillType);
+        pushData.put("IsEnableDefaultRule", true);
+        WmsKingdeeResult pushed = formClient.push("PRD_MO", pushData);
+        if (!pushed.isSuccess()) {
+            return WmsOrderSyncResult.fail("金蝶下推失败：" + pushed.getMessage());
+        }
+        String targetId = pushed.getId();
+
+        WmsKingdeeResult target = formClient.executeBillQuery(FORM_ID,
+                "FBillNo,FEntity_FEntryId", "FID=" + targetId, 1);
+        if (!target.isSuccess() || target.getRows().isEmpty()) {
+            return WmsOrderSyncResult.fail("金蝶下推后未查到目标单（FID=" + targetId + "）");
+        }
+        List<Object> targetRow = target.getRows().get(0);
+        Object targetEntryId = targetRow.size() > 1 ? targetRow.get(1) : null;
+        if (targetEntryId == null) {
+            return WmsOrderSyncResult.fail("金蝶下推目标单缺少分录内码（FID=" + targetId + "）");
+        }
+
+        // 更新草稿：数量/仓库/批号；IsDeleteEntry=false 才不会删掉源单带出的分录
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("FID", targetId);
+        model.put("FBillType", dict(targetBillType));
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("FEntryID", targetEntryId);
+        entry.put("FStockId", dict(stockCode));
+        if (stockLocId != null) {
+            entry.put("FStockLocId", stockLocId);
+        }
+        if (oConvertUtils.isNotEmpty(inbound.getBatchNo())) {
+            entry.put("FLot", dict(inbound.getBatchNo()));
+        }
+        entry.put("FRealQty", goodQty);
+        entry.put("FNote", note(inbound));
+        model.put("FEntity", List.of(entry));
+
+        WmsKingdeeResult saved = formClient.save(FORM_ID, model, false);
+        if (!saved.isSuccess()) {
+            String message = saved.getMessage() == null ? "" : saved.getMessage();
+            return WmsOrderSyncResult.fail("金蝶生产入库保存失败（下推草稿）：" + message);
+        }
+        String number = oConvertUtils.isNotEmpty(saved.getNumber())
+                ? saved.getNumber() : str(targetRow.get(0));
+        if (oConvertUtils.isEmpty(number)) {
+            return WmsOrderSyncResult.fail("金蝶下推草稿保存后未取到单据编号（FID=" + targetId + "）");
+        }
+        return submit(number);
     }
 
     private WmsOrderSyncResult submit(String number) {

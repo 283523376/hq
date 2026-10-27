@@ -51,6 +51,8 @@ class WmsKingdeeInboundWriterImplTest {
         properties.setInStockType("1");
         properties.setStockCode(Map.of("stereo", "02.002", "agile", "02.001", "scrap", "02.005"));
         properties.setMaterialMap(Map.of("PBC001", "WA.2206.2201.02000430.A003"));
+        // 既有用例覆盖「旧 Save 路径」（成品仍走它）；下推路径由后面的专门用例覆盖
+        properties.setPushInboundEnabled(false);
         writer = new WmsKingdeeInboundWriterImpl(formClient, properties);
     }
 
@@ -292,33 +294,92 @@ class WmsKingdeeInboundWriterImplTest {
         verify(formClient, never()).save(anyString(), any());
     }
 
-    /**
-     * 半成品被金蝶以「BOM版本不能为空」拒绝时，必须打 {@code [BOM_PENDING]} 前缀：
-     * 前端据此把「同步金蝶」置灰，避免用户对着必然失败的按钮反复重试。
-     */
+    /** 保存失败要原样带出金蝶原文，便于用户按原因处理（不再有 BOM 专用标记）。 */
     @Test
-    void write_bomRejection_markedAsBlocked() {
+    void write_saveFailure_surfacesKingdeeMessage() {
         stubHappyPath();
         when(formClient.save(eq("PRD_INSTOCK"), any())).thenReturn(
-                WmsKingdeeResult.fail("单据编号为“X”的生产入库单，第1行分录，物料启用BOM版本管理，BOM版本不能为空"));
+                WmsKingdeeResult.fail("必录字段为空"));
 
         WmsOrderSyncResult result = writer.write(inbound("1", "1"));
 
         assertTrue(!result.isSuccess());
-        assertTrue(result.getErrorMessage().startsWith(WmsConstants.SYNC_BLOCK_BOM_PENDING),
-                "必须以固定前缀标识，实际：" + result.getErrorMessage());
-        assertTrue(result.getErrorMessage().contains("BOM版本不能为空"), "要保留金蝶原文便于排查");
+        assertTrue(result.getErrorMessage().contains("必录字段为空"), "实际：" + result.getErrorMessage());
     }
 
-    /** 其它保存失败不得被打上 BOM 标记，否则用户会被告知错误的原因。 */
+    // ------------------------------------------------ 半成品：走「生产订单下推」
+
+    private void enablePush(String... flows) {
+        properties.setPushInboundEnabled(true);
+        java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
+        for (String f : flows) {
+            map.put(f, "SCRKD01_SYS");
+        }
+        properties.setPushFlowBillTypeMap(map);
+        properties.setDefaultBusinessFlow("生产直接入库流程");
+    }
+
+    /** 生产订单行补业务流程列（在既有 8 列之后追加第 11 列）。 */
+    private void stubMoWithFlow(String flowName) {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        List.of(List.of(100007, "WORK00072", 101487, "201011", 2000, 1, 100006, 1,
+                                209624, "101", flowName)),
+                        null, null));
+    }
+
+    /** 流程在映射表 → push → 查目标单 → 以 FID 保存（不删分录）→ 提交。 */
     @Test
-    void write_otherSaveFailure_notMarkedAsBom() {
+    void write_semiFinished_pushThenSaveThenSubmit() {
+        enablePush("生产直接入库流程");
         stubHappyPath();
-        when(formClient.save(eq("PRD_INSTOCK"), any())).thenReturn(
-                WmsKingdeeResult.fail("金蝶生产入库保存失败：必录字段为空"));
+        stubMoWithFlow("生产直接入库流程");
+        when(formClient.push(eq("PRD_MO"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, null, "657213"));
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(), eq("FID=657213"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("SCRK999", 1050163)), null, null));
+        when(formClient.save(eq("PRD_INSTOCK"), any(), eq(false))).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "SCRK999", "657213"));
+        when(formClient.submit(eq("PRD_INSTOCK"), eq(List.of("SCRK999"))))
+                .thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
 
         WmsOrderSyncResult result = writer.write(inbound("1", "1"));
 
-        assertTrue(!result.getErrorMessage().startsWith(WmsConstants.SYNC_BLOCK_BOM_PENDING));
+        assertTrue(result.isSuccess(), result.getErrorMessage());
+        verify(formClient).push(eq("PRD_MO"), any());
+        verify(formClient).save(eq("PRD_INSTOCK"), any(), eq(false));
+        verify(formClient).submit(eq("PRD_INSTOCK"), eq(List.of("SCRK999")));
+    }
+
+    /** 业务流程不在映射表 → 直接报金蝶原文，不发起下推。 */
+    @Test
+    void write_unknownBusinessFlow_rejectedWithKingdeeWording() {
+        enablePush("生产直接入库流程");
+        stubHappyPath();
+        stubMoWithFlow("生产汇报入库流程");
+
+        WmsOrderSyncResult result = writer.write(inbound("1", "1"));
+
+        assertTrue(!result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("业务流程"), "实际：" + result.getErrorMessage());
+        assertTrue(result.getErrorMessage().contains("生产直接入库流程"));
+        verify(formClient, never()).push(anyString(), any());
+    }
+
+    /** 下推失败 → 原样透传，不继续保存/提交。 */
+    @Test
+    void write_pushFailure_stopsBeforeSave() {
+        enablePush("生产直接入库流程");
+        stubHappyPath();
+        stubMoWithFlow("生产直接入库流程");
+        when(formClient.push(eq("PRD_MO"), any())).thenReturn(
+                WmsKingdeeResult.fail("生产订单下推生产入库单的条件：…"));
+
+        WmsOrderSyncResult result = writer.write(inbound("1", "1"));
+
+        assertTrue(!result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("下推"));
+        verify(formClient, never()).save(anyString(), any(), eq(false));
+        verify(formClient, never()).submit(anyString(), any());
     }
 }
