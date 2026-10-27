@@ -206,6 +206,46 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
         orderMapper.updateById(order);
     }
 
+    @org.springframework.beans.factory.annotation.Value("${wms.stocktake.simulate-review:}")
+    private String simulateReview;
+
+    @Override
+    public void confirmDiff(String id, String operator) {
+        WmsStocktakeOrder order = requireById(id);
+        statusResolver.assertTransition(order.getStatus(), WmsConstants.STOCKTAKE_STATUS_DIFF_CONFIRMED);
+        order.setStatus(WmsConstants.STOCKTAKE_STATUS_DIFF_CONFIRMED);
+        boolean overThreshold = diffCalculator.needsReview(order.getBookTotal(),
+                order.getGainTotal(), order.getLossTotal(), order.getDiffReviewThreshold());
+        if (overThreshold) {
+            statusResolver.assertTransition(order.getStatus(), WmsConstants.STOCKTAKE_STATUS_REVIEWING);
+            order.setStatus(WmsConstants.STOCKTAKE_STATUS_REVIEWING);
+        }
+        orderMapper.updateById(order);
+    }
+
+    @Override
+    public void review(String id, String reviewer) {
+        WmsStocktakeOrder order = requireById(id);
+        statusResolver.assertTransition(order.getStatus(), WmsConstants.STOCKTAKE_STATUS_DIFF_CONFIRMED);
+        boolean simulate = simulateReview != null && !simulateReview.isEmpty();
+        if (!simulate && reviewer != null && reviewer.equals(order.getInitiator())) {
+            throw new RuntimeException("复核人不能是盘点发起人");
+        }
+        order.setStatus(WmsConstants.STOCKTAKE_STATUS_DIFF_CONFIRMED);
+        order.setReviewer(reviewer);
+        order.setReviewTime(new Date());
+        orderMapper.updateById(order);
+    }
+
+    @Override
+    public void archive(String id) {
+        WmsStocktakeOrder order = requireById(id);
+        statusResolver.assertTransition(order.getStatus(), WmsConstants.STOCKTAKE_STATUS_ARCHIVED);
+        order.setStatus(WmsConstants.STOCKTAKE_STATUS_ARCHIVED);
+        order.setArchiveTime(new Date());
+        orderMapper.updateById(order);
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void markRecheck(String locationId, String materialId, String batchNo, String containerCode) {

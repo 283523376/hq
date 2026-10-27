@@ -35,4 +35,13 @@ public interface IWmsStocktakeService {
      * 该库位不在任何进行中盘点单的明细里时插入一条快照重盘行。
      */
     void markRecheck(String locationId, String materialId, String batchNo, String containerCode);
+
+    /** 差异确认：阈值内 → 差异确认；超阈值 → 复核中。 */
+    void confirmDiff(String id, String operator);
+
+    /** 复核通过：复核中 → 差异确认。复核人不得等于发起人（simulate-review 可跳过）。 */
+    void review(String id, String reviewer);
+
+    /** 归档：已调整 → 已归档（终态）。 */
+    void archive(String id);
 }
