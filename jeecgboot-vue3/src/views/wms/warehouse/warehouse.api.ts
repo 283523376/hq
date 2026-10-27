@@ -18,10 +18,13 @@ enum Api {
 }
 
 /** 从金蝶同步仓库档案（白名单为空时后端不做任何查询） */
-export const syncWarehouseFromKingdee = () => defHttp.post({ url: Api.syncKingdee });
+export const syncWarehouseFromKingdee = () =>
+  // 关闭默认成功提示：后端「跳过」也返回 code=200，绿色「同步完成」会和页面的黄色警告同时弹出
+  defHttp.post({ url: Api.syncKingdee }, { successMessageMode: 'none' });
 
 /** 初始化本地仓库档案（LB/MJ 改名、CJ/TC 建档，幂等） */
-export const initWarehouseMasterData = () => defHttp.post({ url: Api.initMasterData });
+export const initWarehouseMasterData = () =>
+  defHttp.post({ url: Api.initMasterData }, { successMessageMode: 'none' });
 
 /** 删除预检：库区下有库位/已绑定设备时返回不可删原因 */
 export const checkWarehouseDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });

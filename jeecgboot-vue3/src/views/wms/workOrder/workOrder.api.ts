@@ -17,7 +17,8 @@ export const syncKingdeeWorkOrder = (params?: {
   startDate?: string;
   endDate?: string;
   top?: number;
-}) => defHttp.post({ url: Api.syncKingdee, params, data: {} });
+}) =>
+  defHttp.post({ url: Api.syncKingdee, params, data: {} }, { successMessageMode: 'none' });
 
 /** 工单关联的生产入库记录（蓝图：查询工单执行情况）。 */
 export const fetchInboundRecords = (workOrderNo: string) =>

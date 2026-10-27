@@ -14,7 +14,9 @@ enum Api {
 }
 
 /** 从金蝶同步物料分组映射（未配置 category-map 时后端仅空转） */
-export const syncCategoryFromKingdee = () => defHttp.post({ url: Api.syncKingdee });
+export const syncCategoryFromKingdee = () =>
+  // 同上：同步类接口由页面自己决定提示文案
+  defHttp.post({ url: Api.syncKingdee }, { successMessageMode: 'none' });
 
 /** 删除预检：分类下有物料/子分类时返回不可删原因（树形单删，无批量端点） */
 export const checkCategoryDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });

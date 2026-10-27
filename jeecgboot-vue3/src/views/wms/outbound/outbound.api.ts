@@ -5,7 +5,8 @@ const OUTBOUND = '/wms/outbound';
 
 /** 外协出库：从金蝶同步已审核委外订单为只读草稿（本期不含明细） */
 export const syncSubcontractOrders = (top = 50) =>
-  defHttp.post({ url: `${OUTBOUND}/sync-subcontract`, params: { top } }, { joinParamsToUrl: true });
+  // 关闭默认成功提示：后端「跳过」也是 code=200，否则会与页面的黄色警告同时弹出
+  defHttp.post({ url: `${OUTBOUND}/sync-subcontract`, params: { top } }, { joinParamsToUrl: true, successMessageMode: 'none' });
 
 /** 样品出库：创建样品出库单 */
 export const createSample = (params) => defHttp.post({ url: `${OUTBOUND}/sample`, params });

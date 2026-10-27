@@ -83,7 +83,13 @@
     syncing.value = true;
     try {
       const res: any = await syncCategoryFromKingdee();
-      createMessage.success(res?.message || '同步完成');
+      const msg = res?.message || '同步完成';
+      // 后端「跳过」也是 code=200：按文案区分，避免把「没同步」显示成绿色成功
+      if (String(msg).includes('跳过')) {
+        createMessage.warning(`未同步：${msg}`);
+      } else {
+        createMessage.success(msg);
+      }
       await loadTree();
       emit('refresh');
     } catch (e: any) {
