@@ -69,6 +69,8 @@ public class WmsOutboundAllocatorImpl implements IWmsOutboundAllocator {
                     if (available.signum() <= 0) {
                         continue;
                     }
+                    // 盘点冻结的库位不可分配（否则盘出来的差异会被并发出库搅乱）
+                    WmsStocktakeFreezeGuard.assertNotFrozen(row.getLocationId(), locationMapper);
                     BigDecimal take = required.subtract(allocated).min(available);
                     if (inventoryMapper.lockInventory(row.getId(), take) == 0) {
                         throw new RuntimeException("库存已被其他出库单占用，请重试");

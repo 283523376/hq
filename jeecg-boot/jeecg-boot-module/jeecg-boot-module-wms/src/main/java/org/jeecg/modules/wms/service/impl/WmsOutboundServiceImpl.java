@@ -72,6 +72,10 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
     @Autowired
     private org.jeecg.modules.wms.mapper.WmsInventoryMapper inventoryMapper;
 
+    /** 盘点重盘标记（可空：盘点模块可能尚未参与）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.jeecg.modules.wms.service.IWmsStocktakeService stocktakeService;
+
     @Autowired
     private org.jeecg.modules.wms.mapper.WmsLocationMapper locationMapper;
 
@@ -202,6 +206,16 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
             WmsOutboundOrder order = getById(allocation.getOutboundId());
             if (order == null) {
                 return false;
+            }
+            // 在途任务落账时，若库位正被盘点冻结，把对应明细标重盘（spec §5.3）
+            try {
+                WmsOutboundDetail feedbackDetail = detailMapper.selectById(allocation.getDetailId());
+                stocktakeService.markRecheck(allocation.getLocationId(),
+                        feedbackDetail == null ? null : feedbackDetail.getMaterialId(),
+                        feedbackDetail == null ? null : feedbackDetail.getBatchNo(),
+                        allocation.getContainerCode());
+            } catch (Exception e) {
+                log.warn("重盘标记失败（不影响出库回执）：{}", e.getMessage());
             }
             List<WmsOutboundAllocation> all = allocationMapper.selectList(
                     Wrappers.<WmsOutboundAllocation>query().eq("outbound_id", order.getId()));

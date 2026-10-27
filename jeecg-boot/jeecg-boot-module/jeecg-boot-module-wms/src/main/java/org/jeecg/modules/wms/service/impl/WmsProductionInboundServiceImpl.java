@@ -134,10 +134,13 @@ public class WmsProductionInboundServiceImpl
                     WmsConstants.WAREHOUSE_TYPE_AGILE,
                     WmsConstants.LOCATION_CODE_AGILE_DEFAULT,
                     "敏捷仓未配置，请联系管理员");
+            // 上架目标被盘点冻结时拦下（立库由 allocateStereoLocation 内部占用，同样要挡）
+            WmsStocktakeFreezeGuard.assertNotFrozen(locationId, locationMapper);
         }
         String scrapLocationId = null;
         if (bad.signum() > 0) {
             scrapLocationId = resolveScrapLocationId();
+            WmsStocktakeFreezeGuard.assertNotFrozen(scrapLocationId, locationMapper);
         }
 
         String batchNo = oConvertUtils.isEmpty(dto.getBatchNo()) ? order.getBatchNo() : dto.getBatchNo().trim();

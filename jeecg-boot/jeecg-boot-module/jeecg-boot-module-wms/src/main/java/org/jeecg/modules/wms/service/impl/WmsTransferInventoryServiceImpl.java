@@ -140,6 +140,7 @@ public class WmsTransferInventoryServiceImpl implements IWmsTransferInventorySer
         if (locationId == null || locationId.isEmpty()) {
             throw new RuntimeException("目标库位不能为空");
         }
+        WmsStocktakeFreezeGuard.assertNotFrozen(locationId, locationMapper);
         BigDecimal qty = nvl(task.getAllocatedQty());
         String batchNo = detail.getBatchNo() == null ? "" : detail.getBatchNo();
         String containerCode = detail.getContainerCode() == null ? "" : detail.getContainerCode();

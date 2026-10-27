@@ -5,6 +5,7 @@ import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.mapper.WmsInventoryMapper;
 import org.jeecg.modules.wms.mapper.WmsLocationMapper;
+import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.mapper.WmsOutboundAllocationMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
 import org.jeecg.modules.wms.vo.WmsInventoryAvailableVO;
@@ -154,5 +155,24 @@ class WmsOutboundAllocatorTest {
                 () -> allocator.allocate(order(WmsConstants.OUTBOUND_TYPE_PICK), List.of(detail("1"))));
 
         assertTrue(e.getMessage().contains("库存不足"));
+    }
+
+    @Test
+    void allocate_frozenLocation_isRejected() {
+        WmsLocation frozen = new WmsLocation();
+        frozen.setId("loc-1");
+        frozen.setLocationCode("L-1");
+        frozen.setStocktakeFrozen(WmsConstants.STOCKTAKE_FROZEN);
+        when(locationMapper.selectById("loc-1")).thenReturn(frozen);
+        when(inventoryMapper.selectAvailable(any(), any(), any(), anyBoolean(), anyInt()))
+                .thenReturn(List.of(row("1", "10", "0", null)));
+
+        RuntimeException e = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> allocator.allocate(order(WmsConstants.OUTBOUND_TYPE_SALES), List.of(detail("5"))));
+
+        org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("盘点冻结"), e.getMessage());
+        org.mockito.Mockito.verify(inventoryMapper, org.mockito.Mockito.never())
+                .lockInventory(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(BigDecimal.class));
     }
 }

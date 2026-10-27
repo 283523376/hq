@@ -29,4 +29,10 @@ public interface IWmsStocktakeService {
 
     /** 唯一允许改库存的盘点路径：按实盘覆盖库存。 */
     void applyAdjustment(String id, String operator);
+
+    /**
+     * 重盘标记：在途设备任务落账时，若涉及正在盘点的库位，把对应明细标为需重盘；
+     * 该库位不在任何进行中盘点单的明细里时插入一条快照重盘行。
+     */
+    void markRecheck(String locationId, String materialId, String batchNo, String containerCode);
 }

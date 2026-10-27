@@ -207,6 +207,49 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void markRecheck(String locationId, String materialId, String batchNo, String containerCode) {
+        // 找进行中（盘点中/差异确认/复核中）且范围覆盖该库位的盘点单
+        List<WmsStocktakeOrder> active = orderMapper.selectList(new LambdaQueryWrapper<WmsStocktakeOrder>()
+                .in(WmsStocktakeOrder::getStatus, WmsConstants.STOCKTAKE_STATUS_COUNTING,
+                        WmsConstants.STOCKTAKE_STATUS_DIFF_CONFIRMED, WmsConstants.STOCKTAKE_STATUS_REVIEWING));
+        for (WmsStocktakeOrder order : active) {
+            List<WmsStocktakeDetail> details = listDetails(order.getId());
+            boolean covered = details.stream().anyMatch(d -> locationId.equals(d.getLocationId()));
+            if (!covered) {
+                continue;
+            }
+            WmsStocktakeDetail hit = details.stream().filter(d ->
+                    locationId.equals(d.getLocationId())
+                            && eqOrNull(materialId, d.getMaterialId())
+                            && eqOrNull(batchNo, d.getBatchNo())
+                            && eqOrNull(containerCode, d.getContainerCode())).findFirst().orElse(null);
+            if (hit != null) {
+                hit.setRecheckFlag(WmsConstants.STOCKTAKE_FROZEN);
+                detailMapper.updateById(hit);
+            } else {
+                // 精确行不存在（该库位新进了别的东西）：插一条快照重盘行
+                WmsStocktakeDetail extra = new WmsStocktakeDetail()
+                        .setStocktakeId(order.getId())
+                        .setLocationId(locationId)
+                        .setLocationCode(locationCodeOf(locationId))
+                        .setMaterialId(materialId)
+                        .setBatchNo(batchNo)
+                        .setContainerCode(containerCode)
+                        .setBookQty(BigDecimal.ZERO)
+                        .setDiffQty(BigDecimal.ZERO)
+                        .setRecheckFlag(WmsConstants.STOCKTAKE_FROZEN)
+                        .setAdjusted(FLAG_NO);
+                detailMapper.insert(extra);
+            }
+        }
+    }
+
+    private static boolean eqOrNull(String a, String b) {
+        return a == null || a.isEmpty() || a.equals(b);
+    }
+
+    @Override
     public void applyAdjustment(String id, String operator) {
         throw new UnsupportedOperationException("applyAdjustment 由 Task 6 实现");
     }
