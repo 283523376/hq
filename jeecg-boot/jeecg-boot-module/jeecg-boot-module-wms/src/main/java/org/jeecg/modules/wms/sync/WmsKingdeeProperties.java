@@ -122,6 +122,9 @@ public class WmsKingdeeProperties {
     /** 样品出库回写配置（spec §5.2）。 */
     private Sample sample = new Sample();
 
+    /** 盘点差异回写配置（spec §5.3）。 */
+    private Stocktake stocktake = new Stocktake();
+
     /**
      * 委外订单同步配置。
      *
@@ -145,6 +148,22 @@ public class WmsKingdeeProperties {
 
         /** 回写用的金蝶仓库编码（测试期 YF 研发仓，生产切新仓）；空 = 回写明确报错。 */
         private String stockCode;
+    }
+
+    /**
+     * 盘点差异回写配置。
+     *
+     * <p>注意：绑定键是 {@code wms.sync.erp.kingdee.stocktake.*}——
+     * spec §7 写的 {@code wms.stocktake.*} 前缀是笔误，两者不一致会让运维白配。
+     */
+    @Data
+    public static class Stocktake {
+
+        /** 回写用的金蝶仓库编码；空 = 回写明确报错。 */
+        private String stockCode;
+
+        /** 回写单据形态：MIS=其他出入库单；预留 STOCK_COUNT。 */
+        private String writebackMode = "MIS";
     }
 
     /**
