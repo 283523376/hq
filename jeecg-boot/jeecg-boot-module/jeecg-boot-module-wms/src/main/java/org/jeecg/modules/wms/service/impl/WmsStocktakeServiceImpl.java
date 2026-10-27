@@ -250,8 +250,65 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void applyAdjustment(String id, String operator) {
-        throw new UnsupportedOperationException("applyAdjustment 由 Task 6 实现");
+        WmsStocktakeOrder order = requireById(id);
+        if (!WmsConstants.STOCKTAKE_STATUS_DIFF_CONFIRMED.equals(order.getStatus())) {
+            throw new RuntimeException("只有「差异确认」的盘点单可以调整库存，当前：" + order.getStatus());
+        }
+        List<WmsStocktakeDetail> details = listDetails(id);
+        for (WmsStocktakeDetail detail : details) {
+            if (detail.getActualQty() == null || FLAG_YES.equals(detail.getAdjusted())) {
+                continue;
+            }
+            applyToInventory(detail);
+            detail.setAdjusted(FLAG_YES);
+            detailMapper.updateById(detail);
+        }
+        // 归档前的前一步：解冻范围内库位（盘点已结束，业务恢复）
+        details.stream().map(WmsStocktakeDetail::getLocationId).filter(java.util.Objects::nonNull).distinct()
+                .forEach(this::unfreeze);
+        order.setStatus(WmsConstants.STOCKTAKE_STATUS_ADJUSTED);
+        order.setAdjustTime(new Date());
+        orderMapper.updateById(order);
+        log.info("盘点单[{}]库存调整完成，操作人={}", order.getStocktakeNo(), operator);
+    }
+
+    /** 按实盘覆盖库存：0 → 删行；有行 → 覆盖；无行且 >0 → 插入。绝不建出入库单据。 */
+    private void applyToInventory(WmsStocktakeDetail detail) {
+        WmsInventory existing = inventoryMapper.selectOne(new LambdaQueryWrapper<WmsInventory>()
+                .eq(WmsInventory::getMaterialId, detail.getMaterialId())
+                .eq(WmsInventory::getLocationId, detail.getLocationId())
+                .eq(detail.getBatchNo() != null, WmsInventory::getBatchNo, detail.getBatchNo())
+                .eq(detail.getContainerCode() != null, WmsInventory::getContainerCode, detail.getContainerCode())
+                .last("limit 1"));
+        if (detail.getActualQty().signum() == 0) {
+            if (existing != null) {
+                inventoryMapper.deleteById(existing.getId());
+            }
+            return;
+        }
+        if (existing == null) {
+            WmsInventory created = new WmsInventory();
+            created.setMaterialId(detail.getMaterialId());
+            created.setLocationId(detail.getLocationId());
+            created.setBatchNo(detail.getBatchNo());
+            created.setContainerCode(detail.getContainerCode());
+            created.setQuantity(detail.getActualQty());
+            created.setLockedQty(BigDecimal.ZERO);
+            inventoryMapper.insert(created);
+            return;
+        }
+        existing.setQuantity(detail.getActualQty());
+        inventoryMapper.updateById(existing);
+    }
+
+    private void unfreeze(String locationId) {
+        WmsLocation location = locationMapper.selectById(locationId);
+        if (location != null && WmsConstants.STOCKTAKE_FROZEN.equals(location.getStocktakeFrozen())) {
+            location.setStocktakeFrozen(WmsConstants.STOCKTAKE_UNFROZEN);
+            locationMapper.updateById(location);
+        }
     }
 
     private String locationCodeOf(String locationId) {
