@@ -292,4 +292,76 @@ class WmsWorkOrderServiceImplTest {
         assertEquals("WO1", result.getWorkOrderNo());
         org.mockito.Mockito.verify(mapper).updateById(org.mockito.ArgumentMatchers.any(WmsWorkOrder.class));
     }
+
+    // ------------------------------------------------- 字段长度/精度守卫（对齐 DB 列宽，避免 500）
+
+    /** 物料查得到、工单已存在，让 push 走到 validate()。 */
+    private WmsWorkOrderPushDTO pushableDto() {
+        WmsMaterial material = new WmsMaterial();
+        material.setId("m1");
+        material.setMaterialCode("M1");
+        material.setMaterialName("物料");
+        when(materialMapper.selectOne(any())).thenReturn(material);
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("MES").setWorkOrderStatus("生产中"));
+        return baseDto();
+    }
+
+    @Test
+    void push_remarkTooLong_isRejected() {
+        WmsWorkOrderPushDTO dto = pushableDto();
+        dto.setRemark("字".repeat(501));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
+        assertEquals("备注长度不能超过 500", e.getMessage());
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never())
+                .updateById(any(WmsWorkOrder.class));
+    }
+
+    @Test
+    void push_batchNoTooLong_isRejected() {
+        WmsWorkOrderPushDTO dto = pushableDto();
+        dto.setBatchNo("B".repeat(65));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
+        assertEquals("批次号长度不能超过 64", e.getMessage());
+    }
+
+    @Test
+    void push_mesOrderNoTooLong_isRejected() {
+        WmsWorkOrderPushDTO dto = pushableDto();
+        dto.setMesOrderNo("M".repeat(65));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
+        assertEquals("MES订单号长度不能超过 64", e.getMessage());
+    }
+
+    @Test
+    void push_planQtyWithTooManyDecimals_isRejected() {
+        WmsWorkOrderPushDTO dto = pushableDto();
+        dto.setPlanQty(new BigDecimal("1.2345"));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
+        assertEquals("计划数量精度不能超过 3 位小数", e.getMessage());
+    }
+
+    @Test
+    void push_planQtyBeyondColumnRange_isRejected() {
+        WmsWorkOrderPushDTO dto = pushableDto();
+        dto.setPlanQty(new BigDecimal("1000000000"));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
+        assertEquals("计划数量超出可录入范围", e.getMessage());
+    }
+
+    /** 尾部 0 不算精度：ERP 常见 {@code 10.000000} 必须放行。 */
+    @Test
+    void push_planQtyWithTrailingZeros_isAccepted() {
+        WmsWorkOrderPushDTO dto = pushableDto();
+        dto.setPlanQty(new BigDecimal("10.000000"));
+
+        service.push(dto);
+
+        assertEquals(0, capturedOnUpdate().getPlanQty().compareTo(new BigDecimal("10")));
+    }
 }

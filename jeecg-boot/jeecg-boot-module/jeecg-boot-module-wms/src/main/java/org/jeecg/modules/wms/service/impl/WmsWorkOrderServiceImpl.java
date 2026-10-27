@@ -263,5 +263,24 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         if (oConvertUtils.isEmpty(order.getBatchNo())) {
             throw new RuntimeException("批次号不能为空");
         }
+        // 列宽/精度守卫：超出 DB 列宽时 MySQL 严格模式回 500、非严格模式静默截断，
+        // 两种都不该让用户碰到。列宽见 wms_work_order：*_no varchar(64)、remark varchar(500)、plan_qty decimal(12,3)
+        assertMaxLength(order.getWorkOrderNo(), 64, "工单号");
+        assertMaxLength(order.getBatchNo(), 64, "批次号");
+        assertMaxLength(order.getMesOrderNo(), 64, "MES订单号");
+        assertMaxLength(order.getRemark(), 500, "备注");
+        // 尾部 0 不算精度：ERP 常见 10.000000 必须放行
+        if (order.getPlanQty().stripTrailingZeros().scale() > 3) {
+            throw new RuntimeException("计划数量精度不能超过 3 位小数");
+        }
+        if (order.getPlanQty().compareTo(new BigDecimal("999999999.999")) > 0) {
+            throw new RuntimeException("计划数量超出可录入范围");
+        }
+    }
+
+    private void assertMaxLength(String value, int maxLength, String label) {
+        if (value != null && value.length() > maxLength) {
+            throw new RuntimeException(label + "长度不能超过 " + maxLength);
+        }
     }
 }

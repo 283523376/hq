@@ -105,6 +105,28 @@ class WmsProductionManualCloseTest {
     }
 
     @Test
+    void manualComplete_remarkTooLong_isRejected() {
+        when(inboundMapper.selectById("id1")).thenReturn(record("半成品", "异常待人工"));
+        WmsProductionManualCompleteDTO dto = manual("NEW-RFID");
+        dto.setRemark("字".repeat(501));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.manualComplete("id1", dto));
+        assertEquals("备注长度不能超过 500", e.getMessage());
+        // 校验必须先于「条件认领」，否则失败时状态已被改成已入库
+        verify(inboundMapper, never()).update(any(), any());
+    }
+
+    @Test
+    void manualComplete_carrierCodeTooLong_isRejected() {
+        when(inboundMapper.selectById("id1")).thenReturn(record("半成品", "异常待人工"));
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.manualComplete("id1", manual("C".repeat(65))));
+        assertEquals("载具码长度不能超过 64", e.getMessage());
+        verify(inboundMapper, never()).update(any(), any());
+    }
+
+    @Test
     void close_releasesStereoLocation_andDoesNotWriteInventory() {
         when(inboundMapper.selectById("id1")).thenReturn(record("半成品", "异常待人工"));
         when(inboundMapper.update(any(), any())).thenReturn(1);

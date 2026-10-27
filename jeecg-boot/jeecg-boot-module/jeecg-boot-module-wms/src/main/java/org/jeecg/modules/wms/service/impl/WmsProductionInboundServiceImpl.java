@@ -293,13 +293,24 @@ public class WmsProductionInboundServiceImpl
         if (record == null) {
             throw new RuntimeException("生产入库记录不存在");
         }
+        // 字段校验必须**先于**状态认领：认领之后再抛异常会留下「已入库」的半截状态
+        // （虽然有事务兜底，也不该让用户看到「失败但单据已变」）
+        String remark = dto == null || dto.getRemark() == null ? null : dto.getRemark().trim();
+        if (remark != null && remark.length() > 500) {
+            throw new RuntimeException("备注长度不能超过 500");
+        }
+        String carrier = dto == null || dto.getCarrierCode() == null
+                ? null : dto.getCarrierCode().trim();
+        if (carrier != null && carrier.length() > 64) {
+            throw new RuntimeException("载具码长度不能超过 64");
+        }
         // 条件认领：只有异常待人工能转人工完成，重复点击只有一个生效
         int affected = inboundMapper.update(null, new UpdateWrapper<WmsProductionInbound>()
                 .set("status", WmsConstants.PROD_STATUS_INBOUND)
                 .set("task_status", WmsConstants.TASK_STATUS_FINISHED)
                 .set("complete_time", new Date())
                 .set("sync_status", WmsConstants.SYNC_STATUS_PENDING)
-                .set("manual_remark", dto == null ? null : dto.getRemark())
+                .set("manual_remark", remark)
                 .setSql("task_error = NULL")
                 .set("update_time", new Date())
                 .eq("id", id)
@@ -308,8 +319,6 @@ public class WmsProductionInboundServiceImpl
             throw new RuntimeException("当前状态不允许转人工完成");
         }
 
-        String carrier = dto == null || dto.getCarrierCode() == null
-                ? null : dto.getCarrierCode().trim();
         if (oConvertUtils.isNotEmpty(carrier) && !carrier.equals(record.getCarrierCode())) {
             if (inboundMapper.selectActiveByCarrier(carrier) != null) {
                 throw new RuntimeException("载具正在使用中");
