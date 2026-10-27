@@ -8,6 +8,7 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsLocationAttrDTO;
 import org.jeecg.modules.wms.dto.WmsLocationGenDTO;
+import org.jeecg.modules.wms.entity.WmsInventory;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.mapper.WmsLocationMapper;
@@ -250,7 +251,7 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
             return 0L;
         }
         return inventoryMapper.selectCount(
-                new QueryWrapper<org.jeecg.modules.wms.entity.WmsInventory>().eq("location_id", locationId));
+                new QueryWrapper<WmsInventory>().eq("location_id", locationId));
     }
 
     /** 批量删除整体在一个事务里（原 controller 循环逐条、无事务，遇守卫会部分成功）。 */
@@ -416,16 +417,16 @@ public class WmsLocationServiceImpl extends ServiceImpl<WmsLocationMapper, WmsLo
     }
 
     @Override
-    public java.util.List<WmsLocation> listFreeByWarehouseType(String warehouseType) {
+    public List<WmsLocation> listFreeByWarehouseType(String warehouseType) {
         if (oConvertUtils.isEmpty(warehouseType)) {
-            return java.util.Collections.emptyList();
+            return Collections.emptyList();
         }
-        java.util.List<WmsWarehouse> warehouses = wmsWarehouseService.list(
+        List<WmsWarehouse> warehouses = wmsWarehouseService.list(
                 new QueryWrapper<WmsWarehouse>().eq("warehouse_type", warehouseType));
         if (warehouses == null || warehouses.isEmpty()) {
-            return java.util.Collections.emptyList();
+            return Collections.emptyList();
         }
-        java.util.List<String> ids = new java.util.ArrayList<>();
+        List<String> ids = new ArrayList<>();
         for (WmsWarehouse w : warehouses) {
             ids.add(w.getId());
         }

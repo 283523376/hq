@@ -94,5 +94,5 @@ public interface IWmsLocationService extends IService<WmsLocation> {
      *
      * @param warehouseType 库区类型（立库/线边柜 等）；空返回空列表
      */
-    List<org.jeecg.modules.wms.entity.WmsLocation> listFreeByWarehouseType(String warehouseType);
+    List<WmsLocation> listFreeByWarehouseType(String warehouseType);
 }
