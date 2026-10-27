@@ -16,7 +16,24 @@ import java.util.Map;
 /**
  * @Description: CK-001 生产领料 → 金蝶 PRD_PickMtrl（Save + Submit）。
  *
- * <p>组织跟随生产订单；幂等键 FBillNo = WMS 出库单号。
+ * <p><b>2026-10-27 真机校准</b>：本类此前只有单测、从未打过真机，按原报文**上线必然失败**
+ * （金蝶只会回一句「分录"明细"是必填项」，不指名缺哪个字段）。按官方 Save 样例 + 逐项报错反推，
+ * 补齐了下列必填项：
+ * <ul>
+ *   <li><b>{@code FParentMaterialId} 父项物料</b>——给哪个产品领料。最关键的一项，
+ *       缺它金蝶只报「分录明细是必填项」</li>
+ *   <li><b>{@code FPPBomBillNo} / {@code FPPBomEntryId}</b>——关联**已审核**的生产用料清单分录</li>
+ *   <li><b>{@code FWorkShopId} / {@code FEntryWorkShopId}</b>——车间，单头与分录都要给（金蝶报「车间必录」）</li>
+ *   <li><b>数量组五个字段</b>：FAppQty / FActualQty / FBaseActualQty / FStockActualQty /
+ *       FBaseStockActualQty，必须齐全且一致（少 FBaseStockActualQty 会报「基本单位实发数量、
+ *       主库存基本单位数量要一致」）</li>
+ *   <li><b>{@code FSerialSubEntity} 必须放在分录里</b>——放单据头上会报 BillHead 不存在该属性</li>
+ * </ul>
+ *
+ * <p><b>前置校验</b>（先给出可执行的中文原因，避免把金蝶的原始报错直接甩给用户）：
+ * 生产订单已审核 → 用料清单存在且已审核 → 批号存在且可用 → 领料仓有可用库存。
+ *
+ * <p>组织跟随生产订单；幂等键 FBillNo = WMS 出库单号（后续「ERP 单号为准」改造会调整）。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-10-21
@@ -26,6 +43,8 @@ import java.util.Map;
 public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
 
     private static final String FORM_ID = "PRD_PickMtrl";
+    /** 批号主档「可用」状态值；新建批号不传该字段时默认 T（不可用），领料会报「批号已作废」。 */
+    private static final String LOT_STATUS_USABLE = "2";
 
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
@@ -45,6 +64,7 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
         }
         String billNo = order.getOutboundNo();
         try {
+            // 1) 幂等：已存在则按状态处理
             WmsKingdeeResult existing = formClient.executeBillQuery(FORM_ID, "FBillNo,FDocumentStatus",
                     "FBillNo='" + billNo.replace("'", "''") + "'", 1);
             if (!existing.isSuccess()) {
@@ -58,23 +78,73 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
                 return submit(billNo);
             }
 
-            String orgNumber = lookup.orgNumberForWorkOrder(order.getWorkOrderNo());
-            if (oConvertUtils.isEmpty(orgNumber)) {
+            // 2) 生产订单：组织、车间、父项物料（必须已审核，PPBOM 才会自动审核）
+            WmsKingdeeResult moResult = formClient.executeBillQuery("PRD_MO",
+                    "FID,FTreeEntity_FEntryId,FTreeEntity_FSeq,FMaterialId.FNumber,"
+                            + "FPrdOrgId.FNumber,FWorkShopID.FNumber,FDocumentStatus",
+                    "FBillNo='" + order.getWorkOrderNo().replace("'", "''") + "'", 10);
+            if (!moResult.isSuccess() || moResult.getRows().isEmpty()) {
                 return WmsOrderSyncResult.fail("金蝶未找到生产订单：" + order.getWorkOrderNo());
             }
+            List<Object> mo = moResult.getRows().get(0);
+            String moStatus = mo.size() > 6 ? str(mo.get(6)) : "";
+            if (!"C".equals(moStatus)) {
+                return WmsOrderSyncResult.fail("生产订单[" + order.getWorkOrderNo()
+                        + "]未审核（金蝶状态 " + moStatus + "），审核后才能领料");
+            }
+            Long moId = toLong(mo.get(0));
+            Long moEntryId = toLong(mo.size() > 1 ? mo.get(1) : null);
+            Integer moEntrySeq = toInt(mo.size() > 2 ? mo.get(2) : null);
+            String parentMaterial = mo.size() > 3 ? str(mo.get(3)) : "";
+            String orgNumber = mo.size() > 4 ? str(mo.get(4)) : "";
+            String workshop = mo.size() > 5 ? str(mo.get(5)) : "";
+            if (moId == null || moEntryId == null) {
+                return WmsOrderSyncResult.fail("金蝶生产订单缺少主键/分录内码：" + order.getWorkOrderNo());
+            }
+            if (oConvertUtils.isEmpty(orgNumber)) {
+                return WmsOrderSyncResult.fail("金蝶生产订单未取到生产组织：" + order.getWorkOrderNo());
+            }
+            if (oConvertUtils.isEmpty(workshop)) {
+                return WmsOrderSyncResult.fail("金蝶生产订单未取到车间："
+                        + order.getWorkOrderNo() + "（生产领料单车间必录）");
+            }
+            if (oConvertUtils.isEmpty(parentMaterial)) {
+                return WmsOrderSyncResult.fail("金蝶生产订单未取到父项物料：" + order.getWorkOrderNo());
+            }
+
+            // 3) 用料清单：必须已审核，且要拿到「子项物料 → 分录内码」映射
+            Map<String, Long> ppbomEntryIds;
+            String ppbomBillNo;
+            WmsKingdeeResult ppbom = formClient.executeBillQuery("PRD_PPBOM", "FBillNo,FDocumentStatus",
+                    "FMoBillNo='" + order.getWorkOrderNo().replace("'", "''") + "'", 10);
+            if (!ppbom.isSuccess() || ppbom.getRows().isEmpty()) {
+                return WmsOrderSyncResult.fail("金蝶未找到工单[" + order.getWorkOrderNo()
+                        + "]的生产用料清单，无法领料");
+            }
+            ppbomBillNo = str(ppbom.getRows().get(0).get(0));
+            String ppbomStatus = str(ppbom.getRows().get(0).get(1));
+            if (!"C".equals(ppbomStatus)) {
+                return WmsOrderSyncResult.fail("生产用料清单[" + ppbomBillNo + "]未审核（金蝶状态 "
+                        + ppbomStatus + "），审核后才能领料");
+            }
+            WmsKingdeeResult ppbomView = formClient.view("PRD_PPBOM", ppbomBillNo);
+            if (!ppbomView.isSuccess()) {
+                return WmsOrderSyncResult.fail("读取用料清单[" + ppbomBillNo + "]明细失败："
+                        + ppbomView.getMessage());
+            }
+            ppbomEntryIds = parsePpbomEntries(ppbomView.getRaw());
+            if (ppbomEntryIds.isEmpty()) {
+                return WmsOrderSyncResult.fail("用料清单[" + ppbomBillNo + "]未解析到子项分录");
+            }
+
+            // 4) 仓库 / 仓位
             String stockCode = lookup.stockCode(orgNumber, "stereo");
             if (oConvertUtils.isEmpty(stockCode)) {
                 return WmsOrderSyncResult.fail("未配置金蝶仓库编码（stock-code.stereo，组织 " + orgNumber + "）");
             }
             Long stockLocId = lookup.stockLocId(stockCode);
 
-            Map<String, Object> model = new LinkedHashMap<>();
-            model.put("FBillNo", billNo);
-            model.put("FDate", formatDate());
-            model.put("FPrdOrgId", dict(orgNumber));
-            model.put("FStockOrgId", dict(orgNumber));
-            model.put("FBillType", dict(properties.getPickBillType()));
-
+            // 5) 组装分录
             List<Map<String, Object>> entries = new ArrayList<>();
             for (WmsOutboundDetail detail : details) {
                 String kingdeeCode = properties.getMaterialMap()
@@ -88,32 +158,80 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
                 if (oConvertUtils.isEmpty(unitNumber)) {
                     return WmsOrderSyncResult.fail("金蝶未找到单位编码（FUnitId=" + unitId + "）");
                 }
+
+                // 5.1 用料清单关联：拿不到分录内码说明这条物料不在该工单的用料清单里，领料无从谈起
+                Long ppbomEntryId = ppbomEntryIds.get(kingdeeCode);
+                if (ppbomEntryId == null) {
+                    return WmsOrderSyncResult.fail("物料[" + kingdeeCode + "]不在工单["
+                            + order.getWorkOrderNo() + "]的用料清单[" + ppbomBillNo + "]中，无法领料");
+                }
+
+                BigDecimal qty = nvl(detail.getActualQty());
+
+                // 5.2 批号：物料启用批号管理时必须存在且为「可用」状态，否则金蝶报「批号已作废」
+                String lot = detail.getBatchNo();
+                if (oConvertUtils.isNotEmpty(lot)) {
+                    String lotError = checkBatchUsable(kingdeeCode, lot);
+                    if (lotError != null) {
+                        return WmsOrderSyncResult.fail(lotError);
+                    }
+                }
+
+                // 5.3 库存：领料要扣库存，先在金蝶侧确认够（不够时给出比「更新库存出现异常」更可读的原因）
+                String stockError = checkStockAvailable(stockCode, kingdeeCode, lot, qty);
+                if (stockError != null) {
+                    return WmsOrderSyncResult.fail(stockError);
+                }
+
                 Map<String, Object> entry = new LinkedHashMap<>();
-                entry.put("FIsNew", false);
-                entry.put("FMoBillNo", order.getWorkOrderNo());
+                entry.put("FEntryID", 0);
+                // 父项物料：必须给，缺了金蝶只报「分录明细是必填项」
+                entry.put("FParentMaterialId", dict(parentMaterial));
                 entry.put("FMaterialId", dict(kingdeeCode));
                 entry.put("FUnitID", dict(unitNumber));
                 entry.put("FBaseUnitId", dict(unitNumber));
                 entry.put("FStockUnitId", dict(unitNumber));
+                // 数量组五连：单位一致时必须同值，缺 FBaseStockActualQty 会报「基本单位实发数量…要一致」
+                entry.put("FAppQty", qty);
+                entry.put("FActualQty", qty);
+                entry.put("FBaseActualQty", qty);
+                entry.put("FStockActualQty", qty);
+                entry.put("FBaseStockActualQty", qty);
+                entry.put("FStockId", dict(stockCode));
+                if (stockLocId != null) {
+                    entry.put("FStockLocId", stockLocId);
+                }
+                entry.put("FStockStatusId", dict(properties.getStockStatusId()));
                 entry.put("FOwnerTypeId", properties.getOwnerType());
                 entry.put("FOwnerId", dict(orgNumber));
                 entry.put("FKeeperTypeId", properties.getKeeperType());
                 entry.put("FKeeperId", dict(orgNumber));
                 entry.put("FParentOwnerTypeId", properties.getOwnerType());
                 entry.put("FParentOwnerId", dict(orgNumber));
-                entry.put("FStockId", dict(stockCode));
-                if (stockLocId != null) {
-                    entry.put("FStockLocId", stockLocId);
+                if (oConvertUtils.isNotEmpty(lot)) {
+                    entry.put("FLot", dict(lot));
                 }
-                entry.put("FStockStatusId", dict(properties.getStockStatusId()));
-                if (oConvertUtils.isNotEmpty(detail.getBatchNo())) {
-                    entry.put("FLot", dict(detail.getBatchNo()));
-                }
-                entry.put("FRealQty", nvl(detail.getActualQty()));
+                // 源单/用料清单关联（缺 PPBOM 关联会报「用料清单编号在列表里无法找到」）
+                entry.put("FEntryWorkShopId", dict(workshop));
+                entry.put("FMoBillNo", order.getWorkOrderNo());
+                entry.put("FMoId", moId);
+                entry.put("FMoEntryId", moEntryId);
+                entry.put("FMoEntrySeq", moEntrySeq);
+                entry.put("FPPBomBillNo", ppbomBillNo);
+                entry.put("FPPBomEntryId", ppbomEntryId);
+                // 序列号子单据体在**分录内**（放头上会报 BillHead 不存在该属性）
+                entry.put("FSerialSubEntity", List.of(Map.of("FIsAppInspect", false)));
                 entries.add(entry);
             }
+
+            Map<String, Object> model = new LinkedHashMap<>();
+            model.put("FBillNo", billNo);
+            model.put("FDate", formatDate());
+            model.put("FPrdOrgId", dict(orgNumber));
+            model.put("FStockOrgId", dict(orgNumber));
+            model.put("FWorkShopId", dict(workshop));
+            model.put("FBillType", dict(properties.getPickBillType()));
             model.put("FEntity", entries);
-            model.put("FSerialSubEntity", List.of(Map.of("FIsAppInspect", false)));
 
             WmsKingdeeResult saved = formClient.save(FORM_ID, model);
             if (!saved.isSuccess()) {
@@ -124,6 +242,110 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
             log.warn("领料出库[{}]回写金蝶异常：{}", billNo, e.getMessage());
             return WmsOrderSyncResult.fail("回写金蝶异常：" + e.getMessage());
         }
+    }
+
+    /**
+     * 解析用料清单 View 结果：{@code Result.Result.PPBomEntry[].{Id, MaterialID.Number}}。
+     *
+     * <p>为什么必须走 View：PPBOM 的分录内码在 {@code ExecuteBillQuery} 里没有可查询字段
+     * （FEntryId/FPPBomEntryId 都报「字段不存在」），只有 View 返回的 {@code PPBomEntry[].Id} 能用。
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Long> parsePpbomEntries(String raw) {
+        Map<String, Long> result = new LinkedHashMap<>();
+        if (oConvertUtils.isEmpty(raw)) {
+            return result;
+        }
+        try {
+            com.alibaba.fastjson2.JSONObject root = com.alibaba.fastjson2.JSON.parseObject(raw);
+            com.alibaba.fastjson2.JSONObject res = root.getJSONObject("Result");
+            com.alibaba.fastjson2.JSONObject bill = res == null ? null : res.getJSONObject("Result");
+            if (bill == null) {
+                return result;
+            }
+            com.alibaba.fastjson2.JSONArray rows = bill.getJSONArray("PPBomEntry");
+            if (rows == null) {
+                return result;
+            }
+            for (int i = 0; i < rows.size(); i++) {
+                com.alibaba.fastjson2.JSONObject row = rows.getJSONObject(i);
+                com.alibaba.fastjson2.JSONObject material = row.getJSONObject("MaterialID");
+                String number = material == null ? null : material.getString("Number");
+                Long entryId = row.getLong("Id");
+                if (oConvertUtils.isNotEmpty(number) && entryId != null) {
+                    result.put(number, entryId);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("解析用料清单明细失败：{}", e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * 批号校验：必须存在且 {@code FLotStatus=2}（可用）。
+     *
+     * <p>踩过的坑：新建批号若不带 FLotStatus，金蝶默认给 T（不可用），领料时报
+     * 「批号已作废或批号状态不正确」——这条错误对用户毫无指向性。
+     *
+     * @return null 表示通过；否则返回给用户看的原因
+     */
+    private String checkBatchUsable(String materialCode, String lot) {
+        WmsKingdeeResult batch = formClient.executeBillQuery("BD_BatchMainFile",
+                "FNumber,FMaterialId.FNumber,FLotStatus",
+                "FNumber='" + lot.replace("'", "''") + "' AND FMaterialId.FNumber='"
+                        + materialCode.replace("'", "''") + "'", 5);
+        if (!batch.isSuccess()) {
+            // 查询失败不拦路：交给金蝶在保存时判
+            log.warn("批号[{}]校验查询失败：{}", lot, batch.getMessage());
+            return null;
+        }
+        if (batch.getRows().isEmpty()) {
+            return "批号[" + lot + "]在物料[" + materialCode + "]下不存在，请先在金蝶创建批号主档";
+        }
+        String status = batch.getRows().get(0).size() > 2 ? str(batch.getRows().get(0).get(2)) : "";
+        if (!LOT_STATUS_USABLE.equals(status)) {
+            return "批号[" + lot + "]状态为 " + status + "（非可用），金蝶拒绝领料；"
+                    + "请在批号主档把状态改为可用（FLotStatus=2）";
+        }
+        return null;
+    }
+
+    /**
+     * 库存校验：领料要扣库存，先确认金蝶侧够发。
+     *
+     * <p>不查的话，金蝶会在**审核**阶段才报「更新库存出现异常情况」——那时单据已生成，
+     * 用户还得手工删单，体验很差。
+     *
+     * @return null 表示通过；否则返回给用户看的原因
+     */
+    private String checkStockAvailable(String stockCode, String materialCode, String lot, BigDecimal qty) {
+        StringBuilder filter = new StringBuilder("FStockId.FNumber='")
+                .append(stockCode.replace("'", "''"))
+                .append("' AND FMaterialId.FNumber='").append(materialCode.replace("'", "''")).append("'");
+        if (oConvertUtils.isNotEmpty(lot)) {
+            filter.append(" AND FLot.FNumber='").append(lot.replace("'", "''")).append("'");
+        }
+        WmsKingdeeResult inventory = formClient.executeBillQuery("STK_Inventory",
+                "FQty", filter.toString(), 200);
+        if (!inventory.isSuccess()) {
+            log.warn("库存校验查询失败（不拦路）：{}", inventory.getMessage());
+            return null;
+        }
+        BigDecimal available = BigDecimal.ZERO;
+        for (List<Object> row : inventory.getRows()) {
+            if (!row.isEmpty() && row.get(0) != null) {
+                available = available.add(new BigDecimal(str(row.get(0))));
+            }
+        }
+        if (available.compareTo(qty) < 0) {
+            return "金蝶仓库[" + stockCode + "]物料[" + materialCode + "]"
+                    + (oConvertUtils.isEmpty(lot) ? "" : "批号[" + lot + "]")
+                    + "可用库存 " + available.stripTrailingZeros().toPlainString()
+                    + " 少于领料数量 " + qty.stripTrailingZeros().toPlainString()
+                    + "，请先入库或调整领料数量";
+        }
+        return null;
     }
 
     private WmsOrderSyncResult submit(String number) {
@@ -149,5 +371,18 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
 
     private String str(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private Long toLong(Object value) {
+        try {
+            return value == null ? null : Long.valueOf(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Integer toInt(Object value) {
+        Long parsed = toLong(value);
+        return parsed == null ? 1 : parsed.intValue();
     }
 }

@@ -23,12 +23,24 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * @Description: PRD_PickMtrl 回写：组织跟随工单、必填字段、幂等、mock。
+ * @Description: PRD_PickMtrl 回写单测。
+ *
+ * <p>重点覆盖 2026-10-27 真机校准后的两件事：
+ * <ol>
+ *   <li><b>必填字段</b>：父项物料 / PPBOM 关联 / 车间 / 数量组五连 / 分录内序列号子单据体</li>
+ *   <li><b>前置校验</b>：生产订单已审核、用料清单已审核、批号可用、库存充足——
+ *       不满足时要在**调用金蝶 Save 之前**给出可执行原因</li>
+ * </ol>
  *
  * @Author: 永鑫WMS
  * @Date: 2026-10-21
  */
 class WmsKingdeePickWriterImplTest {
+
+    /** PPBOM View 返回的原始报文：一个子项分录，内码 555 */
+    private static final String PPBOM_VIEW_JSON =
+            "{\"Result\":{\"ResponseStatus\":{\"IsSuccess\":true},\"Result\":{\"BillNo\":\"PPBOM001\","
+                    + "\"PPBomEntry\":[{\"Id\":555,\"MaterialID\":{\"Number\":\"WA.1\"}}]}}}";
 
     private WmsKingdeeFormClient formClient;
     private WmsKingdeeProperties properties;
@@ -48,13 +60,34 @@ class WmsKingdeePickWriterImplTest {
         lookup = mock(WmsKingdeeLookupSupport.class);
         writer = new WmsKingdeePickWriterImpl(formClient, properties, lookup);
 
-        when(lookup.orgNumberForWorkOrder("MO1")).thenReturn("100");
-        when(lookup.material("WA.1", "100")).thenReturn(List.of(123L, "WA.1", "半成品", 456L, 1L, "100"));
+        when(lookup.material("WA.1", "100")).thenReturn(List.of(123L, "WA.1", "子项", 456L, 1L, "100"));
         when(lookup.unitNumber(456L)).thenReturn("zhi");
         when(lookup.stockCode("100", "stereo")).thenReturn("02.002");
         when(lookup.stockLocId("02.002")).thenReturn(null);
+
+        stubHappyPath();
+    }
+
+    private void stubHappyPath() {
+        // 幂等查询：不存在
         when(formClient.executeBillQuery(eq("PRD_PickMtrl"), anyString(), anyString(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+        // 生产订单：已审核、组织 100、车间 201011、父项物料 WA.PARENT
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        List.of(List.of(100008, 100007, 1, "WA.PARENT", "100", "201011", "C")),
+                        null, null));
+        // 用料清单：已审核
+        when(formClient.executeBillQuery(eq("PRD_PPBOM"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("PPBOM001", "C")), null, null));
+        when(formClient.view("PRD_PPBOM", "PPBOM001"))
+                .thenReturn(WmsKingdeeResult.ok(PPBOM_VIEW_JSON, null, null, null));
+        // 批号：可用
+        when(formClient.executeBillQuery(eq("BD_BatchMainFile"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("B1", "WA.1", "2")), null, null));
+        // 库存：充足
+        when(formClient.executeBillQuery(eq("STK_Inventory"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(100)), null, null));
         when(formClient.save(eq("PRD_PickMtrl"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "SCLL001", "id1"));
         when(formClient.submit(eq("PRD_PickMtrl"), eq(List.of("SCLL001"))))
@@ -76,71 +109,115 @@ class WmsKingdeePickWriterImplTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void write_buildsRequiredFields() {
+    void write_buildsAllRequiredFields() {
         assertTrue(writer.write(order(), List.of(detail())).isSuccess());
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(formClient).save(eq("PRD_PickMtrl"), captor.capture());
         Map<String, Object> model = captor.getValue();
+
         assertEquals("LL1", model.get("FBillNo"));
         assertEquals("100", ((Map<?, ?>) model.get("FPrdOrgId")).get("FNumber"));
         assertEquals("100", ((Map<?, ?>) model.get("FStockOrgId")).get("FNumber"));
         assertEquals("SCLLD01_SYS", ((Map<?, ?>) model.get("FBillType")).get("FNumber"));
+        // 车间必录（单头）
+        assertEquals("201011", ((Map<?, ?>) model.get("FWorkShopId")).get("FNumber"));
 
         List<Map<String, Object>> entries = (List<Map<String, Object>>) model.get("FEntity");
+        assertEquals(1, entries.size());
         Map<String, Object> entry = entries.get(0);
+
+        // 父项物料：缺它金蝶只报「分录明细是必填项」
+        assertEquals("WA.PARENT", ((Map<?, ?>) entry.get("FParentMaterialId")).get("FNumber"));
         assertEquals("WA.1", ((Map<?, ?>) entry.get("FMaterialId")).get("FNumber"));
-        assertEquals("02.002", ((Map<?, ?>) entry.get("FStockId")).get("FNumber"));
+        // 分录车间
+        assertEquals("201011", ((Map<?, ?>) entry.get("FEntryWorkShopId")).get("FNumber"));
+        // 用料清单关联
+        assertEquals("PPBOM001", entry.get("FPPBomBillNo"));
+        assertEquals(555L, entry.get("FPPBomEntryId"));
+        // 生产订单关联
         assertEquals("MO1", entry.get("FMoBillNo"));
-        assertEquals("100", ((Map<?, ?>) entry.get("FParentOwnerId")).get("FNumber"));
-        assertEquals("100", ((Map<?, ?>) entry.get("FKeeperId")).get("FNumber"));
-        assertEquals("KCZT01_SYS", ((Map<?, ?>) entry.get("FStockStatusId")).get("FNumber"));
-        assertEquals(0, ((BigDecimal) entry.get("FRealQty")).compareTo(new BigDecimal("10")));
-        assertEquals("B1", ((Map<?, ?>) entry.get("FLot")).get("FNumber"));
-        assertFalse(((List<?>) model.get("FSerialSubEntity")).isEmpty());
-        verify(formClient).submit("PRD_PickMtrl", List.of("SCLL001"));
+        assertEquals(100008L, entry.get("FMoId"));
+        assertEquals(100007L, entry.get("FMoEntryId"));
+        // 数量组五连必须齐全且一致
+        BigDecimal qty = new BigDecimal("10");
+        for (String key : List.of("FAppQty", "FActualQty", "FBaseActualQty",
+                "FStockActualQty", "FBaseStockActualQty")) {
+            assertEquals(0, qty.compareTo((BigDecimal) entry.get(key)), key + " 必须等于实发数量");
+        }
+        // 序列号子单据体在分录里
+        assertTrue(entry.containsKey("FSerialSubEntity"), "FSerialSubEntity 必须在分录内");
+        verify(formClient).submit(eq("PRD_PickMtrl"), eq(List.of("SCLL001")));
     }
 
     @Test
-    void write_existingAudited_isIdempotent() {
-        when(formClient.executeBillQuery(eq("PRD_PickMtrl"), anyString(), anyString(), anyInt()))
-                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("LL1", "C")), null, null));
-
-        assertTrue(writer.write(order(), List.of(detail())).isSuccess());
-        verify(formClient, never()).save(anyString(), any());
-        verify(formClient, never()).submit(anyString(), any());
-    }
-
-    @Test
-    void write_existingDraft_submits() {
-        when(formClient.executeBillQuery(eq("PRD_PickMtrl"), anyString(), anyString(), anyInt()))
-                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("LL1", "A")), null, null));
-        when(formClient.submit("PRD_PickMtrl", List.of("LL1")))
-                .thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
-
-        assertTrue(writer.write(order(), List.of(detail())).isSuccess());
-        verify(formClient, never()).save(anyString(), any());
-    }
-
-    @Test
-    void write_moNotFound_fails() {
-        when(lookup.orgNumberForWorkOrder("MO1")).thenReturn(null);
+    void write_rejectsUnauditedWorkOrder() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        List.of(List.of(100008, 100007, 1, "WA.PARENT", "100", "201011", "A")),
+                        null, null));
 
         WmsOrderSyncResult result = writer.write(order(), List.of(detail()));
 
         assertFalse(result.isSuccess());
-        assertTrue(result.getErrorMessage().contains("未找到生产订单"));
+        assertTrue(result.getErrorMessage().contains("未审核"), result.getErrorMessage());
         verify(formClient, never()).save(anyString(), any());
     }
 
     @Test
-    void write_kingdeeDisabled_returnsMock() {
-        properties.setEnabled(false);
+    void write_rejectsUnauditedPpbom() {
+        when(formClient.executeBillQuery(eq("PRD_PPBOM"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("PPBOM001", "A")), null, null));
 
         WmsOrderSyncResult result = writer.write(order(), List.of(detail()));
 
-        assertTrue(result.isSuccess());
-        assertTrue(result.isMocked());
-        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("用料清单"), result.getErrorMessage());
+        assertTrue(result.getErrorMessage().contains("未审核"), result.getErrorMessage());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    @Test
+    void write_rejectsMaterialNotInPpbom() {
+        when(formClient.view("PRD_PPBOM", "PPBOM001")).thenReturn(WmsKingdeeResult.ok(
+                "{\"Result\":{\"Result\":{\"PPBomEntry\":[{\"Id\":9,\"MaterialID\":{\"Number\":\"OTHER\"}}]}}}",
+                null, null, null));
+
+        WmsOrderSyncResult result = writer.write(order(), List.of(detail()));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("用料清单"), result.getErrorMessage());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    @Test
+    void write_rejectsUnusableBatch() {
+        when(formClient.executeBillQuery(eq("BD_BatchMainFile"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("B1", "WA.1", "T")), null, null));
+
+        WmsOrderSyncResult result = writer.write(order(), List.of(detail()));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("批号"), result.getErrorMessage());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    @Test
+    void write_rejectsInsufficientStock() {
+        when(formClient.executeBillQuery(eq("STK_Inventory"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(3)), null, null));
+
+        WmsOrderSyncResult result = writer.write(order(), List.of(detail()));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("库存"), result.getErrorMessage());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    @Test
+    void write_whenDisabled_returnsMock() {
+        properties.setEnabled(false);
+        assertTrue(writer.write(order(), List.of(detail())).isMocked());
+        verify(formClient, never()).save(anyString(), any());
     }
 }
