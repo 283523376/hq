@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
 /**
  * @Description: 生产工单服务：扫码查询、MES 推送/回源、手工维护与删除守卫。
@@ -140,6 +141,9 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
             source = order.getSource();
             status = statusRank(incomingStatus) > statusRank(order.getWorkOrderStatus())
                     ? incomingStatus : order.getWorkOrderStatus();
+        }
+        if (!create) {
+            assertProductionFactsUntouched(order, material, dto.getPlanQty(), dto.getProductType());
         }
         order.setWorkOrderNo(dto.getWorkOrderNo().trim())
                 .setMaterialId(material.getId())
@@ -275,6 +279,31 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         }
         if (order.getPlanQty().compareTo(new BigDecimal("999999999.999")) > 0) {
             throw new RuntimeException("计划数量超出可录入范围");
+        }
+    }
+
+    /**
+     * 已投产（有入库记录）的工单，推送不得改写物料/产品类型，也不得把计划数量降到已入库量以下。
+     *
+     * <p>ERP 是主数据的权威来源，但**已经发生的生产与入库**是既成事实：换物料会让库存记录
+     * 与工单对不上，把计划量降到已入库量以下会让「剩余可入库量」变成负数。
+     */
+    private void assertProductionFactsUntouched(WmsWorkOrder existing, WmsMaterial material,
+                                                BigDecimal newPlanQty, String newProductType) {
+        BigDecimal inbounded = inboundMapper.sumInboundedQty(existing.getWorkOrderNo());
+        if (inbounded == null || inbounded.signum() <= 0) {
+            return;
+        }
+        boolean materialChanged = material != null
+                && !Objects.equals(existing.getMaterialId(), material.getId());
+        boolean productTypeChanged = oConvertUtils.isNotEmpty(newProductType)
+                && !Objects.equals(existing.getProductType(), newProductType);
+        if (materialChanged || productTypeChanged) {
+            throw new RuntimeException("工单已投料/入库，不允许变更物料或产品类型");
+        }
+        if (newPlanQty != null && newPlanQty.compareTo(inbounded) < 0) {
+            throw new RuntimeException("计划数量不能小于已入库数量 "
+                    + inbounded.stripTrailingZeros().toPlainString());
         }
     }
 

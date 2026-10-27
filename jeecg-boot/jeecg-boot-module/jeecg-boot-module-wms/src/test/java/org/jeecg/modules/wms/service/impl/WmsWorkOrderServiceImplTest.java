@@ -354,6 +354,67 @@ class WmsWorkOrderServiceImplTest {
         assertEquals("计划数量超出可录入范围", e.getMessage());
     }
 
+    // ------------------------------------------- 已投产工单的推送守卫（防覆盖生产事实）
+
+    private WmsWorkOrderPushDTO pushableDtoWithInbounded(String inbounded) {
+        WmsWorkOrderPushDTO dto = pushableDto();
+        when(inboundMapper.sumInboundedQty("WO1")).thenReturn(new BigDecimal(inbounded));
+        return dto;
+    }
+
+    @Test
+    void push_lowerPlanQtyBelowInbounded_isRejected() {
+        WmsWorkOrderPushDTO dto = pushableDtoWithInbounded("8");
+        // 物料/产品类型未变，只有计划量被调低——单独验证「计划量不得低于已入库量」这条守卫
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("MES").setWorkOrderStatus("生产中")
+                .setMaterialId("m1").setProductType("半成品"));
+        dto.setPlanQty(new BigDecimal("5"));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
+        assertTrue(e.getMessage().startsWith("计划数量不能小于已入库数量"));
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never())
+                .updateById(any(WmsWorkOrder.class));
+    }
+
+    @Test
+    void push_changeMaterialAfterInbound_isRejected() {
+        WmsWorkOrderPushDTO dto = pushableDtoWithInbounded("8");
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("MES").setWorkOrderStatus("生产中")
+                .setMaterialId("other-material"));
+        dto.setPlanQty(new BigDecimal("100"));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
+        assertEquals("工单已投料/入库，不允许变更物料或产品类型", e.getMessage());
+    }
+
+    @Test
+    void push_changeProductTypeAfterInbound_isRejected() {
+        WmsWorkOrderPushDTO dto = pushableDtoWithInbounded("8");
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("MES").setWorkOrderStatus("生产中")
+                .setMaterialId("m1").setProductType("成品"));
+        dto.setPlanQty(new BigDecimal("100"));
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.push(dto));
+        assertEquals("工单已投料/入库，不允许变更物料或产品类型", e.getMessage());
+    }
+
+    /** 未投产时改物料/计划量是正常的工程变更，不得误拦。 */
+    @Test
+    void push_changeMaterialBeforeAnyInbound_isAccepted() {
+        WmsWorkOrderPushDTO dto = pushableDtoWithInbounded("0");
+        when(mapper.selectOne(any())).thenReturn(new WmsWorkOrder()
+                .setWorkOrderNo("WO1").setSource("MES").setWorkOrderStatus("生产中")
+                .setMaterialId("other-material").setProductType("成品"));
+        dto.setPlanQty(new BigDecimal("100"));
+
+        service.push(dto);
+
+        assertEquals("m1", capturedOnUpdate().getMaterialId());
+    }
+
     /** 尾部 0 不算精度：ERP 常见 {@code 10.000000} 必须放行。 */
     @Test
     void push_planQtyWithTrailingZeros_isAccepted() {
