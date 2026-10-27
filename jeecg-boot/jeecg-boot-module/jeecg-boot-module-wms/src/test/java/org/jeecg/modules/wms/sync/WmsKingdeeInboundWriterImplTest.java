@@ -1,5 +1,6 @@
 package org.jeecg.modules.wms.sync;
 
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -289,5 +290,35 @@ class WmsKingdeeInboundWriterImplTest {
         assertFalse(result.isSuccess());
         assertTrue(result.getErrorMessage().contains("启用仓位管理"));
         verify(formClient, never()).save(anyString(), any());
+    }
+
+    /**
+     * 半成品被金蝶以「BOM版本不能为空」拒绝时，必须打 {@code [BOM_PENDING]} 前缀：
+     * 前端据此把「同步金蝶」置灰，避免用户对着必然失败的按钮反复重试。
+     */
+    @Test
+    void write_bomRejection_markedAsBlocked() {
+        stubHappyPath();
+        when(formClient.save(eq("PRD_INSTOCK"), any())).thenReturn(
+                WmsKingdeeResult.fail("单据编号为“X”的生产入库单，第1行分录，物料启用BOM版本管理，BOM版本不能为空"));
+
+        WmsOrderSyncResult result = writer.write(inbound("1", "1"));
+
+        assertTrue(!result.isSuccess());
+        assertTrue(result.getErrorMessage().startsWith(WmsConstants.SYNC_BLOCK_BOM_PENDING),
+                "必须以固定前缀标识，实际：" + result.getErrorMessage());
+        assertTrue(result.getErrorMessage().contains("BOM版本不能为空"), "要保留金蝶原文便于排查");
+    }
+
+    /** 其它保存失败不得被打上 BOM 标记，否则用户会被告知错误的原因。 */
+    @Test
+    void write_otherSaveFailure_notMarkedAsBom() {
+        stubHappyPath();
+        when(formClient.save(eq("PRD_INSTOCK"), any())).thenReturn(
+                WmsKingdeeResult.fail("金蝶生产入库保存失败：必录字段为空"));
+
+        WmsOrderSyncResult result = writer.write(inbound("1", "1"));
+
+        assertTrue(!result.getErrorMessage().startsWith(WmsConstants.SYNC_BLOCK_BOM_PENDING));
     }
 }

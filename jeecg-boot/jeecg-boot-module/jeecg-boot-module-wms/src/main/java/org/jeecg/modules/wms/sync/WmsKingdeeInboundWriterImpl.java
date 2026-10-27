@@ -231,7 +231,17 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             // 5) Save + Submit
             WmsKingdeeResult saved = formClient.save(FORM_ID, model);
             if (!saved.isSuccess()) {
-                return WmsOrderSyncResult.fail("金蝶生产入库保存失败：" + saved.getMessage());
+                String savedMessage = saved.getMessage() == null ? "" : saved.getMessage();
+                // 半成品（物料启用 BOM 版本管理）目前无法回写：金蝶 PRD_INSTOCK 的
+                // FBomId 在 Save 时被服务端忽略（实测传任何值都报「BOM版本不能为空」，
+                // 字段元数据 IsEditVisible=false），必须由生产订单下推带出。
+                // 用固定前缀标识出来，前端据此禁用重试按钮。
+                if (savedMessage.contains("BOM版本")) {
+                    return WmsOrderSyncResult.fail(WmsConstants.SYNC_BLOCK_BOM_PENDING
+                            + "半成品回写需从生产订单下推带出 BOM 版本，正在与金蝶确认方案，暂不支持自动回写；"
+                            + "金蝶原文：" + savedMessage);
+                }
+                return WmsOrderSyncResult.fail("金蝶生产入库保存失败：" + savedMessage);
             }
             String number = oConvertUtils.isEmpty(saved.getNumber()) ? billNo : saved.getNumber();
             return submit(number);

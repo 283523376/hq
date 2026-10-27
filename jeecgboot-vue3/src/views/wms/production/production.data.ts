@@ -1,4 +1,4 @@
-import { Tag } from 'ant-design-vue';
+import { Tag, Tooltip } from 'ant-design-vue';
 import { h } from 'vue';
 import { BasicColumn, FormSchema } from '/@/components/Table';
 
@@ -81,8 +81,15 @@ export const columns: BasicColumn[] = [
     title: '同步状态',
     align: 'center',
     dataIndex: 'syncStatus',
-    width: 110,
-    customRender: ({ text }) => h(Tag, { color: syncStatusColor[text] || 'default' }, () => text),
+    width: 150,
+    customRender: ({ text, record }) =>
+      isBomBlocked(record)
+        ? h(
+            Tooltip,
+            { title: bomBlockedReason(record) },
+            () => h(Tag, { color: 'warning' }, () => '同步失败·BOM待确认'),
+          )
+        : h(Tag, { color: syncStatusColor[text] || 'default' }, () => text),
   },
   { title: '提交时间', align: 'center', dataIndex: 'submitTime', width: 170 },
 ];
@@ -119,3 +126,22 @@ export const searchFormSchema: FormSchema[] = [
     colProps: { span: 6 },
   },
 ];
+
+/**
+ * 「半成品回写被 BOM 版本阻塞」判定。
+ *
+ * <p>后端对这类失败会在 last_sync_error 打 {@code [BOM_PENDING]} 前缀（金蝶 PRD_INSTOCK 的
+ * BOM 版本字段在 Save 时不可写，必须由生产订单下推带出，方案待金蝶确认）。
+ * 兼容历史数据：老记录没有前缀，但错误原文含「BOM版本」。
+ */
+export function isBomBlocked(record: any): boolean {
+  const err = String(record?.lastSyncError || '');
+  return err.includes('[BOM_PENDING]') || err.includes('BOM版本');
+}
+
+export function bomBlockedReason(record: any): string {
+  const err = String(record?.lastSyncError || '')
+    .replace('[BOM_PENDING]', '')
+    .trim();
+  return err || '半成品回写需从生产订单下推带出 BOM 版本，方案待金蝶确认，暂不可重试';
+}

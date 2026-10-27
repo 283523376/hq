@@ -129,6 +129,7 @@
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { useWmsSyncMode } from '../common/useWmsSyncMode';
+  import { isBomBlocked, bomBlockedReason } from './production.data';
   import { columns, searchFormSchema } from './production.data';
   import {
     closeProductionInbound,
@@ -300,8 +301,16 @@
         onClick: () => handleClose(record),
       });
     }
-    // 自动同步关闭时后台不再续跑，待同步的单据要靠这里手工推；同步失败则两种模式都可重试
-    if (record.syncStatus === '同步失败' || (manualOnly.value && record.syncStatus === '待同步')) {
+    // 半成品被 BOM 版本阻塞：金蝶侧字段不可写，重试必然失败，按钮置灰并说明原因
+    if (isBomBlocked(record)) {
+      actions.push({
+        label: '同步金蝶',
+        auth: 'wms:production:sync',
+        disabled: true,
+        tooltip: { title: bomBlockedReason(record) },
+      });
+    } else if (record.syncStatus === '同步失败' || (manualOnly.value && record.syncStatus === '待同步')) {
+      // 自动同步关闭时后台不再续跑，待同步的单据要靠这里手工推；同步失败则两种模式都可重试
       actions.push({
         label: manualOnly.value ? '同步金蝶' : '重试同步',
         auth: 'wms:production:sync',
