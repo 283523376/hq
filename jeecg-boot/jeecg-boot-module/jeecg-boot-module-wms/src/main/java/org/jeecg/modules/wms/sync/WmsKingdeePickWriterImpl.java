@@ -317,6 +317,11 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
      * <p>不查的话，金蝶会在**审核**阶段才报「更新库存出现异常情况」——那时单据已生成，
      * 用户还得手工删单，体验很差。
      *
+     * <p><b>取 {@code FBaseQty} 而不是 {@code FQty}</b>（2026-10-27 真机校准）：领料单上报的是
+     * 基本单位数量（{@code FBaseActualQty}），而 {@code FQty}（库存单位数量）在物料「库存信息」
+     * 未单独维护库存单位时会停留为 0——真机上正是 10 件库存在手、{@code FQty} 却读成 0，
+     * 用 FQty 判库存会把正常领料全部误拦。
+     *
      * @return null 表示通过；否则返回给用户看的原因
      */
     private String checkStockAvailable(String stockCode, String materialCode, String lot, BigDecimal qty) {
@@ -327,7 +332,7 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
             filter.append(" AND FLot.FNumber='").append(lot.replace("'", "''")).append("'");
         }
         WmsKingdeeResult inventory = formClient.executeBillQuery("STK_Inventory",
-                "FQty", filter.toString(), 200);
+                "FBaseQty", filter.toString(), 200);
         if (!inventory.isSuccess()) {
             log.warn("库存校验查询失败（不拦路）：{}", inventory.getMessage());
             return null;

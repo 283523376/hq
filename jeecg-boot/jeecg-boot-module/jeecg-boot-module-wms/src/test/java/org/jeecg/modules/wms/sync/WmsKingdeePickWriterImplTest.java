@@ -214,6 +214,19 @@ class WmsKingdeePickWriterImplTest {
         verify(formClient, never()).save(anyString(), any());
     }
 
+    /**
+     * 2026-10-27 真机踩坑：库存表里 FQty（库存单位数量）可能为 0，而 FBaseQty（基本单位数量）
+     * 才是真实库存——用 FQty 判库存会把正常领料全部误拦，所以校验必须查 FBaseQty。
+     */
+    @Test
+    void write_checksStockByBaseQty() {
+        assertTrue(writer.write(order(), List.of(detail())).isSuccess());
+
+        ArgumentCaptor<String> fields = ArgumentCaptor.forClass(String.class);
+        verify(formClient).executeBillQuery(eq("STK_Inventory"), fields.capture(), anyString(), anyInt());
+        assertEquals("FBaseQty", fields.getValue());
+    }
+
     @Test
     void write_whenDisabled_returnsMock() {
         properties.setEnabled(false);
