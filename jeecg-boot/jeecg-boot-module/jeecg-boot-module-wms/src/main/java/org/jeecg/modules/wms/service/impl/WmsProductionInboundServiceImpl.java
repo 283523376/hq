@@ -18,6 +18,7 @@ import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
 import org.jeecg.modules.wms.mapper.WmsInventoryMapper;
 import org.jeecg.modules.wms.mapper.WmsLocationMapper;
+import org.jeecg.modules.wms.service.IWmsStocktakeService;
 import org.jeecg.modules.wms.mapper.WmsProductionInboundMapper;
 import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
 import org.jeecg.modules.wms.mapper.WmsWorkOrderMapper;
@@ -53,6 +54,10 @@ public class WmsProductionInboundServiceImpl
 
     @Autowired
     private WmsLocationMapper locationMapper;
+
+    /** 盘点重盘标记（可空：盘点模块可能尚未参与）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private IWmsStocktakeService stocktakeService;
 
     @Autowired
     private WmsWarehouseMapper warehouseMapper;
@@ -231,6 +236,7 @@ public class WmsProductionInboundServiceImpl
                 return false;
             }
             writeGoodsInventory(record);
+            markRecheckIfFrozen(record);
             log.info("生产入库完成：单号={}，任务号={}，来源={}",
                     record.getInboundNo(), taskNo, rms ? "RMS" : "WCS");
             return true;
@@ -356,6 +362,19 @@ public class WmsProductionInboundServiceImpl
     }
 
     /** 良品库存写入（入库完成/转人工完成共用）。 */
+    /** 落账库位若正被盘点冻结，标重盘（在途任务不拒收，只提示重盘）。 */
+    private void markRecheckIfFrozen(WmsProductionInbound record) {
+        if (stocktakeService == null || record.getLocationId() == null) {
+            return;
+        }
+        try {
+            stocktakeService.markRecheck(record.getLocationId(), record.getMaterialId(),
+                    record.getBatchNo(), record.getStackCode());
+        } catch (Exception e) {
+            log.warn("生产入库重盘标记失败（不影响落账）：{}", e.getMessage());
+        }
+    }
+
     private void writeGoodsInventory(WmsProductionInbound record) {
         if (record.getGoodQty() == null || record.getGoodQty().signum() <= 0
                 || oConvertUtils.isEmpty(record.getLocationId())) {

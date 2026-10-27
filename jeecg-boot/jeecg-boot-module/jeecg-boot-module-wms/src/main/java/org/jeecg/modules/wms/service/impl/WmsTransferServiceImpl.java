@@ -22,6 +22,7 @@ import org.jeecg.modules.wms.mapper.WmsTransferDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsTransferOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsTransferTaskMapper;
 import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
+import org.jeecg.modules.wms.service.IWmsStocktakeService;
 import org.jeecg.modules.wms.service.IWmsTransferInventoryService;
 import org.jeecg.modules.wms.service.IWmsTransferService;
 import org.jeecg.modules.wms.service.IWmsTransferSyncService;
@@ -79,6 +80,10 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
 
     @Autowired
     private IWmsTransferInventoryService inventoryService;
+
+    /** 盘点重盘标记（可空：盘点模块可能尚未参与）。 */
+    @Autowired(required = false)
+    private IWmsStocktakeService stocktakeService;
 
     @Autowired
     private IWmsRmsGateway rmsGateway;
@@ -551,10 +556,28 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
         for (WmsTransferTask task : tasks) {
             WmsTransferDetail detail = detailMapper.selectById(task.getDetailId());
             inventoryService.deductSource(task);
+            // 在途期间若源/目标库位被盘点冻结，标重盘（实物已搬，不拒收落账）
+            markRecheck(order, detail, task);
             inventoryService.addToLocation(task, detail, detail.getInLocationId(), detail.getInLocationCode());
             detailMapper.updateById(detail);
         }
         completePhysical(order);
+    }
+
+    /** 移库落账前后的重盘标记；失败只告警不影响落账。 */
+    private void markRecheck(org.jeecg.modules.wms.entity.WmsTransferOrder order,
+                             WmsTransferDetail detail, WmsTransferTask task) {
+        if (stocktakeService == null || detail == null) {
+            return;
+        }
+        try {
+            stocktakeService.markRecheck(detail.getOutLocationId(), detail.getMaterialId(),
+                    detail.getBatchNo(), detail.getContainerCode());
+            stocktakeService.markRecheck(detail.getInLocationId(), detail.getMaterialId(),
+                    detail.getBatchNo(), detail.getContainerCode());
+        } catch (Exception e) {
+            log.warn("移库重盘标记失败（不影响落账）：{}", e.getMessage());
+        }
     }
 
     /** 实物完成：exec=实物完成，总状态按 ERP 时钟派生（Phase A 停在待ERP审核）。 */

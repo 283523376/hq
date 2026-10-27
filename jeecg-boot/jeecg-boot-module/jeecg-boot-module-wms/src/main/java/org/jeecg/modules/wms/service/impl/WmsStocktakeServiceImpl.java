@@ -233,6 +233,8 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
             statusResolver.assertTransition(order.getStatus(), WmsConstants.STOCKTAKE_STATUS_REVIEWING);
             order.setStatus(WmsConstants.STOCKTAKE_STATUS_REVIEWING);
         }
+        // 差异确认人留痕（updateBy 走框架审计列，无需新列）
+        order.setUpdateBy(operator);
         orderMapper.updateById(order);
     }
 
@@ -365,12 +367,34 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
         inventoryMapper.updateById(existing);
     }
 
+    /**
+     * 解冻：仅当**没有别的进行中盘点单**仍覆盖该库位时才解冻。
+     *
+     * <p>计划自动建的全仓单与手工单可能范围重叠；先完成的一张若直接解冻，
+     * 另一张「盘点中」的单就失去冻结保护。
+     */
     private void unfreeze(String locationId) {
         WmsLocation location = locationMapper.selectById(locationId);
-        if (location != null && WmsConstants.STOCKTAKE_FROZEN.equals(location.getStocktakeFrozen())) {
-            location.setStocktakeFrozen(WmsConstants.STOCKTAKE_UNFROZEN);
-            locationMapper.updateById(location);
+        if (location == null || !WmsConstants.STOCKTAKE_FROZEN.equals(location.getStocktakeFrozen())) {
+            return;
         }
+        List<WmsStocktakeOrder> active = orderMapper.selectList(new LambdaQueryWrapper<WmsStocktakeOrder>()
+                .in(WmsStocktakeOrder::getStatus, WmsConstants.STOCKTAKE_STATUS_COUNTING,
+                        WmsConstants.STOCKTAKE_STATUS_DIFF_CONFIRMED, WmsConstants.STOCKTAKE_STATUS_REVIEWING));
+        boolean stillCovered = false;
+        for (WmsStocktakeOrder other : active) {
+            if (listDetails(other.getId()).stream()
+                    .anyMatch(d -> locationId.equals(d.getLocationId()))) {
+                stillCovered = true;
+                break;
+            }
+        }
+        if (stillCovered) {
+            log.info("库位[{}]仍被其他进行中盘点单覆盖，暂不解冻", location.getLocationCode());
+            return;
+        }
+        location.setStocktakeFrozen(WmsConstants.STOCKTAKE_UNFROZEN);
+        locationMapper.updateById(location);
     }
 
     private String locationCodeOf(String locationId) {

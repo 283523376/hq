@@ -74,7 +74,8 @@ public class WmsSubcontractOrderSyncServiceImpl implements IWmsSubcontractOrderS
             return vo;
         }
 
-        String filter = orgFilter.trim() + " AND FDocumentStatus='C'";
+        // 片段整体加括号：运维若配了含 OR 的多组织片段，不加括号会让 AND 只作用于最后一个条件
+        String filter = "(" + orgFilter.trim() + ") AND FDocumentStatus='C'";
         long start = System.currentTimeMillis();
         WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, FIELD_KEYS, filter, top);
         if (!result.isSuccess()) {

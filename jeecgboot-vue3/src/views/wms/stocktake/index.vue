@@ -41,7 +41,8 @@
 </template>
 
 <script lang="ts" setup>
-  import { ref } from 'vue';
+  import { computed, ref } from 'vue';
+  import { useRoute } from 'vue-router';
   import { BasicTable, TableAction, useTable } from '/@/components/Table';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { STATUS_COLOR, STOCKTAKE_TYPE_OPTIONS, columns, searchFormSchema } from './stocktake.data';
@@ -58,9 +59,14 @@
   } from './stocktake.api';
 
   const { createMessage } = useMessage();
+  const route = useRoute();
+  // 两个子菜单共用同一页面：按路由路径区分类型（/wms/stocktake/cycle → 周期）
+  const routeType = computed(() => (route.path.includes('/cycle') ? '周期' : '定期'));
+  const pageTitle = computed(() => `${routeType.value}盘点`);
+
   const [registerTable, { reload }] = useTable({
-    title: '盘点单',
-    api: listStocktake,
+    title: pageTitle,
+    api: (params) => listStocktake({ ...params, stocktakeType: routeType.value }),
     columns,
     formConfig: { schemas: searchFormSchema },
     showTableSetting: true,
@@ -78,6 +84,7 @@
   const acting = ref(false);
 
   function openCreate() {
+    createType.value = routeType.value;
     createLocations.value = '';
     createRemark.value = '';
     createOpen.value = true;

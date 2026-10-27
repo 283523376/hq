@@ -102,7 +102,12 @@
     try {
       // defHttp 默认 isTransformResponse，res 本身就是 Result.result
       const res: any = await syncWarehouseFromKingdee();
-      createMessage.success(res?.message || '同步完成');
+      const msg = res?.message || '同步完成';
+      if (String(msg).includes('跳过') || res?.fetched === 0) {
+        createMessage.warning(`未同步：${msg}`);
+      } else {
+        createMessage.success(msg);
+      }
       await loadTree();
       emit('refresh');
     } catch (e: any) {

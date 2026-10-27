@@ -163,7 +163,12 @@
     { title: '操作', key: 'action', width: 80 },
   ];
 
-  const title = computed(() => (props.mode === 'pick' ? '新建领料出库单' : '新建销售出库单'));
+  const TITLES: Record<string, string> = {
+    pick: '新建领料出库单',
+    sales: '新建销售出库单',
+    sample: '新建样品出库单',
+  };
+  const title = computed(() => TITLES[props.mode] || '新建出库单');
 
   const manualAdded = computed(() => rows.value.some((r) => r.manual));
   const requirementSource = computed(() => (manualAdded.value ? '手工' : scan.value?.requirementSource || '金蝶用料清单'));

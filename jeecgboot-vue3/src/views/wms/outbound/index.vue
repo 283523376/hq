@@ -67,7 +67,12 @@
     try {
       const res: any = await syncSubcontractOrders(50);
       const msg = res?.messages?.length ? res.messages.join('；') : `新增 ${res?.created ?? 0}，更新 ${res?.updated ?? 0}`;
-      createMessage.success(`同步完成：${msg}`);
+      // 后端「跳过」也返回 Result.OK；这里按文案区分，避免把「没同步」显示成绿色成功
+      if (String(msg).includes('跳过') || res?.queried === 0) {
+        createMessage.warning(`未同步：${msg}`);
+      } else {
+        createMessage.success(`同步完成：${msg}`);
+      }
       reload();
     } finally {
       syncingSub.value = false;

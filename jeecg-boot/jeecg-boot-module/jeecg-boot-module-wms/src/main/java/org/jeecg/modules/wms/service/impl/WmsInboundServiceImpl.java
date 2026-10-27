@@ -344,6 +344,15 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
         if (dto == null || dto.getDetails() == null || dto.getDetails().isEmpty()) {
             throw new RuntimeException("上架明细不能为空");
         }
+        // 采购入库入口虽已停用（2026-10-19 收窄），上架目标仍要挡盘点冻结库位
+        if (dto.getDetails() != null) {
+            for (org.jeecg.modules.wms.dto.WmsPutawayDTO.Item item : dto.getDetails()) {
+                if (item != null && item.getLocationId() != null) {
+                    org.jeecg.modules.wms.service.impl.WmsStocktakeFreezeGuard
+                            .assertNotFrozen(item.getLocationId(), locationMapper);
+                }
+            }
+        }
         java.util.List<WmsInboundDetail> rows = detailMapper.selectList(
                 com.baomidou.mybatisplus.core.toolkit.Wrappers.<WmsInboundDetail>query()
                         .eq("inbound_id", inboundId));
