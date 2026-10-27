@@ -42,14 +42,6 @@
             >
               保存
             </a-button>
-            <a-button
-              v-auth="'wms:systemConfig:rollback'"
-              :loading="rolling"
-              :disabled="!canRollbackCurrent"
-              @click="handleRollback"
-            >
-              回滚上一版本
-            </a-button>
           </template>
 
           <a-spin :spinning="loading">
@@ -83,11 +75,7 @@
                   :value="formValues[item.key]"
                   @change="(e) => (formValues[item.key] = e.target.value)"
                 />
-                <div class="wms-item-meta">
-                  键：{{ item.key }}
-                  <span v-if="item.versionNo > 0">· 当前第 {{ item.versionNo }} 版</span>
-                  <span v-else>· 尚未保存过（显示默认值）</span>
-                </div>
+                <div class="wms-item-meta">键：{{ item.key }}</div>
               </a-form-item>
             </a-form>
           </a-spin>
@@ -102,7 +90,7 @@
   import { onBeforeRouteLeave } from 'vue-router';
   import { Menu, Modal } from 'ant-design-vue';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import { getDefinitions, saveGroupConfig, rollbackGroupConfig } from './systemConfig.api';
+  import { getDefinitions, saveGroupConfig } from './systemConfig.api';
   import FontScalePanel from './fontScale/FontScalePanel.vue';
 
   const { createMessage } = useMessage();
@@ -111,7 +99,6 @@
   const openKeys = ref<string[]>(['fontScale']);
   const loading = ref(false);
   const saving = ref(false);
-  const rolling = ref(false);
   /** 分组结构 + 值，全部来自 /definitions */
   const groups = ref<any[]>([]);
   const currentGroup = ref('');
@@ -127,7 +114,6 @@
     () => groups.value.find((g) => g.code === currentGroup.value)?.name ?? '',
   );
   const dirty = computed(() => JSON.stringify(formValues) !== JSON.stringify(snapshot));
-  const canRollbackCurrent = computed(() => currentItems.value.some((i: any) => i.canRollback));
 
   function multiValue(item: any): string[] {
     const raw = formValues[item.key];
@@ -262,29 +248,6 @@
     } finally {
       saving.value = false;
     }
-  }
-
-  function handleRollback() {
-    Modal.confirm({
-      title: '回滚确认',
-      content: `将「${currentGroupName.value}」整组回退到上一版本，当前值会被覆盖。确定继续吗？`,
-      okText: '确认回滚',
-      cancelText: '取消',
-      onOk: async () => {
-        rolling.value = true;
-        try {
-          const res: any = await rollbackGroupConfig({ group: currentGroup.value });
-          if (res?.success === false) {
-            showConflicts(res.message, res.result?.conflicts ?? []);
-            return;
-          }
-          createMessage.success('回滚成功');
-          await loadAll();
-        } finally {
-          rolling.value = false;
-        }
-      },
-    });
   }
 </script>
 

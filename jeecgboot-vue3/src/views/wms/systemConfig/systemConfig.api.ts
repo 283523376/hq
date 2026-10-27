@@ -4,7 +4,6 @@ enum Api {
   definitions = '/wms/systemConfig/definitions',
   list = '/wms/systemConfig/list',
   save = '/wms/systemConfig/save',
-  rollback = '/wms/systemConfig/rollback',
   history = '/wms/systemConfig/history',
 }
 
@@ -20,9 +19,6 @@ export const listGroupConfig = (params: { group: string }) => defHttp.get({ url:
  */
 export const saveGroupConfig = (params) =>
   defHttp.post({ url: Api.save, params }, { isTransformResponse: false });
-
-export const rollbackGroupConfig = (params: { group: string }) =>
-  defHttp.post({ url: Api.rollback, params }, { isTransformResponse: false });
 
 /** 版本流水（留痕可查证） */
 export const listConfigHistory = (params: { key: string }) => defHttp.get({ url: Api.history, params });
