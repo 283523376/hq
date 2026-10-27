@@ -47,6 +47,8 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
     @Override
     public List<WmsConfigGroupVO> definitions() {
         Map<String, WmsSystemConfig> stored = loadStoredMap();
+        Map<String, Integer> versions = latestVersionNoMap(
+                java.util.Arrays.stream(WmsConfigKey.ordered()).map(WmsConfigKey::getKey).toList());
         List<WmsConfigGroupVO> groups = new ArrayList<>();
         for (WmsConfigGroup group : WmsConfigGroup.orderedAsList()) {
             WmsConfigGroupVO vo = new WmsConfigGroupVO();
@@ -54,7 +56,7 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
             vo.setName(group.getName());
             List<WmsConfigItemVO> items = new ArrayList<>();
             for (WmsConfigKey key : WmsConfigKey.ofGroup(group)) {
-                items.add(toItemVO(key, stored.get(key.getKey())));
+                items.add(toItemVO(key, stored.get(key.getKey()), versions));
             }
             vo.setItems(items);
             groups.add(vo);
@@ -66,9 +68,11 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
     public List<WmsConfigItemVO> listByGroup(String groupCode) {
         WmsConfigGroup group = WmsConfigGroup.of(groupCode);
         Map<String, WmsSystemConfig> stored = loadStoredMap();
+        Map<String, Integer> versions = latestVersionNoMap(
+                WmsConfigKey.ofGroup(group).stream().map(WmsConfigKey::getKey).toList());
         List<WmsConfigItemVO> items = new ArrayList<>();
         for (WmsConfigKey key : WmsConfigKey.ofGroup(group)) {
-            items.add(toItemVO(key, stored.get(key.getKey())));
+            items.add(toItemVO(key, stored.get(key.getKey()), versions));
         }
         return items;
     }
@@ -312,6 +316,29 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
                 .last("limit " + limit));
     }
 
+    /**
+     * 一次性取多个键的最新版本号（组 → 最大 version_no），避免页面首载逐项查库。
+     *
+     * <p>原实现每项调 {@code currentVersionNo} 走一次 SELECT，9 项就是 9 次。
+     */
+    Map<String, Integer> latestVersionNoMap(java.util.Collection<String> keys) {
+        Map<String, Integer> map = new HashMap<>();
+        if (keys == null || keys.isEmpty()) {
+            return map;
+        }
+        List<WmsSystemConfigHistory> rows = wmsSystemConfigHistoryMapper.selectList(
+                new QueryWrapper<WmsSystemConfigHistory>()
+                        .select("config_key", "max(version_no) as version_no")
+                        .in("config_key", keys)
+                        .groupBy("config_key"));
+        for (WmsSystemConfigHistory row : rows) {
+            if (row.getVersionNo() != null && row.getConfigKey() != null) {
+                map.put(row.getConfigKey(), row.getVersionNo());
+            }
+        }
+        return map;
+    }
+
     /** 一次性把在存配置读成 map，避免逐项查库。 */
     private Map<String, WmsSystemConfig> loadStoredMap() {
         Map<String, WmsSystemConfig> map = new HashMap<>();
@@ -321,7 +348,8 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         return map;
     }
 
-    private WmsConfigItemVO toItemVO(WmsConfigKey key, WmsSystemConfig stored) {
+    private WmsConfigItemVO toItemVO(WmsConfigKey key, WmsSystemConfig stored,
+                                     Map<String, Integer> versions) {
         WmsConfigItemVO vo = new WmsConfigItemVO();
         vo.setKey(key.getKey());
         vo.setLabel(key.getLabel());
@@ -330,7 +358,7 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         vo.setValue(stored == null || stored.getConfigValue() == null
                 ? key.getDefaultValue() : stored.getConfigValue());
         vo.setOptions(key.getOptions());
-        int version = currentVersionNo(key.getKey());
+        int version = versions == null ? 0 : versions.getOrDefault(key.getKey(), 0);
         vo.setVersionNo(version);
         vo.setCanRollback(version >= 2);
         return vo;

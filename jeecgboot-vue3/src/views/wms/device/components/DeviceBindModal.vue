@@ -82,7 +82,8 @@
     setModalProps({ confirmLoading: false });
 
     // 目标库区：可选启用中的库区（允许把设备从别的库区搬迁过来）
-    const warehousePage: any = await listWarehouses({ pageNo: 1, pageSize: 200, status: '1' });
+    // 库区数量会增长：取足够大一页并给出上限提示，避免硬编码 200 后静默截断
+    const warehousePage: any = await listWarehouses({ pageNo: 1, pageSize: 1000, status: '1' });
     const warehouses = warehousePage?.records ?? [];
     updateSchema({
       field: 'warehouseId',
@@ -91,7 +92,7 @@
       },
     });
 
-    const devicePage: any = await listDevices({ pageNo: 1, pageSize: 200 });
+    const devicePage: any = await listDevices({ pageNo: 1, pageSize: 1000 });
     devices.value = devicePage?.records ?? [];
   });
 

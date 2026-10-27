@@ -55,8 +55,8 @@ class WmsSystemConfigServiceImplTest {
         WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
         doReturn(Collections.singletonList(row("inv.stock.min", "42"))).when(service).list(any(Wrapper.class));
         // 兜底桩必须在前：其余 8 个键也得有返回值，否则会走真实实现去查未注入的 mapper
-        doReturn(0).when(service).currentVersionNo(any());
-        doReturn(1).when(service).currentVersionNo("inv.stock.min");
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
+        doReturn(java.util.Map.of("inv.stock.min", 1)).when(service).latestVersionNoMap(any());
 
         List<WmsConfigGroupVO> groups = service.definitions();
 
@@ -73,7 +73,7 @@ class WmsSystemConfigServiceImplTest {
     void definitionsShouldFallBackToDefault() {
         WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
 
         WmsConfigItemVO auto = service.definitions().stream()
                 .flatMap(g -> g.getItems().stream())
@@ -87,7 +87,7 @@ class WmsSystemConfigServiceImplTest {
     void definitionsShouldCarryOptionsForMultiType() {
         WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
 
         List<WmsConfigItemVO> all = service.definitions().stream()
                 .flatMap(g -> g.getItems().stream()).toList();
@@ -105,7 +105,7 @@ class WmsSystemConfigServiceImplTest {
     void listByGroupShouldReturnOnlyThatGroup() {
         WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
 
         List<WmsConfigItemVO> items = service.listByGroup("device");
 
@@ -127,8 +127,8 @@ class WmsSystemConfigServiceImplTest {
     void definitionsShouldMarkRollbackableWhenVersionAboveOne() {
         WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
-        doReturn(0).when(service).currentVersionNo(any());
-        doReturn(2).when(service).currentVersionNo("inv.stock.min");
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
+        doReturn(java.util.Map.of("inv.stock.min", 2)).when(service).latestVersionNoMap(any());
 
         WmsConfigItemVO min = service.definitions().stream().flatMap(g -> g.getItems().stream())
                 .filter(i -> "inv.stock.min".equals(i.getKey())).findFirst().orElseThrow();
@@ -157,7 +157,7 @@ class WmsSystemConfigServiceImplTest {
         WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
         doReturn(true).when(service).save(any(WmsSystemConfig.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
 
         service.saveGroup(saveDto("inventory",
                 "inv.stock.min", "10", "inv.stock.safe", "50", "inv.stock.max", "200"));
@@ -181,7 +181,7 @@ class WmsSystemConfigServiceImplTest {
         doReturn(Collections.singletonList(row("inv.stock.min", "1"))).when(service).list(any(Wrapper.class));
         doReturn(true).when(service).updateById(any(WmsSystemConfig.class));
         doReturn(true).when(service).save(any(WmsSystemConfig.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
 
         service.saveGroup(saveDto("inventory",
                 "inv.stock.min", "10", "inv.stock.safe", "50", "inv.stock.max", "200"));
@@ -254,7 +254,7 @@ class WmsSystemConfigServiceImplTest {
         WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
         doReturn(true).when(service).save(any(WmsSystemConfig.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
         // 该键的历史：v2 当前值 60，v1 上一版本 50
         doReturn(new ArrayList<>(List.of(
                 hist("device.offline.threshold.seconds", "60", 2, "SAVE"),
@@ -430,7 +430,7 @@ class WmsSystemConfigServiceImplTest {
                 row("device.offline.threshold.seconds", "60"),
                 row("device.alert.throttle.minutes", "30")))).when(service).list(any(Wrapper.class));
         doReturn(true).when(service).updateById(any(WmsSystemConfig.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
         doReturn(new ArrayList<>(List.of(
                 hist("device.offline.threshold.seconds", "60", 2, "SAVE"),
                 hist("device.offline.threshold.seconds", "50", 1, "SAVE"))))
@@ -525,7 +525,7 @@ class WmsSystemConfigServiceImplTest {
         WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", mock(WmsSystemConfigHistoryMapper.class));
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
         doReturn(true).when(service).save(any(WmsSystemConfig.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
 
         // 不该抛「未知配置分组：  inventory  」
         service.saveGroup(saveDto("  inventory  ",
@@ -542,7 +542,7 @@ class WmsSystemConfigServiceImplTest {
         WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
         doReturn(true).when(service).save(any(WmsSystemConfig.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
         doReturn(new ArrayList<>(List.of(
                 hist("device.offline.threshold.seconds", "60", 2, "SAVE"),
                 hist("device.offline.threshold.seconds", "50", 1, "SAVE"))))
@@ -566,7 +566,7 @@ class WmsSystemConfigServiceImplTest {
         WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", mock(WmsSystemConfigHistoryMapper.class));
         doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
         doReturn(true).when(service).save(any(WmsSystemConfig.class));
-        doReturn(0).when(service).currentVersionNo(any());
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
 
         service.saveGroup(saveDto("sync",
                 "sync.scope", "库存账 , 出入库记录", "sync.auto", "true"));
