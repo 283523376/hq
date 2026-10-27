@@ -11,20 +11,17 @@
   >
     <!-- ---------------------------------------------------------- CK-001 领料 -->
     <template v-if="mode === 'pick'">
-      <a-form layout="inline" class="wms-outbound-create__scan">
-        <a-form-item label="生产工单号">
-          <a-input
-            v-model:value="pickForm.workOrderNo"
-            placeholder="扫码枪扫描或手工录入，回车查询"
-            allow-clear
-            style="width: 300px"
-            @press-enter="handleScan"
-          />
-        </a-form-item>
-        <a-form-item>
-          <a-button type="primary" :loading="scanning" @click="handleScan">查询需求</a-button>
-        </a-form-item>
-      </a-form>
+      <div class="wms-outbound-create__head">
+        <span class="wms-outbound-create__label wms-outbound-create__label--required">生产工单号</span>
+        <a-input
+          v-model:value="pickForm.workOrderNo"
+          placeholder="扫码枪扫描或手工录入，回车查询"
+          allow-clear
+          style="width: 300px"
+          @press-enter="handleScan"
+        />
+        <a-button type="primary" :loading="scanning" @click="handleScan">查询需求</a-button>
+      </div>
 
       <a-descriptions v-if="scan" :column="3" size="small" bordered class="wms-outbound-create__info">
         <a-descriptions-item label="工单号">{{ scan.workOrderNo }}</a-descriptions-item>
@@ -39,17 +36,19 @@
 
     <!-- ---------------------------------------------------------- CK-002 销售（ERP → WMS） -->
     <template v-else>
-      <a-form layout="inline">
-        <a-form-item label="销售订单号" required>
-          <a-input v-model:value="salesForm.salesOrderNo" placeholder="金蝶销售订单号，如 XSDD1000002318" style="width: 260px" />
-        </a-form-item>
-        <a-form-item>
-          <a-button :loading="salesLoading" @click="loadSalesOrder">从 ERP 拉取</a-button>
-        </a-form-item>
-        <a-form-item label="要货日期">
-          <a-date-picker v-model:value="salesForm.deliveryDate" value-format="YYYY-MM-DD" style="width: 160px" />
-        </a-form-item>
-      </a-form>
+      <div class="wms-outbound-create__head">
+        <span class="wms-outbound-create__label wms-outbound-create__label--required">销售订单号</span>
+        <a-input
+          v-model:value="salesForm.salesOrderNo"
+          placeholder="金蝶销售订单号，如 XSDD1000002318"
+          allow-clear
+          style="width: 280px"
+          @press-enter="loadSalesOrder"
+        />
+        <a-button :loading="salesLoading" @click="loadSalesOrder">从 ERP 拉取</a-button>
+        <span class="wms-outbound-create__label">要货日期</span>
+        <a-date-picker v-model:value="salesForm.deliveryDate" value-format="YYYY-MM-DD" style="width: 170px" />
+      </div>
       <a-alert
         v-if="salesPreview && salesPreview.order?.erpDocumentStatus !== 'C'"
         type="error"
@@ -407,8 +406,27 @@
 </script>
 
 <style lang="less" scoped>
-  .wms-outbound-create__scan {
-    margin-bottom: 12px;
+  .wms-outbound-create__head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+
+    .wms-outbound-create__label {
+      color: rgba(0, 0, 0, 0.85);
+
+      &:not(:first-child) {
+        margin-left: 8px;
+      }
+    }
+
+    // 必填星号与 antd 表单一致
+    .wms-outbound-create__label--required::before {
+      content: '*';
+      margin-right: 4px;
+      color: #ff4d4f;
+    }
   }
 
   .wms-outbound-create__info {

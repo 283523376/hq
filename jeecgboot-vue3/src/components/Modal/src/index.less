@@ -31,8 +31,9 @@
   width: 520px;
   padding-bottom: 0;
 
+  // 兼容「.scrollbar 直接作为 body 子元素」的弹窗：内边距由滚动容器负责
   .ant-modal-body > .scrollbar {
-    padding: 14px;
+    padding: 20px 24px;
   }
 
   .ant-modal-title {
@@ -46,7 +47,12 @@
   }
 
   .ant-modal-body {
-    padding: 0;
+    // 默认保留 antd 的 24px 内边距：直接用 <a-modal> 写的弹窗没有滚动包装层，
+    // 原来这里无条件 padding:0，导致内容贴着弹窗边缘（2026-10-27 修）。
+    // 只有确实把 .scrollbar 放在 body 直接子级时才清零，避免双重留白。
+    &:has(> .scrollbar) {
+      padding: 0;
+    }
 
     > .scrollbar > .scrollbar__bar.is-horizontal {
       display: none;
