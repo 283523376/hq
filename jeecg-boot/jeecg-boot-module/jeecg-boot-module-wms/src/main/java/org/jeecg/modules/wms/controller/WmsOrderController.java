@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
@@ -98,6 +99,7 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
     @AutoLog(value = "订单-添加", operateType = 2)
     @Operation(summary = "订单-添加")
     @PostMapping(value = "/add")
+    @RequiresPermissions("wms:order:add")
     public Result<WmsOrder> add(@RequestBody WmsOrder wmsOrder) {
         try {
             service.addOrder(wmsOrder);
@@ -114,6 +116,7 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
     @AutoLog(value = "订单-编辑", operateType = 3)
     @Operation(summary = "订单-编辑")
     @RequestMapping(value = "/edit", method = {RequestMethod.PUT, RequestMethod.POST})
+    @RequiresPermissions("wms:order:edit")
     public Result<WmsOrder> edit(@RequestBody WmsOrder wmsOrder) {
         try {
             service.editOrder(wmsOrder);
@@ -130,6 +133,7 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
     @AutoLog(value = "订单-审核", operateType = 3)
     @Operation(summary = "订单-审核")
     @PostMapping(value = "/audit")
+    @RequiresPermissions("wms:order:audit")
     public Result<?> audit(@RequestBody WmsOrderAuditDTO dto) {
         try {
             service.auditOrder(dto);
@@ -146,6 +150,7 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
     @AutoLog(value = "订单-下达", operateType = 3)
     @Operation(summary = "订单-下达")
     @PostMapping(value = "/dispatch")
+    @RequiresPermissions("wms:order:dispatch")
     public Result<WmsOrderSyncOutcomeVO> dispatch(@RequestParam(name = "id", required = true) String id) {
         try {
             return Result.OK("下达成功！", service.dispatchOrder(id));
@@ -161,6 +166,7 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
     @AutoLog(value = "订单-重新同步", operateType = 3)
     @Operation(summary = "订单-重新同步")
     @PostMapping(value = "/resync")
+    @RequiresPermissions("wms:order:resync")
     public Result<WmsOrderSyncOutcomeVO> resync(@RequestParam(name = "id", required = true) String id) {
         try {
             return Result.OK("已重新同步！", service.resyncOrder(id));
@@ -176,6 +182,7 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
     @AutoLog(value = "订单-删除", operateType = 4)
     @Operation(summary = "订单-删除")
     @DeleteMapping(value = "/delete")
+    @RequiresPermissions("wms:order:delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
         try {
             service.removeOrder(id);
@@ -192,6 +199,7 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
     @AutoLog(value = "订单-批量删除", operateType = 4)
     @Operation(summary = "订单-批量删除")
     @DeleteMapping(value = "/deleteBatch")
+    @RequiresPermissions("wms:order:delete")
     public Result<?> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
         if (oConvertUtils.isEmpty(ids)) {
             return Result.error("参数不识别！");

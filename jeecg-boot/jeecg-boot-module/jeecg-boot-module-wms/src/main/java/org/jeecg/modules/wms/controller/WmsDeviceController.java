@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
@@ -104,6 +105,7 @@ public class WmsDeviceController extends JeecgController<WmsDevice, IWmsDeviceSe
     @AutoLog(value = "设备-添加", operateType = 2)
     @Operation(summary = "设备-添加")
     @PostMapping(value = "/add")
+    @RequiresPermissions("wms:device:add")
     public Result<WmsDevice> add(@RequestBody WmsDevice wmsDevice) {
         try {
             service.addDevice(wmsDevice);
@@ -117,6 +119,7 @@ public class WmsDeviceController extends JeecgController<WmsDevice, IWmsDeviceSe
     @AutoLog(value = "设备-编辑", operateType = 3)
     @Operation(summary = "设备-编辑")
     @RequestMapping(value = "/edit", method = {RequestMethod.PUT, RequestMethod.POST})
+    @RequiresPermissions("wms:device:edit")
     public Result<WmsDevice> edit(@RequestBody WmsDevice wmsDevice) {
         try {
             service.editDevice(wmsDevice);
@@ -137,6 +140,7 @@ public class WmsDeviceController extends JeecgController<WmsDevice, IWmsDeviceSe
     @AutoLog(value = "设备-绑定库区", operateType = 3)
     @Operation(summary = "设备-绑定归属库区")
     @PostMapping(value = "/bind")
+    @RequiresPermissions("wms:device:bind")
     public Result<WmsDeviceBindResultVO> bind(@RequestBody WmsDeviceBindDTO dto) {
         try {
             return Result.OK(service.bind(dto));
@@ -149,6 +153,7 @@ public class WmsDeviceController extends JeecgController<WmsDevice, IWmsDeviceSe
     @AutoLog(value = "设备-解绑库区", operateType = 3)
     @Operation(summary = "设备-解绑库区")
     @PostMapping(value = "/unbind")
+    @RequiresPermissions("wms:device:bind")
     public Result<?> unbind(@RequestBody List<String> ids) {
         try {
             service.unbind(ids);
@@ -159,6 +164,11 @@ public class WmsDeviceController extends JeecgController<WmsDevice, IWmsDeviceSe
         }
     }
 
+    /**
+     * 设备侧回传接口：调用方是 WCS/RMS（机器），不是登录用户，
+     * 因此**不能**加 {@code @RequiresPermissions}——否则上游回传会因无 token 全部 401，
+     * 设备在线状态与离线告警随之失效。仅靠登录态外的网关/内网访问控制保护。
+     */
     @AutoLog(value = "设备-状态上报", operateType = 3)
     @Operation(summary = "设备-状态上报（WCS/RMS 回传）")
     @PostMapping(value = "/reportStatus")
@@ -175,6 +185,7 @@ public class WmsDeviceController extends JeecgController<WmsDevice, IWmsDeviceSe
     @AutoLog(value = "设备-删除", operateType = 4)
     @Operation(summary = "设备-删除")
     @DeleteMapping(value = "/delete")
+    @RequiresPermissions("wms:device:delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
         try {
             service.removeDevice(id);
@@ -189,6 +200,7 @@ public class WmsDeviceController extends JeecgController<WmsDevice, IWmsDeviceSe
     @AutoLog(value = "设备-批量删除", operateType = 4)
     @Operation(summary = "设备-批量删除")
     @DeleteMapping(value = "/deleteBatch")
+    @RequiresPermissions("wms:device:delete")
     public Result<?> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
         try {
             service.removeBatch(Arrays.asList(ids.split(",")));

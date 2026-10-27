@@ -3,6 +3,7 @@ package org.jeecg.modules.wms.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.common.util.oConvertUtils;
@@ -34,6 +35,7 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
 
     @Operation(summary = "入库-扫码收料（生成收料通知单）")
     @PostMapping(value = "/receive")
+    @RequiresPermissions("wms:inbound:receive")
     public Result<WmsInboundOrder> receive(@RequestBody WmsReceiveDTO dto) {
         try {
             return Result.OK("收料成功", service.receive(dto));
@@ -44,6 +46,7 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
 
     @Operation(summary = "入库-自动分配库位")
     @PostMapping(value = "/{id}/auto-allocate")
+    @RequiresPermissions("wms:inbound:allocate")
     public Result<org.jeecg.modules.wms.vo.WmsAllocateResultVO> autoAllocate(@PathVariable("id") String id) {
         try {
             return Result.OK(service.autoAllocate(id));
@@ -67,6 +70,7 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
 
     @Operation(summary = "入库-上架确认（库存/占用/自动审核/触发同步）")
     @PostMapping(value = "/{id}/putaway")
+    @RequiresPermissions("wms:inbound:putaway")
     public Result<Void> putaway(@PathVariable("id") String id, @RequestBody org.jeecg.modules.wms.dto.WmsPutawayDTO dto) {
         try {
             service.putaway(id, dto);
@@ -78,6 +82,7 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
 
     @Operation(summary = "入库-手动重试 ERP 同步")
     @PostMapping(value = "/{id}/sync")
+    @RequiresPermissions("wms:inbound:sync")
     public Result<org.jeecg.modules.wms.sync.WmsOrderSyncAttempt> resync(@PathVariable("id") String id) {
         try {
             WmsInboundOrder order = service.getById(id);
@@ -126,6 +131,7 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
 
     @Operation(summary = "入库-作废")
     @PostMapping(value = "/{id}/void")
+    @RequiresPermissions("wms:inbound:void")
     public Result<Void> voidOrder(@PathVariable("id") String id,
                                   @RequestBody org.jeecg.modules.wms.dto.WmsVoidDTO body) {
         try {

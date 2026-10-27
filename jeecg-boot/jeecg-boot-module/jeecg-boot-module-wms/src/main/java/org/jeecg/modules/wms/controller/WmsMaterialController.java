@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.apache.shiro.SecurityUtils;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
@@ -118,6 +119,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
     @AutoLog(value = "物料-添加", operateType = 2)
     @Operation(summary = "物料-添加")
     @PostMapping(value = "/add")
+    @RequiresPermissions("wms:material:add")
     public Result<WmsMaterial> add(@RequestBody WmsMaterial wmsMaterial) {
         try {
             service.addMaterial(wmsMaterial);
@@ -134,6 +136,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
     @AutoLog(value = "物料-编辑", operateType = 3)
     @Operation(summary = "物料-编辑")
     @RequestMapping(value = "/edit", method = {RequestMethod.PUT, RequestMethod.POST})
+    @RequiresPermissions("wms:material:edit")
     public Result<WmsMaterial> edit(@RequestBody WmsMaterial wmsMaterial) {
         try {
             service.editMaterial(wmsMaterial);
@@ -150,6 +153,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
     @AutoLog(value = "物料-停用", operateType = 3)
     @Operation(summary = "物料-停用")
     @PostMapping(value = "/disable")
+    @RequiresPermissions("wms:material:edit")
     public Result<?> disable(@RequestParam(name = "id", required = true) String id) {
         service.disableMaterial(id);
         return Result.OK("停用成功！");
@@ -161,6 +165,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
     @AutoLog(value = "物料-删除", operateType = 4)
     @Operation(summary = "物料-删除")
     @DeleteMapping(value = "/delete")
+    @RequiresPermissions("wms:material:delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
         try {
             service.removeMaterial(id);
@@ -177,6 +182,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
     @AutoLog(value = "物料-批量删除", operateType = 4)
     @Operation(summary = "物料-批量删除")
     @DeleteMapping(value = "/deleteBatch")
+    @RequiresPermissions("wms:material:delete")
     public Result<?> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
         if (oConvertUtils.isEmpty(ids)) {
             return Result.error("参数不识别！");
@@ -212,6 +218,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
      */
     @Operation(summary = "物料-导出")
     @RequestMapping(value = "/exportXls")
+    @RequiresPermissions("wms:material:export")
     public ModelAndView exportXls(HttpServletRequest request, WmsMaterial wmsMaterial) {
         wmsMaterial.setCategoryName(null);
         wmsMaterial.setCategoryCode(null);
@@ -244,6 +251,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
      */
     @Operation(summary = "物料-下载导入模板")
     @RequestMapping(value = "/importTemplate")
+    @RequiresPermissions("wms:material:import")
     public ModelAndView importTemplate() {
         ModelAndView mv = new ModelAndView(new JeecgEntityExcelView());
         mv.addObject(NormalExcelConstants.DATA_LIST, new ArrayList<WmsMaterial>());
@@ -264,6 +272,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
     @AutoLog(value = "物料-导入", operateType = 5)
     @Operation(summary = "物料-导入")
     @RequestMapping(value = "/importExcel", method = RequestMethod.POST)
+    @RequiresPermissions("wms:material:import")
     public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response) throws IOException {
         MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
         Map<String, MultipartFile> fileMap = multipartRequest.getFileMap();

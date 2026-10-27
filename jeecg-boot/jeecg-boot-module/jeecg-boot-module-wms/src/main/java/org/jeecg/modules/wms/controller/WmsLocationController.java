@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
@@ -121,6 +122,7 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
     @AutoLog(value = "库位-批量生成", operateType = 2)
     @Operation(summary = "库位-按范围批量生成")
     @PostMapping(value = "/generate")
+    @RequiresPermissions("wms:location:generate")
     public Result<WmsLocationGenResultVO> generate(@RequestBody WmsLocationGenDTO dto) {
         try {
             return Result.OK(service.generate(dto));
@@ -133,6 +135,7 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
     @AutoLog(value = "库位-添加", operateType = 2)
     @Operation(summary = "库位-手工新增单个")
     @PostMapping(value = "/add")
+    @RequiresPermissions("wms:location:add")
     public Result<WmsLocation> add(@RequestBody WmsLocation wmsLocation) {
         try {
             service.addLocation(wmsLocation);
@@ -146,6 +149,7 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
     @AutoLog(value = "库位-编辑", operateType = 3)
     @Operation(summary = "库位-编辑（坐标不可改，仅承重/状态）")
     @RequestMapping(value = "/edit", method = {RequestMethod.PUT, RequestMethod.POST})
+    @RequiresPermissions("wms:location:edit")
     public Result<WmsLocation> edit(@RequestBody WmsLocation wmsLocation) {
         try {
             service.editLocation(wmsLocation);
@@ -159,6 +163,7 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
     @AutoLog(value = "库位-属性更新", operateType = 3)
     @Operation(summary = "库位-属性更新（承重/状态；占用时拒绝）")
     @PostMapping(value = "/updateAttr")
+    @RequiresPermissions("wms:location:attr")
     public Result<?> updateAttr(@RequestBody WmsLocationAttrDTO dto) {
         try {
             service.updateAttr(dto);
@@ -172,6 +177,7 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
     @AutoLog(value = "库位-释放", operateType = 3)
     @Operation(summary = "库位-释放（占用 → 空闲）")
     @PostMapping(value = "/release")
+    @RequiresPermissions("wms:location:release")
     public Result<?> release(@RequestParam(name = "id", required = true) String id) {
         try {
             service.release(id);
@@ -185,6 +191,7 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
     @AutoLog(value = "库位-删除", operateType = 4)
     @Operation(summary = "库位-删除（仅空闲）")
     @DeleteMapping(value = "/delete")
+    @RequiresPermissions("wms:location:delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
         try {
             service.removeLocation(id);
@@ -198,6 +205,7 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
     @AutoLog(value = "库位-批量删除", operateType = 4)
     @Operation(summary = "库位-批量删除（仅空闲）")
     @DeleteMapping(value = "/deleteBatch")
+    @RequiresPermissions("wms:location:delete")
     public Result<?> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
         try {
             service.removeBatch(Arrays.asList(ids.split(",")));

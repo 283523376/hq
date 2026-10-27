@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
@@ -56,6 +57,7 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
     @AutoLog(value = "库区-金蝶仓库同步", operateType = 2)
     @Operation(summary = "库区-从金蝶同步仓库档案（白名单为空时不做任何查询）")
     @PostMapping(value = "/sync-kingdee")
+    @RequiresPermissions("wms:warehouse:edit")
     public Result<WmsKingdeeStockSyncResultVO> syncKingdee() {
         try {
             return Result.OK("同步完成", kingdeeWarehouseSyncService.syncStock());
@@ -68,6 +70,7 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
     @AutoLog(value = "库区-初始化本地档案", operateType = 2)
     @Operation(summary = "库区-初始化本地档案（LB/MJ 改名、CJ/TC 建档，幂等）")
     @PostMapping(value = "/init-master-data")
+    @RequiresPermissions("wms:warehouse:edit")
     public Result<String> initMasterData() {
         try {
             kingdeeWarehouseSyncService.initLocalArchives();
@@ -137,6 +140,7 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
     @AutoLog(value = "库区-添加", operateType = 2)
     @Operation(summary = "库区-添加")
     @PostMapping(value = "/add")
+    @RequiresPermissions("wms:warehouse:add")
     public Result<WmsWarehouse> add(@RequestBody WmsWarehouse wmsWarehouse) {
         try {
             service.addWarehouse(wmsWarehouse);
@@ -150,6 +154,7 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
     @AutoLog(value = "库区-编辑", operateType = 3)
     @Operation(summary = "库区-编辑")
     @RequestMapping(value = "/edit", method = {RequestMethod.PUT, RequestMethod.POST})
+    @RequiresPermissions("wms:warehouse:edit")
     public Result<WmsWarehouse> edit(@RequestBody WmsWarehouse wmsWarehouse) {
         try {
             service.editWarehouse(wmsWarehouse);
@@ -163,6 +168,7 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
     @AutoLog(value = "库区-停用", operateType = 3)
     @Operation(summary = "库区-停用")
     @PostMapping(value = "/disable")
+    @RequiresPermissions("wms:warehouse:edit")
     public Result<?> disable(@RequestParam(name = "id", required = true) String id) {
         service.disableWarehouse(id);
         return Result.OK("停用成功！");
@@ -171,6 +177,7 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
     @AutoLog(value = "库区-删除", operateType = 4)
     @Operation(summary = "库区-删除")
     @DeleteMapping(value = "/delete")
+    @RequiresPermissions("wms:warehouse:delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
         try {
             service.removeWarehouse(id);
@@ -184,6 +191,7 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
     @AutoLog(value = "库区-批量删除", operateType = 4)
     @Operation(summary = "库区-批量删除")
     @DeleteMapping(value = "/deleteBatch")
+    @RequiresPermissions("wms:warehouse:delete")
     public Result<?> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
         try {
             service.removeBatch(Arrays.asList(ids.split(",")));

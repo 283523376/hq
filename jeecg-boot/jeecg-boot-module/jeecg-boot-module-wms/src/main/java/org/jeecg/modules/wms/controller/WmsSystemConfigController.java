@@ -3,6 +3,7 @@ package org.jeecg.modules.wms.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
@@ -68,6 +69,7 @@ public class WmsSystemConfigController extends JeecgController<WmsSystemConfig, 
     @AutoLog(value = "系统配置-保存", operateType = 3)
     @Operation(summary = "系统配置-保存")
     @PostMapping(value = "/save")
+    @RequiresPermissions("wms:systemConfig:save")
     public Result<WmsConfigConflictVO> save(@RequestBody WmsConfigSaveDTO dto) {
         try {
             service.saveGroup(dto);
@@ -85,6 +87,7 @@ public class WmsSystemConfigController extends JeecgController<WmsSystemConfig, 
     @AutoLog(value = "系统配置-回滚", operateType = 3)
     @Operation(summary = "系统配置-回滚")
     @PostMapping(value = "/rollback")
+    @RequiresPermissions("wms:systemConfig:rollback")
     public Result<WmsConfigConflictVO> rollback(@RequestBody WmsConfigRollbackDTO dto) {
         try {
             service.rollback(dto);

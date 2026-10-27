@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
@@ -107,6 +108,7 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
     @AutoLog(value = "供应商-添加", operateType = 2)
     @Operation(summary = "供应商-添加")
     @PostMapping(value = "/add")
+    @RequiresPermissions("wms:supplier:add")
     public Result<WmsSupplier> add(@RequestBody WmsSupplier wmsSupplier) {
         try {
             service.addSupplier(wmsSupplier);
@@ -123,6 +125,7 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
     @AutoLog(value = "供应商-编辑", operateType = 3)
     @Operation(summary = "供应商-编辑")
     @RequestMapping(value = "/edit", method = {RequestMethod.PUT, RequestMethod.POST})
+    @RequiresPermissions("wms:supplier:edit")
     public Result<WmsSupplier> edit(@RequestBody WmsSupplier wmsSupplier) {
         try {
             service.editSupplier(wmsSupplier);
@@ -139,6 +142,7 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
     @AutoLog(value = "供应商-停用", operateType = 3)
     @Operation(summary = "供应商-停用")
     @PostMapping(value = "/disable")
+    @RequiresPermissions("wms:supplier:edit")
     public Result<?> disable(@RequestParam(name = "id", required = true) String id) {
         service.disableSupplier(id);
         return Result.OK("停用成功！");
@@ -151,6 +155,7 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
     @AutoLog(value = "供应商-删除", operateType = 4)
     @Operation(summary = "供应商-删除")
     @DeleteMapping(value = "/delete")
+    @RequiresPermissions("wms:supplier:delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
         try {
             service.removeSupplier(id);
@@ -167,6 +172,7 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
     @AutoLog(value = "供应商-批量删除", operateType = 4)
     @Operation(summary = "供应商-批量删除")
     @DeleteMapping(value = "/deleteBatch")
+    @RequiresPermissions("wms:supplier:delete")
     public Result<?> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
         if (oConvertUtils.isEmpty(ids)) {
             return Result.error("参数不识别！");

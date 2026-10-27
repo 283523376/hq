@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
@@ -48,6 +49,7 @@ public class WmsMaterialCategoryController extends JeecgController<WmsMaterialCa
     @AutoLog(value = "物料分类-金蝶分组同步", operateType = 2)
     @Operation(summary = "物料分类-从金蝶同步分组映射（未配置映射时仅空转）")
     @PostMapping(value = "/sync-kingdee")
+    @RequiresPermissions("wms:materialCategory:edit")
     public Result<WmsKingdeeStockSyncResultVO> syncKingdee() {
         try {
             return Result.OK("同步完成", kingdeeCategorySyncService.syncCategory());
@@ -117,6 +119,7 @@ public class WmsMaterialCategoryController extends JeecgController<WmsMaterialCa
     @AutoLog(value = "物料分类-添加", operateType = 2)
     @Operation(summary = "物料分类-添加")
     @PostMapping(value = "/add")
+    @RequiresPermissions("wms:materialCategory:add")
     public Result<WmsMaterialCategory> add(@RequestBody WmsMaterialCategory wmsMaterialCategory) {
         try {
             service.addCategory(wmsMaterialCategory);
@@ -133,6 +136,7 @@ public class WmsMaterialCategoryController extends JeecgController<WmsMaterialCa
     @AutoLog(value = "物料分类-编辑", operateType = 3)
     @Operation(summary = "物料分类-编辑")
     @RequestMapping(value = "/edit", method = {RequestMethod.PUT, RequestMethod.POST})
+    @RequiresPermissions("wms:materialCategory:edit")
     public Result<WmsMaterialCategory> edit(@RequestBody WmsMaterialCategory wmsMaterialCategory) {
         try {
             service.editCategory(wmsMaterialCategory);
@@ -149,6 +153,7 @@ public class WmsMaterialCategoryController extends JeecgController<WmsMaterialCa
     @AutoLog(value = "物料分类-停用", operateType = 3)
     @Operation(summary = "物料分类-停用")
     @PostMapping(value = "/disable")
+    @RequiresPermissions("wms:materialCategory:edit")
     public Result<?> disable(@RequestParam(name = "id", required = true) String id) {
         service.disableCategory(id);
         return Result.OK("停用成功！");
@@ -160,6 +165,7 @@ public class WmsMaterialCategoryController extends JeecgController<WmsMaterialCa
     @AutoLog(value = "物料分类-删除", operateType = 4)
     @Operation(summary = "物料分类-删除")
     @DeleteMapping(value = "/delete")
+    @RequiresPermissions("wms:materialCategory:delete")
     public Result<?> delete(@RequestParam(name = "id", required = true) String id) {
         try {
             service.removeCategory(id);
