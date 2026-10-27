@@ -8,9 +8,7 @@ import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
 import org.quartz.JobKey;
 import org.quartz.Scheduler;
-import org.quartz.Trigger;
 
-import java.util.List;
 import org.quartz.TriggerBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -63,16 +61,9 @@ public class WmsDeviceOfflineScanJobRegistrar {
         }
         try {
             JobKey jobKey = JobKey.jobKey(WmsConstants.DEVICE_SCAN_JOB_ID);
-            if (scheduler.checkExists(jobKey)) {
-                // 只查 JobDetail 不够：若有人经 UI 只删了 trigger 而 JobDetail 残留，
-                // 直接 return 会让任务永不触发（静默失效）。此时删掉残留 JobDetail 重建。
-                List<? extends Trigger> triggers = scheduler.getTriggersOfJob(jobKey);
-                if (triggers != null && !triggers.isEmpty()) {
-                    log.info("设备离线扫描任务[{}]已存在于调度器中，跳过注册", WmsConstants.DEVICE_SCAN_JOB_ID);
-                    return;
-                }
-                log.warn("设备离线扫描任务[{}]存在残留 JobDetail 但无 trigger，重建调度", WmsConstants.DEVICE_SCAN_JOB_ID);
-                scheduler.deleteJob(jobKey);
+            if (WmsJobRegistrarSupport.isScheduled(scheduler, jobKey)) {
+                log.info("设备离线扫描任务[{}]已存在于调度器中，跳过注册", WmsConstants.DEVICE_SCAN_JOB_ID);
+                return;
             }
             JobDetail jobDetail = JobBuilder.newJob(WmsDeviceOfflineScanJob.class)
                     .withIdentity(WmsConstants.DEVICE_SCAN_JOB_ID)

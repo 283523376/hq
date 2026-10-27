@@ -46,7 +46,7 @@ public class WmsMasterDataSyncJobRegistrar {
         }
         try {
             JobKey jobKey = JobKey.jobKey(WmsConstants.MASTER_DATA_SYNC_JOB_ID);
-            if (scheduler.checkExists(jobKey)) {
+            if (WmsJobRegistrarSupport.isScheduled(scheduler, jobKey)) {
                 log.info("主数据同步任务[{}]已存在，跳过注册", WmsConstants.MASTER_DATA_SYNC_JOB_ID);
                 return;
             }

@@ -56,7 +56,7 @@ public class WmsOrderSyncJobRegistrar {
         }
         try {
             JobKey jobKey = JobKey.jobKey(WmsConstants.SYNC_JOB_ID);
-            if (scheduler.checkExists(jobKey)) {
+            if (WmsJobRegistrarSupport.isScheduled(scheduler, jobKey)) {
                 log.info("补偿任务[{}]已存在于调度器中，跳过注册", WmsConstants.SYNC_JOB_ID);
                 return;
             }

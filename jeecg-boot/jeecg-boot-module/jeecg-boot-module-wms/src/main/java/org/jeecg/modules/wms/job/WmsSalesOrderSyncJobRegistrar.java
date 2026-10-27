@@ -41,7 +41,7 @@ public class WmsSalesOrderSyncJobRegistrar {
         }
         try {
             JobKey jobKey = JobKey.jobKey(WmsConstants.SALES_ORDER_SYNC_JOB_ID);
-            if (scheduler.checkExists(jobKey)) {
+            if (WmsJobRegistrarSupport.isScheduled(scheduler, jobKey)) {
                 log.info("销售订单拉取任务[{}]已存在，跳过注册", WmsConstants.SALES_ORDER_SYNC_JOB_ID);
                 return;
             }

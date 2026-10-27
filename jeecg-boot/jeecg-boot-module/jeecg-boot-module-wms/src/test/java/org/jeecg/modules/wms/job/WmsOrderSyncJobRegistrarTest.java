@@ -4,9 +4,14 @@ import org.jeecg.modules.wms.constant.WmsConstants;
 import org.junit.jupiter.api.Test;
 import org.quartz.JobKey;
 import org.quartz.Scheduler;
+import org.quartz.Trigger;
 
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -37,15 +42,34 @@ class WmsOrderSyncJobRegistrarTest {
         verify(scheduler, times(1)).scheduleJob(any(), any());
     }
 
-    /** 开启且已存在 → 幂等跳过，不重复注册。 */
+    /** 开启且已存在（JobDetail + trigger 都在）→ 幂等跳过，不重复注册。 */
     @Test
     void register_whenEnabledAndPresent_shouldSkip() throws Exception {
         Scheduler scheduler = mock(Scheduler.class);
         when(scheduler.checkExists(any(JobKey.class))).thenReturn(true);
+        doReturn(List.of(mock(Trigger.class))).when(scheduler).getTriggersOfJob(any(JobKey.class));
 
         registrar(scheduler, true).register();
 
         verify(scheduler, never()).scheduleJob(any(), any());
+    }
+
+    /**
+     * 只剩 JobDetail、trigger 已被 UI 删掉 → 必须删掉残留并重建。
+     *
+     * <p>{@code checkExists} 只判 JobDetail；若据此直接跳过注册，任务将**永不触发**，
+     * 而日志还写着「已存在，跳过注册」——静默失效。
+     */
+    @Test
+    void register_whenJobDetailLeftWithoutTrigger_shouldRebuild() throws Exception {
+        Scheduler scheduler = mock(Scheduler.class);
+        when(scheduler.checkExists(any(JobKey.class))).thenReturn(true);
+        doReturn(List.of()).when(scheduler).getTriggersOfJob(any(JobKey.class));
+
+        registrar(scheduler, true).register();
+
+        verify(scheduler, times(1)).deleteJob(any(JobKey.class));
+        verify(scheduler, times(1)).scheduleJob(any(), any());
     }
 
     /**
@@ -78,15 +102,18 @@ class WmsOrderSyncJobRegistrarTest {
         verify(scheduler, never()).deleteJob(any(JobKey.class));
     }
 
-    /** 调度器出问题不得把应用启动带崩。 */
+    /**
+     * 调度器出问题不得把应用启动带崩。
+     *
+     * <p>查不到调度状态时按「未注册」处理并尝试重建：此时 scheduleJob 多半也会失败，
+     * 再次被注册器兜住——比「查不到就放弃、任务从此不再注册」更安全。
+     */
     @Test
     void register_shouldNotPropagateSchedulerFailure() throws Exception {
         Scheduler scheduler = mock(Scheduler.class);
         when(scheduler.checkExists(any(JobKey.class))).thenThrow(new RuntimeException("scheduler 挂了"));
 
-        registrar(scheduler, true).register();
-
-        verify(scheduler, never()).scheduleJob(any(), any());
+        assertDoesNotThrow(() -> registrar(scheduler, true).register());
     }
 
     /**

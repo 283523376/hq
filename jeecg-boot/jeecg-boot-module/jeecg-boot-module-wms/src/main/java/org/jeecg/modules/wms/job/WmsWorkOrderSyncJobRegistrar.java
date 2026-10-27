@@ -45,7 +45,7 @@ public class WmsWorkOrderSyncJobRegistrar {
         }
         try {
             JobKey jobKey = JobKey.jobKey(WmsConstants.WORK_ORDER_SYNC_JOB_ID);
-            if (scheduler.checkExists(jobKey)) {
+            if (WmsJobRegistrarSupport.isScheduled(scheduler, jobKey)) {
                 log.info("工单ERP同步任务[{}]已存在于调度器中，跳过注册", WmsConstants.WORK_ORDER_SYNC_JOB_ID);
                 return;
             }

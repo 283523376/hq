@@ -41,7 +41,7 @@ public class WmsTransferSyncJobRegistrar {
         }
         try {
             JobKey jobKey = JobKey.jobKey(WmsConstants.TRANSFER_SYNC_JOB_ID);
-            if (scheduler.checkExists(jobKey)) {
+            if (WmsJobRegistrarSupport.isScheduled(scheduler, jobKey)) {
                 log.info("调拨同步任务[{}]已存在于调度器中，跳过注册", WmsConstants.TRANSFER_SYNC_JOB_ID);
                 return;
             }

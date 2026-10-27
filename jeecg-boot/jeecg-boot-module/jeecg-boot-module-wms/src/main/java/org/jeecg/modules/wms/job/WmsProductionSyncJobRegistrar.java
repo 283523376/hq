@@ -45,7 +45,7 @@ public class WmsProductionSyncJobRegistrar {
         }
         try {
             JobKey jobKey = JobKey.jobKey(WmsConstants.PRODUCTION_SYNC_JOB_ID);
-            if (scheduler.checkExists(jobKey)) {
+            if (WmsJobRegistrarSupport.isScheduled(scheduler, jobKey)) {
                 log.info("生产入库补偿任务[{}]已存在于调度器中，跳过注册", WmsConstants.PRODUCTION_SYNC_JOB_ID);
                 return;
             }
