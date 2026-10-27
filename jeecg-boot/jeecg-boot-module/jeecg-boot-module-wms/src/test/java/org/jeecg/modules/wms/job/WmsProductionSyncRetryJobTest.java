@@ -4,6 +4,8 @@ import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.jeecg.modules.wms.service.IWmsProductionInboundService;
 import org.jeecg.modules.wms.service.IWmsProductionSyncService;
 import org.jeecg.modules.wms.service.IWmsProductionTaskService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +16,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -73,5 +76,22 @@ class WmsProductionSyncRetryJobTest {
         verify(taskService).dispatchInbound("id1");
         verify(inboundService).claimForSync(eq("id1"), any());
         verify(inboundService).persistSyncResult(eq("id1"), any());
+    }
+
+    /**
+     * 自动同步关闭（sync.auto=false）时本轮必须直接跳过：
+     * 由业务页面的手工「同步金蝶」按钮接管，后台不再偷偷推送。
+     */
+    @Test
+    void job_skipsEntireRoundWhenAutoSyncDisabled() {
+        IWmsSystemConfigService configService = mock(IWmsSystemConfigService.class);
+        when(configService.getBool("sync.auto", true)).thenReturn(false);
+        WmsTestSupport.inject(job, "systemConfigService", configService);
+
+        job.scanAndResyncForTest();
+
+        verify(inboundService, never()).selectUndispatchedBefore(any(), anyInt());
+        verify(inboundService, never()).selectSyncCandidates(any(), anyInt());
+        verify(syncService, never()).syncInbound(any(), eq(false));
     }
 }

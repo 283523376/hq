@@ -167,6 +167,20 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
     }
 
     @Override
+    public boolean getBool(String key, boolean fallback) {
+        // 借 getString 的容错：键未知/未设置/读库失败都会打 warn 后返回兜底值
+        String value = getString(key, String.valueOf(fallback));
+        if ("true".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value)) {
+            return false;
+        }
+        log.warn("系统配置[{}]不是布尔值（{}），改用兜底值 {}", key, value, fallback);
+        return fallback;
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void saveGroup(WmsConfigSaveDTO dto) {
         if (dto == null || dto.getGroup() == null) {

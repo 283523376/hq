@@ -3,6 +3,8 @@ package org.jeecg.modules.wms.job;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.util.WmsSyncAutoGate;
 import org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
@@ -33,6 +35,10 @@ import java.util.List;
 @Slf4j
 @DisallowConcurrentExecution
 public class WmsWorkOrderSyncJob implements Job {
+
+    /** 「自动同步」开关（sync.auto）：关闭时本轮跳过，改为页面手工同步。 */
+    @Autowired(required = false)
+    private IWmsSystemConfigService systemConfigService;
 
     @Autowired
     private IWmsKingdeeWorkOrderSyncService kingdeeSyncService;
@@ -70,6 +76,11 @@ public class WmsWorkOrderSyncJob implements Job {
     }
 
     void syncForTest() {
+        if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
+            log.info("自动同步已关闭（sync.auto=false），本轮跳过，请在业务页面手工同步");
+            return;
+        }
+
         if (kingdeeAuthService != null && !kingdeeAuthService.isConfigured()) {
             log.warn("工单ERP同步任务跳过：金蝶未配置（wms.kingdee.base-url/app-id 等）");
             return;

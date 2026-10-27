@@ -3,6 +3,8 @@ package org.jeecg.modules.wms.job;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsOrder;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.util.WmsSyncAutoGate;
 import org.jeecg.modules.wms.service.IWmsOrderService;
 import org.jeecg.modules.wms.service.IWmsOrderSyncService;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
@@ -35,6 +37,10 @@ import java.util.List;
 @DisallowConcurrentExecution
 public class WmsOrderSyncRetryJob implements Job {
 
+    /** 「自动同步」开关（sync.auto）：关闭时本轮跳过，改为页面手工同步。 */
+    @Autowired(required = false)
+    private IWmsSystemConfigService systemConfigService;
+
     @Autowired
     private IWmsOrderService orderService;
 
@@ -64,6 +70,11 @@ public class WmsOrderSyncRetryJob implements Job {
      * 一轮扫描与续跑。可见性放宽到包级，便于单测直接驱动。
      */
     void scanAndResyncForTest() {
+        if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
+            log.info("自动同步已关闭（sync.auto=false），本轮跳过，请在业务页面手工同步");
+            return;
+        }
+
         // 阈值口径由订单服务统一提供，避免两处设定漂移
         Date staleBefore = orderService.syncStaleBefore();
         List<WmsOrder> candidates;

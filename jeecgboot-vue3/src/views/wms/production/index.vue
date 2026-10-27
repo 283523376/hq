@@ -1,5 +1,12 @@
 <template>
   <div class="wms-production">
+    <a-alert
+      v-if="manualOnly"
+      type="warning"
+      show-icon
+      class="wms-production__alert"
+      message="自动同步已关闭：单据停在「待同步」，请在下方列表逐单点「同步金蝶」"
+    />
     <a-card :bordered="false" size="small" title="工单作业台（工单由ERP同步，录入单号即自动同步/查询）" class="wms-production__workbench">
       <a-form layout="inline">
         <a-form-item label="工单号">
@@ -121,6 +128,7 @@
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useMessage } from '/@/hooks/web/useMessage';
+  import { useWmsSyncMode } from '../common/useWmsSyncMode';
   import { columns, searchFormSchema } from './production.data';
   import {
     closeProductionInbound,
@@ -134,6 +142,8 @@
   } from './production.api';
 
   const { createMessage } = useMessage();
+  /** 自动同步关闭时，待同步单据需要手工「同步金蝶」 */
+  const { manualOnly } = useWmsSyncMode();
 
   const workOrderInputRef = ref();
   const carrierInputRef = ref();
@@ -290,9 +300,10 @@
         onClick: () => handleClose(record),
       });
     }
-    if (record.syncStatus === '同步失败') {
+    // 自动同步关闭时后台不再续跑，待同步的单据要靠这里手工推；同步失败则两种模式都可重试
+    if (record.syncStatus === '同步失败' || (manualOnly.value && record.syncStatus === '待同步')) {
       actions.push({
-        label: '重试同步',
+        label: manualOnly.value ? '同步金蝶' : '重试同步',
         auth: 'wms:production:sync',
         onClick: () => handleResync(record),
       });
@@ -373,6 +384,10 @@
 <style lang="less" scoped>
   .wms-production {
     padding: 16px;
+  }
+
+  .wms-production__alert {
+    margin-bottom: 12px;
   }
 
   .wms-production__workbench {

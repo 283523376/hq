@@ -56,4 +56,12 @@ public interface IWmsSystemConfigService extends IService<WmsSystemConfig> {
      * 只读字符串配置。读不到 / 值为空 / 键未知一律返回 fallback 并打 WARN，绝不抛异常。
      */
     String getString(String key, String fallback);
+
+    /**
+     * 读布尔配置（如「自动同步」{@code sync.auto}）。
+     *
+     * <p>值不是 true/false 或读库失败时打 warn 并返回兜底值——
+     * 配置读不出来不该让定时任务或业务链路失败。
+     */
+    boolean getBool(String key, boolean fallback);
 }

@@ -3,6 +3,8 @@ package org.jeecg.modules.wms.job;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.util.WmsSyncAutoGate;
 import org.jeecg.modules.wms.service.IWmsProductionInboundService;
 import org.jeecg.modules.wms.service.IWmsProductionSyncService;
 import org.jeecg.modules.wms.service.IWmsProductionTaskService;
@@ -29,6 +31,10 @@ import java.util.List;
 @Component
 @DisallowConcurrentExecution
 public class WmsProductionSyncRetryJob implements Job {
+
+    /** 「自动同步」开关（sync.auto）：关闭时本轮跳过，改为页面手工同步。 */
+    @Autowired(required = false)
+    private IWmsSystemConfigService systemConfigService;
 
     @Autowired
     private IWmsProductionInboundService inboundService;
@@ -58,6 +64,11 @@ public class WmsProductionSyncRetryJob implements Job {
     }
 
     void scanAndResyncForTest() {
+        if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
+            log.info("自动同步已关闭（sync.auto=false），本轮跳过，请在业务页面手工同步");
+            return;
+        }
+
         redispatchUndispatched();
         resyncCandidates();
     }

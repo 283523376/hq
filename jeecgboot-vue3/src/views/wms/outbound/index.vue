@@ -1,6 +1,13 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <template>
   <div class="wms-outbound">
+    <a-alert
+      v-if="manualOnly"
+      type="warning"
+      show-icon
+      class="wms-outbound__alert"
+      message="自动同步已关闭：单据停在「待同步」，请在下方列表逐单点「同步金蝶」"
+    />
     <BasicTable @register="registerTable">
       <template #tableTitle>
         <a-button type="primary" preIcon="ant-design:import-outlined" v-auth="'wms:outbound:add'" @click="openCreate('pick')">
@@ -32,12 +39,15 @@
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useMessage } from '/@/hooks/web/useMessage';
+  import { useWmsSyncMode } from '../common/useWmsSyncMode';
   import { columns, searchFormSchema } from './outbound.data';
   import { allocateOutbound, closeOutbound, dispatchOutbound, listOutbound, syncOutbound, syncSubcontractOrders } from './outbound.api';
   import OutboundCreateModal from './components/OutboundCreateModal.vue';
   import OutboundDetailDrawer from './components/OutboundDetailDrawer.vue';
 
   const { createMessage } = useMessage();
+  /** 自动同步关闭时，待同步单据需要手工「同步金蝶」 */
+  const { manualOnly } = useWmsSyncMode();
 
   const { tableContext } = useListPage({
     tableProps: {
@@ -107,9 +117,10 @@
         onClick: () => handleDispatch(record),
       });
     }
-    if (record.syncStatus === '同步失败') {
+    // 自动同步关闭时后台不再续跑，待同步的单据要靠这里手工推；同步失败则两种模式都可重试
+    if (record.syncStatus === '同步失败' || (manualOnly.value && record.syncStatus === '待同步')) {
       actions.push({
-        label: '重试同步',
+        label: manualOnly.value ? '同步金蝶' : '重试同步',
         auth: 'wms:outbound:sync',
         onClick: () => handleSync(record),
       });
@@ -194,5 +205,9 @@
 <style lang="less" scoped>
   .wms-outbound {
     padding: 16px;
+  }
+
+  .wms-outbound__alert {
+    margin-bottom: 12px;
   }
 </style>

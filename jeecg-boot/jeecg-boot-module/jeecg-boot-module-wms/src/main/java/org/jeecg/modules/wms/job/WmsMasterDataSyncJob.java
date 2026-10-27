@@ -1,6 +1,8 @@
 package org.jeecg.modules.wms.job;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.util.WmsSyncAutoGate;
 import org.jeecg.modules.wms.service.IWmsKingdeeCategorySyncService;
 import org.jeecg.modules.wms.service.IWmsKingdeeWarehouseSyncService;
 import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
@@ -28,6 +30,10 @@ import org.springframework.stereotype.Component;
 @Component
 @DisallowConcurrentExecution
 public class WmsMasterDataSyncJob implements Job {
+
+    /** 「自动同步」开关（sync.auto）：关闭时本轮跳过，改为页面手工同步。 */
+    @Autowired(required = false)
+    private IWmsSystemConfigService systemConfigService;
 
     @Autowired
     private IWmsKingdeeWarehouseSyncService warehouseSyncService;
@@ -62,6 +68,11 @@ public class WmsMasterDataSyncJob implements Job {
     }
 
     void syncForTest() {
+        if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
+            log.info("自动同步已关闭（sync.auto=false），本轮跳过，请在业务页面手工同步");
+            return;
+        }
+
         if (properties == null || !properties.getMasterData().isEnabled()) {
             log.debug("主数据同步任务跳过：master-data.enabled=false");
             return;
