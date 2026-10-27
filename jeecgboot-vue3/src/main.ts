@@ -16,6 +16,7 @@ import { setupGlobDirectives } from '/@/directives';
 import { setupI18n } from '/@/locales/setupI18n';
 import { setupElectron } from "@/electron";
 import { registerGlobComp } from '/@/components/registerGlobComp';
+import { setupOfflineMenuIcons } from '/@/components/Icon/src/offlineIcons';
 import { registerThirdComp } from '/@/settings/registerThirdComp';
 import { registerSuper } from '/@/views/super/registerSuper';
 import { useSso } from '/@/hooks/web/useSso';
@@ -68,6 +69,9 @@ async function bootstrap(props?: MainAppProps) {
 
   // 注册全局组件
   registerGlobComp(app);
+
+  // 离线注册菜单图标：图标名来自数据库，构建期扫描不到，内网无 CDN 时会整片空白
+  await setupOfflineMenuIcons();
 
   //CAS单点登录
   await useSso().ssoLogin();
