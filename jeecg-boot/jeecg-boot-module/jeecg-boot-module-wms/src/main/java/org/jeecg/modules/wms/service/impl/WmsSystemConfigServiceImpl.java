@@ -11,25 +11,32 @@ import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsConfigItemDTO;
 import org.jeecg.modules.wms.dto.WmsConfigRollbackDTO;
 import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
+import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
+import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.entity.WmsSystemConfigHistory;
 import org.jeecg.modules.wms.exception.WmsConfigConflictException;
+import org.jeecg.modules.wms.mapper.WmsLocationMapper;
 import org.jeecg.modules.wms.mapper.WmsSystemConfigHistoryMapper;
 import org.jeecg.modules.wms.mapper.WmsSystemConfigMapper;
+import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsConfigConflict;
 import org.jeecg.modules.wms.vo.WmsConfigGroupVO;
 import org.jeecg.modules.wms.vo.WmsConfigItemVO;
+import org.jeecg.modules.wms.vo.WmsConfigOptionVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * @Description: 系统配置
@@ -43,6 +50,12 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
 
     @Autowired
     private WmsSystemConfigHistoryMapper wmsSystemConfigHistoryMapper;
+
+    /** 单选类配置的候选集来自库区表（「不良品默认仓」），故需读库区/库位。 */
+    @Autowired
+    private WmsWarehouseMapper warehouseMapper;
+    @Autowired
+    private WmsLocationMapper locationMapper;
 
     @Override
     public List<WmsConfigGroupVO> definitions() {
@@ -171,7 +184,11 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         }
 
         // 1) 先校验，全组通过才动库。校验失败时下面两个写方法一次都不会被调用。
-        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate(groupCode, values);
+        List<WmsConfigConflict> conflicts =
+                new ArrayList<>(WmsConfigValidator.validate(groupCode, values));
+        if (conflicts.isEmpty()) {
+            conflicts.addAll(validateSelectValues(values));
+        }
         if (!conflicts.isEmpty()) {
             throw new WmsConfigConflictException(conflicts);
         }
@@ -348,6 +365,93 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         return map;
     }
 
+    /** 单选类配置的候选项：目前只有「不良品默认仓」一项。 */
+    private List<WmsConfigOptionVO> selectOptions(WmsConfigKey key) {
+        if (key == WmsConfigKey.DEFECT_WAREHOUSE_CODE) {
+            return defectWarehouseOptions();
+        }
+        return new ArrayList<>();
+    }
+
+    /**
+     * 「不良品默认仓」的候选项：列出全部**启用**的库区，缺 {@code FPC-DEFAULT} 库位的置灰。
+     *
+     * <p>运行时会按 warehouse_code 找该库区的默认库位，找不到就静默回退废品仓默认位——
+     * 所以没有默认库位的库区**可选但无效**。置灰并注明原因，比直接不列出来更容易理解
+     * （否则用户会以为「我的仓区怎么不在下拉里」）。
+     */
+    private List<WmsConfigOptionVO> defectWarehouseOptions() {
+        if (warehouseMapper == null || locationMapper == null) {
+            return new ArrayList<>();
+        }
+        List<WmsWarehouse> warehouses = warehouseMapper.selectList(new QueryWrapper<WmsWarehouse>()
+                .eq("status", WmsConstants.STATUS_ENABLE)
+                .orderByAsc("warehouse_code"));
+        if (warehouses == null || warehouses.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<String> warehouseIds = new ArrayList<>();
+        for (WmsWarehouse warehouse : warehouses) {
+            warehouseIds.add(warehouse.getId());
+        }
+        Set<String> withDefaultLocation = new HashSet<>();
+        List<WmsLocation> locations = locationMapper.selectList(new QueryWrapper<WmsLocation>()
+                .eq("location_code", WmsConstants.LOCATION_CODE_SCRAP_DEFAULT)
+                .in("warehouse_id", warehouseIds));
+        if (locations != null) {
+            for (WmsLocation location : locations) {
+                withDefaultLocation.add(location.getWarehouseId());
+            }
+        }
+        List<WmsConfigOptionVO> options = new ArrayList<>();
+        for (WmsWarehouse warehouse : warehouses) {
+            boolean selectable = withDefaultLocation.contains(warehouse.getId());
+            String label = warehouse.getWarehouseCode() + " " + warehouse.getWarehouseName();
+            options.add(new WmsConfigOptionVO(warehouse.getWarehouseCode(),
+                    selectable ? label : label + "（缺少 " + WmsConstants.LOCATION_CODE_SCRAP_DEFAULT + " 库位）",
+                    !selectable));
+        }
+        return options;
+    }
+
+    /**
+     * 单选类配置取值必须落在候选项内。
+     *
+     * <p>纯校验器不碰数据库，看不到动态候选集；这里补一道「存在性」校验，
+     * 免得直接调接口写进一个不存在的库区编码，运行时静默回退。
+     */
+    private List<WmsConfigConflict> validateSelectValues(Map<String, String> values) {
+        List<WmsConfigConflict> conflicts = new ArrayList<>();
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            WmsConfigKey meta = findKeyOrNull(entry.getKey());
+            if (meta == null || meta.getType() != WmsConfigType.SELECT) {
+                continue;
+            }
+            String value = entry.getValue() == null ? "" : entry.getValue().trim();
+            if (value.isEmpty()) {
+                // 留空 = 沿用废品仓默认位，是合法取值
+                continue;
+            }
+            boolean exists = defectWarehouseOptions().stream()
+                    .anyMatch(option -> value.equals(option.getValue())
+                            && !Boolean.TRUE.equals(option.getDisabled()));
+            if (!exists) {
+                conflicts.add(new WmsConfigConflict(meta.getKey(), meta.getLabel(),
+                        "库区不存在、已停用或缺少 " + WmsConstants.LOCATION_CODE_SCRAP_DEFAULT
+                                + " 默认库位，实际：" + value));
+            }
+        }
+        return conflicts;
+    }
+
+    private WmsConfigKey findKeyOrNull(String key) {
+        try {
+            return WmsConfigKey.of(key);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private WmsConfigItemVO toItemVO(WmsConfigKey key, WmsSystemConfig stored,
                                      Map<String, Integer> versions) {
         WmsConfigItemVO vo = new WmsConfigItemVO();
@@ -358,6 +462,9 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
         vo.setValue(stored == null || stored.getConfigValue() == null
                 ? key.getDefaultValue() : stored.getConfigValue());
         vo.setOptions(key.getOptions());
+        if (key.getType() == WmsConfigType.SELECT) {
+            vo.setOptionItems(selectOptions(key));
+        }
         int version = versions == null ? 0 : versions.getOrDefault(key.getKey(), 0);
         vo.setVersionNo(version);
         vo.setCanRollback(version >= 2);

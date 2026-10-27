@@ -25,8 +25,8 @@ public enum WmsConfigKey {
             Arrays.asList("库存账", "出入库记录", "柜内库存")),
     SYNC_AUTO("sync.auto", "自动同步", WmsConfigGroup.SYNC, WmsConfigType.BOOL, "true", null),
 
-    DEFECT_BIN_ALLOWED("defect.bin.allowed", "不良品是否入线边柜", WmsConfigGroup.DEFECT, WmsConfigType.BOOL, "false", null),
-    DEFECT_WAREHOUSE_CODE("defect.warehouse.code", "不良品默认仓", WmsConfigGroup.DEFECT, WmsConfigType.TEXT, "", null),
+    // 「不良品是否入线边柜」已随方案 A（线边柜）移出范围，2026-10-27 移除该项
+    DEFECT_WAREHOUSE_CODE("defect.warehouse.code", "不良品默认仓", WmsConfigGroup.DEFECT, WmsConfigType.SELECT, "", null),
 
     DEVICE_OFFLINE_THRESHOLD_SECONDS("device.offline.threshold.seconds", "设备离线判定阈值（秒）",
             WmsConfigGroup.DEVICE, WmsConfigType.INT,

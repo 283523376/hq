@@ -139,8 +139,12 @@ public final class WmsConfigValidator {
                 }
                 return null;
             }
-            case TEXT: {
-                if (item == WmsConfigKey.DEFECT_WAREHOUSE_CODE && value.length() > CODE_MAX_LENGTH) {
+            case TEXT:
+                return null;
+            case SELECT: {
+                // 候选集是动态的（库区表），纯函数里查不到；这里只挡列宽，
+                // 「该库区是否存在/启用/有默认库位」由服务层保存时校验
+                if (value.length() > CODE_MAX_LENGTH) {
                     return "长度不能超过 " + CODE_MAX_LENGTH + " 字符，实际：" + value.length();
                 }
                 return null;

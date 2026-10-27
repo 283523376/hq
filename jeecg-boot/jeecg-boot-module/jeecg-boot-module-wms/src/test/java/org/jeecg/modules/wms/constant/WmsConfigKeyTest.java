@@ -16,13 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class WmsConfigKeyTest {
 
-    /** 四组必须各就各位：库存 3 项、同步 2 项、不良品 2 项、设备 2 项，共 9 项。 */
+    /** 四组必须各就各位：库存 3 项、同步 2 项、不良品 1 项、设备 2 项，共 8 项。
+     *  （不良品组原有「是否入线边柜」，随线边柜方案移出范围已于 2026-10-27 删除） */
     @Test
-    void shouldExposeNineKeysInFourGroups() {
-        assertEquals(9, WmsConfigKey.ordered().length);
+    void shouldExposeEightKeysInFourGroups() {
+        assertEquals(8, WmsConfigKey.ordered().length);
         assertEquals(3, WmsConfigKey.ofGroup(WmsConfigGroup.INVENTORY).size());
         assertEquals(2, WmsConfigKey.ofGroup(WmsConfigGroup.SYNC).size());
-        assertEquals(2, WmsConfigKey.ofGroup(WmsConfigGroup.DEFECT).size());
+        assertEquals(1, WmsConfigKey.ofGroup(WmsConfigGroup.DEFECT).size());
         assertEquals(2, WmsConfigKey.ofGroup(WmsConfigGroup.DEVICE).size());
     }
 
@@ -30,7 +31,7 @@ class WmsConfigKeyTest {
     @Test
     void keysShouldBeUnique() {
         long distinct = Arrays.stream(WmsConfigKey.ordered()).map(WmsConfigKey::getKey).distinct().count();
-        assertEquals(9, distinct);
+        assertEquals(8, distinct);
     }
 
     /** 设备两项的默认值必须与既有常量一致，否则「DB 无配置」时行为会静默改变。 */

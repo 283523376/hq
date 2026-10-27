@@ -132,11 +132,10 @@ class WmsConfigValidatorTest {
         assertEquals("device.offline.threshold.seconds", conflicts.get(0).getKey());
     }
 
-    /** 不良品默认仓允许为空（蓝图只要求「是否入线边柜」，默认仓是补充项）。 */
+    /** 不良品默认仓允许为空：留空表示沿用废品仓默认库位。 */
     @Test
     void shouldAcceptBlankDefectWarehouse() {
         Map<String, String> m = new HashMap<>();
-        m.put("defect.bin.allowed", "false");
         m.put("defect.warehouse.code", "");
         assertTrue(WmsConfigValidator.validate("defect", m).isEmpty());
     }
@@ -145,7 +144,6 @@ class WmsConfigValidatorTest {
     @Test
     void shouldRejectOverlongDefectWarehouse() {
         Map<String, String> m = new HashMap<>();
-        m.put("defect.bin.allowed", "false");
         m.put("defect.warehouse.code", "X".repeat(65));
         assertEquals(1, WmsConfigValidator.validate("defect", m).size());
     }

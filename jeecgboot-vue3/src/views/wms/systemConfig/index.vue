@@ -53,6 +53,15 @@
                   :checked="formValues[item.key] === 'true'"
                   @change="(v) => (formValues[item.key] = v ? 'true' : 'false')"
                 />
+                <!-- 单选：候选项由后端按真实库区动态给出（value 存库区编码，label 显示编码+名称） -->
+                <a-select
+                  v-else-if="item.type === 'SELECT'"
+                  :value="formValues[item.key] || undefined"
+                  allow-clear
+                  placeholder="未配置（沿用废品仓默认库位）"
+                  :options="(item.optionItems || []).map((o) => ({ label: o.label, value: o.value, disabled: o.disabled }))"
+                  @change="(v) => (formValues[item.key] = v || '')"
+                />
                 <!-- 多选：逗号分隔值 ↔ 数组 -->
                 <a-select
                   v-else-if="item.type === 'MULTI'"

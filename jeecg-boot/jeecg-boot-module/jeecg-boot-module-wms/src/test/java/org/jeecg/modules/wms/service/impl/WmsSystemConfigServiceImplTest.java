@@ -8,10 +8,14 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
+import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.entity.WmsSystemConfigHistory;
 import org.jeecg.modules.wms.exception.WmsConfigConflictException;
+import org.jeecg.modules.wms.mapper.WmsLocationMapper;
 import org.jeecg.modules.wms.mapper.WmsSystemConfigHistoryMapper;
+import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.vo.WmsConfigGroupVO;
 import org.jeecg.modules.wms.vo.WmsConfigItemVO;
@@ -576,5 +580,85 @@ class WmsSystemConfigServiceImplTest {
         WmsSystemConfig scopeRow = captor.getAllValues().stream()
                 .filter(r -> "sync.scope".equals(r.getConfigKey())).findFirst().orElseThrow();
         assertEquals("库存账,出入库记录", scopeRow.getConfigValue(), "段内空格必须被规范化掉");
+    }
+
+    // ------------------------------------------------- 不良品默认仓：单选候选项（2026-10-27）
+
+    /** 造两个启用仓区，只有 FPC01 带 FPC-DEFAULT 库位。 */
+    private void stubWarehouses(WmsSystemConfigServiceImpl service) {
+        WmsWarehouseMapper warehouseMapper = mock(WmsWarehouseMapper.class);
+        WmsLocationMapper locationMapper = mock(WmsLocationMapper.class);
+        WmsTestSupport.inject(service, "warehouseMapper", warehouseMapper);
+        WmsTestSupport.inject(service, "locationMapper", locationMapper);
+
+        WmsWarehouse fpc = new WmsWarehouse();
+        fpc.setId("w-fpc");
+        fpc.setWarehouseCode("FPC01");
+        fpc.setWarehouseName("废品仓");
+        WmsWarehouse other = new WmsWarehouse();
+        other.setId("w-other");
+        other.setWarehouseCode("MJ01");
+        other.setWarehouseName("敏捷仓");
+        doReturn(List.of(fpc, other)).when(warehouseMapper).selectList(any());
+
+        WmsLocation location = new WmsLocation();
+        location.setWarehouseId("w-fpc");
+        doReturn(List.of(location)).when(locationMapper).selectList(any());
+    }
+
+    /** 全部启用仓区都列出来；缺 FPC-DEFAULT 库位的置灰并注明原因（选了也不会生效）。 */
+    @Test
+    void defectWarehouseOptions_shouldListAllEnabledWarehousesAndDisableUnusable() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
+        stubWarehouses(service);
+
+        List<WmsConfigItemVO> items = service.listByGroup("defect");
+
+        assertEquals(1, items.size(), "「不良品是否入线边柜」已下线，本组只剩一项");
+        WmsConfigItemVO item = items.get(0);
+        assertEquals("defect.warehouse.code", item.getKey());
+        assertEquals("SELECT", item.getType());
+        assertEquals(2, item.getOptionItems().size(), "启用仓区都要列出来，否则用户会以为仓区丢了");
+        assertEquals("FPC01", item.getOptionItems().get(0).getValue());
+        assertEquals("FPC01 废品仓", item.getOptionItems().get(0).getLabel());
+        assertTrue(!Boolean.TRUE.equals(item.getOptionItems().get(0).getDisabled()), "带默认库位，可选");
+        assertEquals("MJ01", item.getOptionItems().get(1).getValue());
+        assertTrue(item.getOptionItems().get(1).getLabel().contains("缺少 FPC-DEFAULT"),
+                "缺默认库位要说清楚原因，实际：" + item.getOptionItems().get(1).getLabel());
+        assertTrue(Boolean.TRUE.equals(item.getOptionItems().get(1).getDisabled()), "缺默认库位，置灰");
+    }
+
+    /** 直接调接口塞一个不存在的仓区编码：必须判冲突，不能静默写入后运行时回退。 */
+    @Test
+    void save_shouldRejectUnknownDefectWarehouse() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        stubWarehouses(service);
+
+        WmsConfigConflictException e = assertThrows(WmsConfigConflictException.class,
+                () -> service.saveGroup(saveDto("defect", "defect.warehouse.code", "NOPE")));
+
+        assertTrue(e.getMessage().contains("NOPE") || e.getConflicts().get(0).getReason().contains("NOPE"),
+                "冲突文案要带出用户填的值，否则不知道错在哪");
+        verify(service, never()).save(any(WmsSystemConfig.class));
+    }
+
+    /** 留空是合法值：沿用废品仓默认库位。 */
+    @Test
+    void save_shouldAcceptBlankDefectWarehouse() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        stubWarehouses(service);
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        doReturn(true).when(service).save(any(WmsSystemConfig.class));
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
+
+        service.saveGroup(saveDto("defect", "defect.warehouse.code", ""));
+
+        verify(service).save(any(WmsSystemConfig.class));
     }
 }

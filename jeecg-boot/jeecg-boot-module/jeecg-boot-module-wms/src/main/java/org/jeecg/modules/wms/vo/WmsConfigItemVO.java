@@ -36,4 +36,7 @@ public class WmsConfigItemVO implements Serializable {
 
     @Schema(description = "多选项的候选值；非多选为 null")
     private List<String> options;
+
+    @Schema(description = "单选项的候选项（value 入库、label 展示）；非单选为 null")
+    private List<WmsConfigOptionVO> optionItems;
 }
