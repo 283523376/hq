@@ -43,12 +43,15 @@ class WmsConfigKeyTest {
                 WmsConfigKey.DEVICE_ALERT_THROTTLE_MINUTES.getDefaultValue());
     }
 
-    /** 多选项必须声明候选值，否则前端无法渲染下拉。 */
+    /** 多选项必须声明候选值，否则前端无法渲染下拉；候选值只来自同步范围登记表。 */
     @Test
     void multiTypeShouldDeclareOptions() {
         WmsConfigKey scope = WmsConfigKey.SYNC_SCOPE;
         assertEquals(WmsConfigType.MULTI, scope.getType());
-        assertEquals(Arrays.asList("库存账", "出入库记录", "柜内库存"), scope.getOptions());
+        assertEquals(WmsKingdeeSyncScope.labels(), scope.getOptions());
+        for (String defaultItem : scope.getDefaultValue().split(",")) {
+            assertTrue(scope.getOptions().contains(defaultItem), "默认值必须是候选值之一：" + defaultItem);
+        }
     }
 
     /** 未知键必须在元数据层就拒绝，而不是等到校验器里 NPE。 */

@@ -94,7 +94,7 @@ class WmsConfigValidatorTest {
     @Test
     void shouldRejectNonBooleanValue() {
         Map<String, String> m = new HashMap<>();
-        m.put("sync.scope", "库存账");
+        m.put("sync.scope", WmsKingdeeSyncScope.labels().get(0));
         m.put("sync.auto", "yes");
         List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("sync", m);
         assertEquals(1, conflicts.size());
@@ -106,7 +106,7 @@ class WmsConfigValidatorTest {
     void shouldRejectUnknownMultiOption() {
         Map<String, String> m = new HashMap<>();
         m.put("sync.auto", "true");
-        m.put("sync.scope", "库存账,不存在的选项");
+        m.put("sync.scope", WmsKingdeeSyncScope.labels().get(0) + ",不存在的选项");
         List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("sync", m);
         assertEquals(1, conflicts.size());
         assertEquals("sync.scope", conflicts.get(0).getKey());
@@ -223,7 +223,7 @@ class WmsConfigValidatorTest {
     void shouldRejectEmptyMultiSegment() {
         Map<String, String> m = new HashMap<>();
         m.put("sync.auto", "true");
-        m.put("sync.scope", "库存账,,出入库记录");
+        m.put("sync.scope", WmsKingdeeSyncScope.labels().get(0) + ",," + WmsKingdeeSyncScope.labels().get(1));
 
         List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("sync", m);
 

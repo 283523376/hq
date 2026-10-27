@@ -8,6 +8,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import org.jeecg.modules.wms.constant.WmsKingdeeSyncScope;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
@@ -100,7 +101,8 @@ class WmsSystemConfigServiceImplTest {
         WmsConfigItemVO min = all.stream()
                 .filter(i -> "inv.stock.min".equals(i.getKey())).findFirst().orElseThrow();
 
-        assertEquals(3, scope.getOptions().size());
+        assertEquals(WmsKingdeeSyncScope.labels(), scope.getOptions(),
+                "候选值必须与同步范围登记表一致（加范围只改登记表）");
         assertNull(min.getOptions());
     }
 
@@ -562,7 +564,7 @@ class WmsSystemConfigServiceImplTest {
     /**
      * 多选值落库前必须规范化（段内 trim + 去空段后重新拼接）（M6）。
      *
-     * <p>原样存 "库存账 , 出入库记录" 会让前端 `split(',')` 得到带空格的幽灵标签。
+     * <p>原样存 "A , B"（A/B 为同步范围文案）会让前端 `split(',')` 得到带空格的幽灵标签。
      */
     @Test
     void saveGroup_shouldNormalizeMultiValueBeforeStoring() {
@@ -572,14 +574,16 @@ class WmsSystemConfigServiceImplTest {
         doReturn(true).when(service).save(any(WmsSystemConfig.class));
         doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
 
+        String first = WmsKingdeeSyncScope.labels().get(0);
+        String second = WmsKingdeeSyncScope.labels().get(1);
         service.saveGroup(saveDto("sync",
-                "sync.scope", "库存账 , 出入库记录", "sync.auto", "true"));
+                "sync.scope", first + " , " + second, "sync.auto", "true"));
 
         ArgumentCaptor<WmsSystemConfig> captor = ArgumentCaptor.forClass(WmsSystemConfig.class);
         verify(service, times(2)).save(captor.capture());
         WmsSystemConfig scopeRow = captor.getAllValues().stream()
                 .filter(r -> "sync.scope".equals(r.getConfigKey())).findFirst().orElseThrow();
-        assertEquals("库存账,出入库记录", scopeRow.getConfigValue(), "段内空格必须被规范化掉");
+        assertEquals(first + "," + second, scopeRow.getConfigValue(), "段内空格必须被规范化掉");
     }
 
     // ------------------------------------------------- 不良品默认仓：单选候选项（2026-10-27）

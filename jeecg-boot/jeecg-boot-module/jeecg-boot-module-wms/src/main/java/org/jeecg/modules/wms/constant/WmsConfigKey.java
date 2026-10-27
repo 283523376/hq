@@ -1,7 +1,6 @@
 package org.jeecg.modules.wms.constant;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -21,8 +20,12 @@ public enum WmsConfigKey {
     INV_STOCK_SAFE("inv.stock.safe", "安全库存", WmsConfigGroup.INVENTORY, WmsConfigType.INT, "0", null),
     INV_STOCK_MAX("inv.stock.max", "最高库存", WmsConfigGroup.INVENTORY, WmsConfigType.INT, "0", null),
 
-    SYNC_SCOPE("sync.scope", "同步范围", WmsConfigGroup.SYNC, WmsConfigType.MULTI, "库存账,出入库记录",
-            Arrays.asList("库存账", "出入库记录", "柜内库存")),
+    /**
+     * 上位系统同步范围：候选值与默认值都来自 {@link WmsKingdeeSyncScope}（扩展点），
+     * 不要在这里硬编码清单 —— 加一个同步范围只需改那张登记表。
+     */
+    SYNC_SCOPE("sync.scope", "同步范围", WmsConfigGroup.SYNC, WmsConfigType.MULTI,
+            WmsKingdeeSyncScope.defaultValue(), WmsKingdeeSyncScope.labels()),
     SYNC_AUTO("sync.auto", "自动同步", WmsConfigGroup.SYNC, WmsConfigType.BOOL, "true", null),
 
     // 「不良品是否入线边柜」已随方案 A（线边柜）移出范围，2026-10-27 移除该项
