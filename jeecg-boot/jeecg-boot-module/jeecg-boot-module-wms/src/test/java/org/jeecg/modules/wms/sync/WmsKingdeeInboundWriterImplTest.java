@@ -311,11 +311,14 @@ class WmsKingdeeInboundWriterImplTest {
 
     private void enablePush(String... flows) {
         properties.setPushInboundEnabled(true);
-        java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
+        java.util.List<WmsKingdeeProperties.FlowBillType> list = new java.util.ArrayList<>();
         for (String f : flows) {
-            map.put(f, "SCRKD01_SYS");
+            WmsKingdeeProperties.FlowBillType mapping = new WmsKingdeeProperties.FlowBillType();
+            mapping.setFlow(f);
+            mapping.setBillType("SCRKD01_SYS");
+            list.add(mapping);
         }
-        properties.setPushFlowBillTypeMap(map);
+        properties.setPushFlowBillTypes(list);
         properties.setDefaultBusinessFlow("生产直接入库流程");
     }
 

@@ -58,12 +58,24 @@ public class WmsKingdeeProperties {
     private boolean pushInboundEnabled = true;
 
     /**
-     * 允许下推的业务流程 → 目标单据类型。键 {@code __empty__} 表示「业务流程为空」。
+     * 允许下推的业务流程 → 目标单据类型映射。
      *
-     * <p>用哨兵键而不是空串：空串键会让 Spring 的 Map 绑定抛 BindException（此前踩过）。
-     * 表里没有的流程一律拒绝下推，并把金蝶原文（含允许值清单）透传给用户。
+     * <p>用**列表**而不是 Map：中文做 Map 的 key 时 Spring 绑定会静默丢条目（2026-10-27 实测，
+     * 运行期只剩 `__empty__` 一条）；中文作为「值」绑定是可靠的。
+     *
+     * <p>流程名为空时用哨兵 {@code __empty__} 匹配（空串键会让 Map 绑定抛 BindException，此前踩过）。
+     * 表里没有的流程一律拒绝下推，并把金蝶原文透传给用户。
      */
-    private Map<String, String> pushFlowBillTypeMap = new LinkedHashMap<>();
+    private List<FlowBillType> pushFlowBillTypes = new ArrayList<>();
+
+    /** 单条「业务流程 → 目标单据类型」映射。 */
+    @Data
+    public static class FlowBillType {
+        /** 业务流程名称；{@code __empty__} 表示业务流程为空。 */
+        private String flow;
+        /** 目标单据类型编码，如 SCRKD01_SYS。 */
+        private String billType;
+    }
 
     /** 默认业务流程：现网是否统一尚未确认、后续可能扩展；仅用于提示与将来 WMS 建单。 */
     private String defaultBusinessFlow = "生产直接入库流程";

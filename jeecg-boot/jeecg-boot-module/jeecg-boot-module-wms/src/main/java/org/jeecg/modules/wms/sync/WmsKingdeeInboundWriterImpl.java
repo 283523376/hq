@@ -264,11 +264,21 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
     private WmsOrderSyncResult writeByPush(WmsProductionInbound inbound, BigDecimal goodQty,
                                            String businessFlow, String stockCode, Long stockLocId) {
         String flowKey = oConvertUtils.isEmpty(businessFlow) ? FLOW_EMPTY_KEY : businessFlow.trim();
-        String targetBillType = properties.getPushFlowBillTypeMap().get(flowKey);
+        String targetBillType = null;
+        List<String> allowedFlows = new ArrayList<>();
+        for (WmsKingdeeProperties.FlowBillType mapping : properties.getPushFlowBillTypes()) {
+            if (mapping == null || oConvertUtils.isEmpty(mapping.getFlow())) {
+                continue;
+            }
+            allowedFlows.add(mapping.getFlow());
+            if (mapping.getFlow().trim().equals(flowKey)) {
+                targetBillType = mapping.getBillType();
+            }
+        }
         if (oConvertUtils.isEmpty(targetBillType)) {
             return WmsOrderSyncResult.fail("生产订单[" + inbound.getWorkOrderNo() + "]的业务流程为「"
                     + (oConvertUtils.isEmpty(businessFlow) ? "空" : businessFlow) + "」，不在允许下推的范围"
-                    + properties.getPushFlowBillTypeMap().keySet() + "。"
+                    + allowedFlows + "。"
                     + "金蝶原文：业务流程字段的值，必须是如下值之一：空值, " + properties.getDefaultBusinessFlow()
                     + "。请调整生产订单的业务流程，或补充 push-flow-bill-type-map 配置");
         }
