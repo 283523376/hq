@@ -5,6 +5,7 @@ import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.jeecg.modules.wms.service.IWmsProductionInboundService;
 import org.jeecg.modules.wms.service.IWmsProductionSyncService;
 import org.jeecg.modules.wms.service.IWmsProductionTaskService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
@@ -100,5 +101,23 @@ class WmsProductionControllerTest {
 
         assertEquals(200, result.getCode());
         verify(taskService).forceInbound("id1");
+    }
+
+    /**
+     * 自动同步关闭时，良品=0 也不许即时回写：单据留在「待同步」，
+     * 由页面上的「同步金蝶」手工推送。否则关掉开关等于没关。
+     */
+    @Test
+    void submit_zeroGoodQty_doesNotSyncWhenAutoSyncDisabled() {
+        IWmsSystemConfigService configService = mock(IWmsSystemConfigService.class);
+        when(configService.getBool("sync.auto", true)).thenReturn(false);
+        WmsTestSupport.inject(controller, "systemConfigService", configService);
+        when(service.submit(any())).thenReturn(record("0"));
+        when(service.getById(anyString())).thenReturn(record("0"));
+
+        controller.submit(dto("0"));
+
+        verify(syncService, never()).syncInbound(anyString(), anyBoolean());
+        verify(service, never()).persistSyncResult(anyString(), any());
     }
 }

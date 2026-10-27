@@ -12,6 +12,8 @@ import org.jeecg.modules.wms.dto.WmsProductionCloseDTO;
 import org.jeecg.modules.wms.dto.WmsProductionManualCompleteDTO;
 import org.jeecg.modules.wms.dto.WmsProductionSubmitDTO;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.util.WmsSyncAutoGate;
 import org.jeecg.modules.wms.service.IWmsProductionInboundService;
 import org.jeecg.modules.wms.service.IWmsProductionSyncService;
 import org.jeecg.modules.wms.service.IWmsProductionTaskService;
@@ -53,6 +55,10 @@ public class WmsProductionController {
 
     @Autowired
     private IWmsProductionSyncService syncService;
+    /** 「自动同步」开关：关闭时**不即时回写**，单据留在「待同步」由页面手工同步。 */
+    @Autowired(required = false)
+    private IWmsSystemConfigService systemConfigService;
+
 
     @RequiresPermissions("wms:production:scan")
     @Operation(summary = "生产入库-按工单号查询（本地无单时自动从 ERP 同步）")
@@ -77,6 +83,9 @@ public class WmsProductionController {
                 // 事务已提交（service.submit 的代理已返回），异步调用外部设备接口，
                 // 避免 RMS/WCS 超时把提交请求拖到前端 axios 超时
                 taskService.dispatchInboundAsync(record.getId());
+            } else if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
+                // 自动同步已关闭：良品为 0 也留在「待同步」，由页面手工推送
+                log.info("自动同步已关闭，跳过提交后的即时回写：{}", record.getId());
             } else {
                 // 良品为 0：提交即入库，立即同步，不等 5 分钟补偿
                 WmsOrderSyncAttempt attempt = syncService.syncInbound(record.getId(), true);
@@ -123,6 +132,10 @@ public class WmsProductionController {
                                                       @RequestBody(required = false) WmsProductionManualCompleteDTO dto) {
         try {
             service.manualComplete(id, dto);
+            if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
+                log.info("自动同步已关闭，跳过转人工完成后的即时回写：{}", id);
+                return Result.OK("转人工完成；自动同步已关闭，请点「同步金蝶」手工同步", null);
+            }
             WmsOrderSyncAttempt attempt = syncService.syncInbound(id, true);
             service.persistSyncResult(id, attempt);
             return attempt.isSuccess()

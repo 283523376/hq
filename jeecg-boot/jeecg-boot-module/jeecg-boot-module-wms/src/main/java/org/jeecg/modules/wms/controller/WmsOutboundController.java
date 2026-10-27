@@ -16,6 +16,8 @@ import org.jeecg.modules.wms.dto.WmsOutboundReviewDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSalesCreateDTO;
 import org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.util.WmsSyncAutoGate;
 import org.jeecg.modules.wms.service.IWmsOutboundService;
 import org.jeecg.modules.wms.service.IWmsOutboundSyncService;
 import org.jeecg.modules.wms.service.IWmsOutboundTaskService;
@@ -52,6 +54,10 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
 
     @Autowired
     private IWmsOutboundTaskService taskService;
+    /** 「自动同步」开关：关闭时**不即时回写**，单据留在「待同步」由页面手工同步。 */
+    @Autowired(required = false)
+    private IWmsSystemConfigService systemConfigService;
+
 
     @Autowired
     private IWmsSubcontractOrderSyncService subcontractOrderSyncService;
@@ -270,6 +276,11 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
         if (!vo.isConfirmed()) {
             // 销售订单未同步：等待操作员确认，不能自行继续
             return Result.OK(vo);
+        }
+        if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
+            log.info("自动同步已关闭，跳过出库确认后的即时回写：{}", id);
+            vo.setMessage("出库完成；自动同步已关闭，请点「同步金蝶」手工同步");
+            return Result.OK(vo.getMessage(), vo);
         }
         WmsOrderSyncAttempt attempt = syncService.sync(id, true);
         syncService.persistResult(id, attempt);

@@ -8,6 +8,8 @@ import org.jeecg.config.shiro.IgnoreAuth;
 import org.jeecg.modules.wms.dto.WmsContainerLocationDTO;
 import org.jeecg.modules.wms.dto.WmsTaskFeedbackDTO;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.util.WmsSyncAutoGate;
 import org.jeecg.modules.wms.service.IWmsProductionInboundService;
 import org.jeecg.modules.wms.service.IWmsProductionSyncService;
 import org.jeecg.modules.wms.sync.WmsOrderSyncAttempt;
@@ -43,6 +45,10 @@ public class WmsRmsCallbackController {
 
     @Autowired
     private IWmsProductionSyncService productionSyncService;
+    /** 「自动同步」开关：关闭时不即时回写，单据留在「待同步」由页面手工同步。 */
+    @Autowired(required = false)
+    private IWmsSystemConfigService systemConfigService;
+
 
     @Autowired
     private org.jeecg.modules.wms.service.IWmsOutboundService outboundService;
@@ -95,9 +101,14 @@ public class WmsRmsCallbackController {
                         // 回执事务已提交，此处再触发同步；先乐观认领，避免与补偿任务重复投递
                         if (productionService.claimForSync(record.getId(),
                                 productionService.syncStaleBefore()) > 0) {
-                            WmsOrderSyncAttempt attempt =
-                                    productionSyncService.syncInbound(record.getId(), true);
-                            productionService.persistSyncResult(record.getId(), attempt);
+                            // 自动同步关闭时只把记录留在「待同步」，由页面手工推送
+                            if (!WmsSyncAutoGate.isManualOnly(systemConfigService)) {
+                                WmsOrderSyncAttempt attempt =
+                                        productionSyncService.syncInbound(record.getId(), true);
+                                productionService.persistSyncResult(record.getId(), attempt);
+                            } else {
+                                log.info("自动同步已关闭，跳过设备回执后的即时回写：{}", record.getId());
+                            }
                         }
                     }
                     item.put("code", 0);
