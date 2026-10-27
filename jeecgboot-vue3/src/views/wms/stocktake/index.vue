@@ -30,14 +30,6 @@
       </a-form>
     </a-modal>
 
-    <a-modal v-model:open="reviewOpen" title="复核" @ok="handleReview" :confirm-loading="acting">
-      <a-form layout="vertical">
-        <a-form-item label="复核人（不得是发起人）">
-          <a-input v-model:value="reviewer" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-
     <a-modal v-model:open="recordOpen" title="录入实盘" @ok="handleRecord" :confirm-loading="acting">
       <a-form layout="vertical">
         <a-form-item label="每行一条：明细ID,实盘数量,差异原因(可空)；留空数量的行请勿填写（未录入≠0）">
@@ -80,9 +72,6 @@
   const createType = ref('定期');
   const createLocations = ref('');
   const createRemark = ref('');
-  const reviewOpen = ref(false);
-  const reviewer = ref('');
-  const reviewId = ref('');
   const recordOpen = ref(false);
   const recordId = ref('');
   const recordRows = ref('');
@@ -145,10 +134,9 @@
     if (record.status === '复核中') {
       list.push({
         label: '复核',
-        onClick: () => {
-          reviewId.value = record.id;
-          reviewer.value = '';
-          reviewOpen.value = true;
+        popConfirm: {
+          title: '以当前登录人复核通过？（复核人不得是发起人）',
+          confirm: () => run(() => reviewStocktake(record.id), '复核通过'),
         },
       });
     }
@@ -180,14 +168,6 @@
       });
     }
     return items;
-  }
-
-  function handleReview() {
-    if (!reviewer.value.trim()) {
-      createMessage.warning('请填写复核人');
-      return;
-    }
-    run(() => reviewStocktake(reviewId.value, reviewer.value.trim()), '复核通过');
   }
 
   function handleRecord() {

@@ -46,6 +46,9 @@ public interface IWmsStocktakeService {
     /** 复核通过：复核中 → 差异确认。复核人不得等于发起人（simulate-review 可跳过）。 */
     void review(String id, String reviewer);
 
+    /** 记录 ERP 回写结果（成功/失败与说明），供界面与重试判断。 */
+    void markErpWriteback(String id, boolean success, String message);
+
     /** 归档：已调整 → 已归档（终态）。 */
     void archive(String id);
 }

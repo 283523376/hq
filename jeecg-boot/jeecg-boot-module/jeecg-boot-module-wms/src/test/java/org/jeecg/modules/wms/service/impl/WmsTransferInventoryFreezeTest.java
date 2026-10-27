@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,13 +27,15 @@ import static org.mockito.Mockito.when;
 class WmsTransferInventoryFreezeTest {
 
     private WmsLocationMapper locationMapper;
+    private org.jeecg.modules.wms.mapper.WmsInventoryMapper inventoryMapper;
     private WmsTransferInventoryServiceImpl service;
 
     @BeforeEach
     void setUp() {
         locationMapper = mock(WmsLocationMapper.class);
+        inventoryMapper = mock(WmsInventoryMapper.class);
         service = new WmsTransferInventoryServiceImpl(
-                mock(WmsInventoryMapper.class), locationMapper,
+                inventoryMapper, locationMapper,
                 mock(WmsWarehouseMapper.class), mock(WmsTransferTaskMapper.class));
     }
 
@@ -53,5 +56,40 @@ class WmsTransferInventoryFreezeTest {
 
         assertTrue(e.getMessage().contains("盘点冻结"), e.getMessage());
         assertTrue(e.getMessage().contains("TC-01"), e.getMessage());
+    }
+
+    @Test
+    void allocateFromFrozenSourceIsRejected() {
+        WmsLocation frozen = new WmsLocation();
+        frozen.setId("loc-s1");
+        frozen.setLocationCode("TS-01");
+        frozen.setStocktakeFrozen(WmsConstants.STOCKTAKE_FROZEN);
+        when(locationMapper.selectById("loc-s1")).thenReturn(frozen);
+
+        org.jeecg.modules.wms.vo.WmsInventoryAvailableVO row = new org.jeecg.modules.wms.vo.WmsInventoryAvailableVO();
+        row.setId("inv-9");
+        row.setMaterialId("m1");
+        row.setLocationId("loc-s1");
+        row.setLocationCode("TS-01");
+        row.setQuantity(new BigDecimal("10"));
+        row.setLockedQty(BigDecimal.ZERO);
+        org.jeecg.modules.wms.entity.WmsTransferOrder order = new org.jeecg.modules.wms.entity.WmsTransferOrder();
+        order.setId("tr-1");
+        order.setOutWarehouseId("w1");
+        org.jeecg.modules.wms.entity.WmsTransferDetail detail = new org.jeecg.modules.wms.entity.WmsTransferDetail();
+        detail.setId("d1");
+        detail.setMaterialId("m1");
+        detail.setTransferQty(new BigDecimal("3"));
+
+        when(inventoryMapper.selectAvailableByWarehouse(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(row));
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.allocate(order, detail));
+
+        assertTrue(e.getMessage().contains("盘点冻结"), e.getMessage());
     }
 }

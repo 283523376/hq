@@ -78,8 +78,10 @@ public class WmsStocktakeErpWriterImpl {
             }
             BigDecimal diff = detail.getActualQty()
                     .subtract(detail.getBookQty() == null ? java.math.BigDecimal.ZERO : detail.getBookQty());
+            // 严格按符号分流：diff==0 的行两侧都不带（金蝶库存单据 0 数量会直接报错）
             boolean isGain = diff.signum() > 0;
-            if (isGain != gain) {
+            boolean isLoss = diff.signum() < 0;
+            if ((gain && !isGain) || (!gain && !isLoss)) {
                 continue;
             }
             Map<String, Object> entry = new LinkedHashMap<>();

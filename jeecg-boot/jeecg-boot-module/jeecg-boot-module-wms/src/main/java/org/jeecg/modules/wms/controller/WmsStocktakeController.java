@@ -100,9 +100,9 @@ public class WmsStocktakeController {
 
     @AutoLog(value = "盘点-录入实盘", operateType = 3)
     @Operation(summary = "盘点-录入实盘数量（留空=未录入，不当作 0）")
-    @PostMapping(value = "/recordActual")
+    @PostMapping(value = "/recordActual/{id}")
     @RequiresPermissions("wms:stocktake:record")
-    public Result<String> recordActual(@RequestParam("id") String id,
+    public Result<String> recordActual(@org.springframework.web.bind.annotation.PathVariable("id") String id,
                                        @RequestBody List<WmsStocktakeDetailVO> actuals) {
         try {
             stocktakeService.recordActual(id, actuals);
@@ -129,9 +129,10 @@ public class WmsStocktakeController {
     @Operation(summary = "盘点-复核（复核人不得是发起人）")
     @PostMapping(value = "/review")
     @RequiresPermissions("wms:stocktake:review")
-    public Result<String> review(@RequestParam("id") String id, @RequestParam("reviewer") String reviewer) {
+    public Result<String> review(@RequestParam("id") String id) {
         try {
-            stocktakeService.review(id, reviewer);
+            // 复核人一律取当前登录人，绝不接受前端自由文本（否则"复核人≠发起人"形同虚设）
+            stocktakeService.review(id, WmsUtils.currentUsername());
             return Result.OK("复核通过");
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
@@ -162,6 +163,8 @@ public class WmsStocktakeController {
             WmsOrderSyncResult loss = stocktakeErpWriter.writeLoss(order);
             String gainMsg = gain.isSuccess() ? "盘盈回写成功" : "盘盈回写失败：" + gain.getErrorMessage();
             String lossMsg = loss.isSuccess() ? "盘亏回写成功" : "盘亏回写失败：" + loss.getErrorMessage();
+            stocktakeService.markErpWriteback(id, gain.isSuccess() && loss.isSuccess(),
+                    gain.isSuccess() ? "盘盈已回写" : gain.getErrorMessage());
             return Result.OK(gainMsg + "；" + lossMsg);
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());

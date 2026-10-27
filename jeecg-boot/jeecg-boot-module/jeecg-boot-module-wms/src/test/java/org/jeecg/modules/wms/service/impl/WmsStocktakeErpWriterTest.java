@@ -119,4 +119,26 @@ class WmsStocktakeErpWriterTest {
         detail.setActualQty(new BigDecimal(actual));
         return detail;
     }
+
+    @Test
+    void zeroDiffRowsAreExcludedFromBothSides() {
+        properties.getStocktake().setStockCode("D.01");
+        when(detailMapper.selectList(any())).thenReturn(List.of(
+                detail("loc-1", "m1", "10", "12"),  // 盈 2
+                detail("loc-2", "m2", "10", "10"),  // 零差异
+                detail("loc-3", "m3", "10", "7")));  // 亏 3
+        when(formClient.save(anyString(), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", List.of(), "B1", "1"));
+
+        writer.writeGain(order());
+        writer.writeLoss(order());
+
+        ArgumentCaptor<Map<String, Object>> modelCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(formClient, org.mockito.Mockito.times(2)).save(anyString(), modelCaptor.capture());
+        for (Map<String, Object> model : modelCaptor.getAllValues()) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> entries = (List<Map<String, Object>>) model.get("FEntity");
+            assertEquals(1, entries.size(), "零差异行不得出现在任何一侧：" + entries);
+        }
+    }
 }

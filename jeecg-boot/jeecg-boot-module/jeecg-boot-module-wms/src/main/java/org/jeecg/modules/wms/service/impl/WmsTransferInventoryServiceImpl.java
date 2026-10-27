@@ -74,6 +74,8 @@ public class WmsTransferInventoryServiceImpl implements IWmsTransferInventorySer
                 if (allocated.compareTo(required) >= 0) {
                     break;
                 }
+                // 盘点冻结的源库位不可建移库任务：否则盘点差异被并发移库搅乱、产出假盘亏
+                WmsStocktakeFreezeGuard.assertNotFrozen(row.getLocationId(), locationMapper);
                 BigDecimal available = nvl(row.getQuantity()).subtract(nvl(row.getLockedQty()));
                 if (available.signum() <= 0) {
                     continue;

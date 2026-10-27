@@ -15,6 +15,7 @@ import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
 import org.jeecg.modules.wms.service.IWmsStocktakeService;
 import org.jeecg.modules.wms.vo.WmsStocktakeDetailVO;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
@@ -32,7 +33,7 @@ import java.util.List;
  * <ul>
  *   <li>盘点调整**只改 wms_inventory**，绝不建 inbound/outbound 真单据（否则会触发设备下发
  *       与销售出库兜底回写）；</li>
- *   <li>建单即冻结范围内库位，冻结期间出库/移库/上架三条写入路径都会被拦截。</li>
+ *   <li>「开始盘点」才冻结范围内库位；出库分配/移库建任务/入库提交三条路径拦截，在途任务落账只标重盘不拒收。</li>
  * </ul>
  *
  * @Author: 永鑫WMS
@@ -250,6 +251,14 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
     }
 
     @Override
+    public void markErpWriteback(String id, boolean success, String message) {
+        WmsStocktakeOrder order = requireById(id);
+        order.setErpSyncStatus(success ? "已回写" : "回写失败");
+        order.setErpBillNo(message);
+        orderMapper.updateById(order);
+    }
+
+    @Override
     public void archive(String id) {
         WmsStocktakeOrder order = requireById(id);
         statusResolver.assertTransition(order.getStatus(), WmsConstants.STOCKTAKE_STATUS_ARCHIVED);
@@ -259,7 +268,7 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void markRecheck(String locationId, String materialId, String batchNo, String containerCode) {
         // 找进行中（盘点中/差异确认/复核中）且范围覆盖该库位的盘点单
         List<WmsStocktakeOrder> active = orderMapper.selectList(new LambdaQueryWrapper<WmsStocktakeOrder>()
@@ -271,11 +280,12 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
             if (!covered) {
                 continue;
             }
-            WmsStocktakeDetail hit = details.stream().filter(d ->
+            // materialId 为空的回执无法精确对应明细行——宁可插快照行也不误标别人的行
+            WmsStocktakeDetail hit = StringUtils.hasText(materialId) ? details.stream().filter(d ->
                     locationId.equals(d.getLocationId())
-                            && eqOrNull(materialId, d.getMaterialId())
+                            && materialId.equals(d.getMaterialId())
                             && eqOrNull(batchNo, d.getBatchNo())
-                            && eqOrNull(containerCode, d.getContainerCode())).findFirst().orElse(null);
+                            && eqOrNull(containerCode, d.getContainerCode())).findFirst().orElse(null) : null;
             if (hit != null) {
                 hit.setRecheckFlag(WmsConstants.STOCKTAKE_FROZEN);
                 detailMapper.updateById(hit);
