@@ -43,6 +43,9 @@ public class WmsStocktakePlan extends JeecgEntity {
     @Schema(description = "上次执行时间")
     private Date lastRunTime;
 
+    @Schema(description = "上次圈到的库位编码（滚动游标）")
+    private String lastCursor;
+
     @Schema(description = "是否启用：1是 0否")
     private String enabled;
 
