@@ -5,12 +5,30 @@ import { Table } from 'ant-design-vue';
 import { computed, Ref, ref, toRaw, unref, watch, reactive } from 'vue';
 import { renderEditCell } from '../components/editable';
 import { usePermission } from '/@/hooks/web/usePermission';
+import { getTextScale } from '/@/hooks/web/useFontScale';
 import { useI18n } from '/@/hooks/web/useI18n';
 import { isArray, isBoolean, isFunction, isMap, isString } from '/@/utils/is';
 import { cloneDeep, isEqual } from 'lodash-es';
 import { formatToDate } from '/@/utils/dateUtil';
 import { ACTION_COLUMN_FLAG, DEFAULT_ALIGN, INDEX_COLUMN_FLAG, PAGE_SIZE } from '../const';
 import { CUS_SEL_COLUMN_KEY } from './useCustomSelection';
+
+/**
+ * 文字缩放（>100%）时按同一比例放大固定列宽。
+ *
+ * 列宽写的是 px，字号放大后同样的宽度装不下同样的字，单元格就会被省略号截断
+ * （例如 130px 的「出库单号」在 150% 下只能显示 12 位）。等比放大列宽让表格
+ * 横向滚动，而不是把内容藏起来。
+ */
+function scaleColumnWidth(item: BasicColumn, scale: number) {
+  // 只在放大时按比例加宽；缩小字号时保持原列宽（列变窄反而会把原来能显示的内容藏起来）
+  if (scale > 1 && typeof item.width === 'number') {
+    item.width = Math.round(item.width * scale);
+  }
+  if (item.children && item.children.length) {
+    item.children.forEach((child) => scaleColumnWidth(child, scale));
+  }
+}
 
 function handleItem(item: BasicColumn, ellipsis: boolean) {
   const { key, dataIndex, children } = item;
@@ -129,11 +147,14 @@ export function useColumns(
       return [];
     }
     const { ellipsis } = unref(propsRef);
+    // 读取 textScaleRef 让列宽随缩放比例变化（computed 依赖它，改比例后自动重算）
+    const widthScale = getTextScale() / 100;
 
     columns.forEach((item) => {
       const { customRender, slots } = item;
 
       handleItem(item, Reflect.has(item, 'ellipsis') ? !!item.ellipsis : !!ellipsis && !customRender && !slots);
+      scaleColumnWidth(item, widthScale);
     });
     return columns;
   });

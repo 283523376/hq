@@ -330,3 +330,29 @@ html[data-theme='dark'] {
     color: red !important;
   }
 }
+
+/* ------------------------------------------------------------------
+ * 文字缩放下的表单标签
+ *
+ * antd 默认把 .ant-form-item-label 设成 nowrap + overflow:hidden，并把里面
+ * 的 label 高度锁成 controlHeight；字号放大到 150% 后，长中文标签（如
+ * 「设备离线判定阈值（秒）」）会被直接裁掉半截。
+ *
+ * 这里改成允许换行、高度自适应——语义等同 antd 自带的 label-wrap，
+ * 但全局生效，不用给几十个 FormItem 逐个加属性。100% 时能放下的标签
+ * 仍然是一行，不会有视觉变化。
+ * ------------------------------------------------------------------ */
+.ant-form-horizontal {
+  .ant-form-item-label {
+    overflow: visible;
+    white-space: normal;
+
+    > label {
+      height: auto;
+      max-height: none;
+      white-space: normal;
+      word-break: break-word;
+      line-height: 1.5715;
+    }
+  }
+}

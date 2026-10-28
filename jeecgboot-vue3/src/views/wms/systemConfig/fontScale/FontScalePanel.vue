@@ -6,6 +6,8 @@
 
     <a-alert type="info" show-icon :message="panelDesc" class="font-scale-tip" />
 
+    <!-- 滑块单独占一行：刻度文字（如 150%）在字号放大后会溢出到右侧，
+         与数字输入框并排必然重叠，改为上下排列彻底避开 -->
     <div class="font-scale-row">
       <a-slider
         v-model:value="percent"
@@ -16,6 +18,9 @@
         style="flex: 1"
         @change="handleApply"
       />
+    </div>
+    <div class="font-scale-current">
+      <span class="font-scale-presets-label">当前档位：</span>
       <a-input-number
         v-model:value="percent"
         :min="range[0]"
@@ -67,7 +72,7 @@
   const panelTitle = computed(() => (props.type === 'text' ? '文字缩放' : '界面缩放'));
   const panelDesc = computed(() =>
     props.type === 'text'
-      ? '调整系统内组件文字的基准字号（默认 14px × 比例），表格、表单、按钮等文字一并变化；布局尺寸不变，个别页面写死的字号不受影响。'
+      ? '调整系统内组件文字的基准字号（默认 14px × 比例），按钮、输入框等控件高度与表格、表单文字一并放大；布局结构不变，个别页面写死的字号不受影响。'
       : '对整个页面（含弹窗、消息提示）整体等比缩放，效果类似浏览器的 Ctrl + 滚轮。'
   );
 
@@ -123,8 +128,16 @@
   .font-scale-row {
     display: flex;
     align-items: center;
-    gap: 16px;
     max-width: 560px;
+    // 最右端刻度文字以刻度点为中心展开，需要给它留出半个字宽的余量
+    padding-right: 24px;
+  }
+
+  .font-scale-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
   }
 
   .font-scale-presets {

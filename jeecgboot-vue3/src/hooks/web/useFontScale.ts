@@ -11,6 +11,15 @@ import { ref } from 'vue';
 /** antd token 的基准字号（对应 App.vue 里写死的 14） */
 const TEXT_BASE_FONT_SIZE = 14;
 
+/**
+ * antd 的 `controlHeight` 种子默认值。
+ *
+ * 关键：它和 `fontSize` 是**两个独立的种子 token**，不会跟着字号自动变大。
+ * 只改字号时，21px 的字行盒约 29px 仍被塞在 32px（小尺寸按钮 24px）的控件里，
+ * 就会出现「文字压边/被裁」——所以文字缩放必须同时缩放控件高度。
+ */
+const CONTROL_BASE_HEIGHT = 32;
+
 /** 两个维度共用的步进（%） */
 export const SCALE_STEP = 5;
 
@@ -38,6 +47,23 @@ export function getZoomScale(): number {
 /** 百分比 → antd token 基准字号（px） */
 export function calcTextFontSize(percent: number): number {
   return Math.round((TEXT_BASE_FONT_SIZE * percent) / 100);
+}
+
+/** 百分比 → antd 控件高度（px） */
+export function calcControlHeight(percent: number): number {
+  return Math.round((CONTROL_BASE_HEIGHT * percent) / 100);
+}
+
+/**
+ * 文字缩放要一并改的 antd token。
+ *
+ * 派生 token（controlHeightSM/LG、菜单项高度等）都由 controlHeight 推导，改这一个即可。
+ */
+export function buildFontTokens(percent: number): { fontSize: number; controlHeight: number } {
+  return {
+    fontSize: calcTextFontSize(percent),
+    controlHeight: calcControlHeight(percent),
+  };
 }
 
 /** 按 5% 步进取整后收敛到 [min, max] */

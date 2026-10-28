@@ -17,7 +17,7 @@
   import { useRootSetting } from '/@/hooks/setting/useRootSetting';
   import { ThemeEnum } from '/@/enums/appEnum';
   import { changeTheme } from '/@/logics/theme/index';
-  import { calcTextFontSize, getTextScale, initFontScale, textScaleRef } from '/@/hooks/web/useFontScale';
+  import { buildFontTokens, getTextScale, initFontScale, textScaleRef } from '/@/hooks/web/useFontScale';
 
   const appStore = useAppStore();
   // 解决日期时间国际化问题
@@ -78,7 +78,9 @@
           token: {
             colorPrimary: primary,
             wireframe: true,
-            fontSize: calcTextFontSize(getTextScale()),
+            // 字号与控件高度必须一起缩放：antd 的 controlHeight 是独立种子 token，
+            // 只放大字号会让文字压出按钮/输入框（见 useFontScale 注释）
+            ...buildFontTokens(getTextScale()),
             colorTextBase: '#333',
             colorSuccess: '#55D187',
             colorInfo: primary,
@@ -103,7 +105,7 @@
       ...appTheme.value,
       token: {
         ...appTheme.value.token,
-        fontSize: calcTextFontSize(pct),
+        ...buildFontTokens(pct),
       },
     };
   });
