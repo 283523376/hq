@@ -46,6 +46,9 @@ public class WmsMasterDataSyncJob implements Job {
     private IWmsKingdeeMaterialSyncService materialSyncService;
 
     @Autowired
+    private org.jeecg.modules.wms.service.IWmsKingdeeBinSyncService binSyncService;
+
+    @Autowired
     private WmsKingdeeProperties properties;
 
     @Autowired
@@ -110,6 +113,12 @@ public class WmsMasterDataSyncJob implements Job {
             log.info("主数据同步-物料：{}", vo.getMessage());
         } catch (Exception e) {
             log.error("主数据同步-物料失败：{}", e.getMessage(), e);
+        }
+        try {
+            WmsKingdeeStockSyncResultVO vo = binSyncService.syncBins();
+            log.info("主数据同步-仓位属性：{}", vo.getMessage());
+        } catch (Exception e) {
+            log.error("主数据同步-仓位属性失败：{}", e.getMessage(), e);
         }
     }
 }

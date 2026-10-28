@@ -562,6 +562,10 @@ wms:
         batch:
           auto-create-enabled: "${KINGDEE_BATCH_AUTO_CREATE:true}"
           auto-repair-enabled: "${KINGDEE_BATCH_AUTO_REPAIR:false}"
+        # 金蝶仓位属性同步的组织范围（金蝶仓位是逻辑库位/分类，不是物理货位）
+        # 101 尚无启用仓位的仓库；暂以 100 的仓位数据做测试同步，且**只读**，不改动 100 的任何内容
+        bin-org-numbers:
+          - "100"
         # 销售出库待办：金蝶发货通知单（SAL_DELIVERYNOTICE，仅已审核 C 且未出库量>0）→ WMS 销售出库单
         # stock-map 是【预留接口】：金蝶 101 组织的仓库主数据尚未建立，配置为空时所有行按「未配置映射」跳过，
         # 等业务把金蝶仓库建好后在这里登记「金蝶仓编码: WMS库区编码」即可，无需改代码

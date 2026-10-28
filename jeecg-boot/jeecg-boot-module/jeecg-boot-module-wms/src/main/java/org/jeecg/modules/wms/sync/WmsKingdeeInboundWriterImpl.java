@@ -40,16 +40,19 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
     private final WmsProductionInboundMapper inboundMapper;
     private final WmsMaterialCodeResolver materialResolver;
     private final WmsKingdeeBatchSupport batchSupport;
+    private final WmsKingdeeLookupSupport lookup;
 
     public WmsKingdeeInboundWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
                                        IWmsKingdeeDefectWriter defectWriter, WmsProductionInboundMapper inboundMapper,
-                                       WmsMaterialCodeResolver materialResolver, WmsKingdeeBatchSupport batchSupport) {
+                                       WmsMaterialCodeResolver materialResolver, WmsKingdeeBatchSupport batchSupport,
+                                       WmsKingdeeLookupSupport lookup) {
         this.formClient = formClient;
         this.properties = properties;
         this.defectWriter = defectWriter;
         this.inboundMapper = inboundMapper;
         this.materialResolver = materialResolver;
         this.batchSupport = batchSupport;
+        this.lookup = lookup;
     }
 
     @Override
@@ -200,10 +203,16 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             Long flexId = stockRow.size() > 2 ? toLong(stockRow.get(2)) : null;
             Long stockLocId = null;
             if (flexId != null && flexId > 0) {
-                stockLocId = resolveStockLocId(stockCode, flexId);
-                if (stockLocId == null) {
+                // 优先用 **物理货位上的金蝶仓位属性**（2026-10-28 模型：金蝶仓位是挂在货位上的分类属性），
+                // 货位没挂属性时才回退到 stock-loc 配置
+                stockLocId = lookup.stockLocIdByLocation(inbound.getLocationId());
+                // 0/≤0 一律视为「没拿到」：内码为正整数，防御脏值（单测里 Mockito 对 Long 默认返回 0）
+                if (stockLocId == null || stockLocId <= 0) {
+                    stockLocId = resolveStockLocId(stockCode, flexId);
+                }
+                if (stockLocId == null || stockLocId <= 0) {
                     return WmsOrderSyncResult.fail("仓库[" + stockCode + "]启用仓位管理："
-                            + "请配置 stock-loc[" + stockCode + "]=仓位编号");
+                            + "请给货位挂金蝶仓位属性，或配置 stock-loc[" + stockCode + "]=仓位编号");
                 }
             }
 

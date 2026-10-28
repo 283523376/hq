@@ -24,9 +24,47 @@ public class WmsKingdeeLookupSupport {
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
 
-    public WmsKingdeeLookupSupport(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties) {
+    private final org.jeecg.modules.wms.mapper.WmsLocationMapper locationMapper;
+    private final org.jeecg.modules.wms.mapper.WmsKingdeeBinMapper kingdeeBinMapper;
+
+    public WmsKingdeeLookupSupport(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
+                                   org.jeecg.modules.wms.mapper.WmsLocationMapper locationMapper,
+                                   org.jeecg.modules.wms.mapper.WmsKingdeeBinMapper kingdeeBinMapper) {
         this.formClient = formClient;
         this.properties = properties;
+        this.locationMapper = locationMapper;
+        this.kingdeeBinMapper = kingdeeBinMapper;
+    }
+
+    /**
+     * 按 **WMS 物理货位** 取金蝶仓位内码（2026-10-28 仓位属性模型）。
+     *
+     * <p>金蝶仓位是逻辑库位/分类属性，挂在物理货位上：货位 `kingdee_bin_id` → `wms_kingdee_bin.flex_id`。
+     * 未挂属性或属性已停用返回 null，由调用方回退到配置解析。
+     */
+    public Long stockLocIdByLocation(String locationId) {
+        if (oConvertUtils.isEmpty(locationId)) {
+            return null;
+        }
+        try {
+            org.jeecg.modules.wms.entity.WmsLocation location = locationMapper.selectById(locationId);
+            if (location == null || oConvertUtils.isEmpty(location.getKingdeeBinId())) {
+                return null;
+            }
+            org.jeecg.modules.wms.entity.WmsKingdeeBin bin = kingdeeBinMapper.selectById(location.getKingdeeBinId());
+            if (bin == null || bin.getFlexId() == null) {
+                return null;
+            }
+            if (!"正常".equals(bin.getSyncStatus())) {
+                log.warn("货位[{}]挂的金蝶仓位[{}/{}]状态为「{}」，本次不传仓位",
+                        location.getLocationCode(), bin.getFlexNumber(), bin.getBinNumber(), bin.getSyncStatus());
+                return null;
+            }
+            return bin.getFlexId();
+        } catch (Exception e) {
+            log.warn("按货位[{}]解析金蝶仓位失败：{}", locationId, e.getMessage());
+            return null;
+        }
     }
 
     /**

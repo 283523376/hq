@@ -109,3 +109,44 @@ IWmsKingdeeLocationSyncService.syncLocations()
 3. 等 101 建仓、启用仓位后，打开定时任务即可自动同步
 
 需要我按这个顺序开工吗？第 1 步现在就能做且不依赖任何外部数据。
+
+---
+
+# 实施更新（2026-10-28 当日落地）
+
+用户确认后的最终模型与实现（**取代上文 §3 的 1:1 方案**）：
+
+## 语义修正
+
+金蝶仓位**是逻辑库位/分类属性，不是物理货位**；两者不是 1:1。金蝶部分单据带仓位、大部分为空。
+因此同步只建立**属性字典**，由 WMS 物理货位**按需挂一个属性**（如给某货位打上「研发仓」）。
+
+## 实际实现
+
+| 层 | 内容 |
+|---|---|
+| 表 | 新增 `wms_kingdee_bin`（组织/值集/仓位编码/名称/金蝶内码/同步状态）；`wms_location` 加 `kingdee_bin_id`、`kingdee_bin_number`（Flyway `V3.9.5_36`） |
+| 同步 | `IWmsKingdeeBinSyncService.syncBins()`：读 `BD_FLEXVALUES`（按 `bin-org-numbers` 组织）→ View 解析 `FLEXVALUESENTRY[]` → 按 `(组织,值集,仓位编码)` upsert |
+| 停用策略 | 金蝶消失/停用**不删除**：被有库存的货位引用 → `待处理`；否则 → `金蝶已停用` |
+| 接口 | `POST /wms/warehouse/sync-bins-from-kingdee`（权限 `wms:location:add`）+ 挂进主数据定时任务 |
+| 回写 | `WmsKingdeeLookupSupport.stockLocIdByLocation(locationId)`：货位属性 → `flex_id`；未挂属性才回退 YAML `stock-loc`；入库回写已接 |
+
+## 真机验证（只读 100 组织，未改动金蝶任何数据）
+
+```
+POST /wms/warehouse/sync-bins-from-kingdee
+→ 拉取 4 条（组织 [100]），新建 4，更新 0
+→ 再次执行：新建 0，更新 4（幂等）
+```
+
+落库结果：`001/01=A(100001)`、`001/02=B(100002)`、`001/03=C(100003)`、`002/A=A(100004)`；
+内码与金蝶 `FLEXVALUESENTRY[].Id` 一致，可直接作为 `FStockLocId` 回写。
+
+真机踩坑：View 返回的 `Name` 是 `[{Key:2052,Value:"A"},…]` **数组**，不是按语言键的 Map；
+按 Map 解析会把整段 List 串进名称（已修正并补单测）。
+
+## 遗留
+
+1. 101 组织仍需业务建仓并启用仓位（当前 81 个仓库 0 个启用）；启用后把 `bin-org-numbers` 加 `101` 即可
+2. 领料/销售出库回写暂未接货位属性（明细上没有货位字段），如需按货位带仓位需先给明细加库位
+3. 货位挂属性的前端入口尚未做（当前只能改库或后续补页面）

@@ -60,6 +60,14 @@ public class WmsLocation extends JeecgEntity {
     @Schema(description = "状态：空闲/占用/故障")
     private String status;
 
+    /** 金蝶仓位属性（逻辑库位/分类）。金蝶仓位不是物理货位，这里只是给货位打的一个分类标签 */
+    @Schema(description = "金蝶仓位属性ID")
+    private String kingdeeBinId;
+
+    /** 金蝶仓位编码（冗余展示，避免每次联表） */
+    @Schema(description = "金蝶仓位编码")
+    private String kingdeeBinNumber;
+
     /** 所属库区名称（非持久化，列表展示用，交给 QueryGenerator 前必须先置空）。 */
     @TableField(exist = false)
     @Schema(description = "所属库区名称")

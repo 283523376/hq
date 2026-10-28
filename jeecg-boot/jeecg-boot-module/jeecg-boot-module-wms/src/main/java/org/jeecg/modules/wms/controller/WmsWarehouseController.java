@@ -54,6 +54,23 @@ public class WmsWarehouseController extends JeecgController<WmsWarehouse, IWmsWa
     @Autowired
     private IWmsKingdeeWarehouseSyncService kingdeeWarehouseSyncService;
 
+    /** 金蝶仓位属性同步（逻辑库位/分类，非物理货位） */
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsKingdeeBinSyncService kingdeeBinSyncService;
+
+    @AutoLog(value = "仓库-仓位属性从金蝶同步", operateType = 2)
+    @Operation(summary = "仓库-同步金蝶仓位属性（BD_FLEXVALUES）")
+    @PostMapping(value = "/sync-bins-from-kingdee")
+    @RequiresPermissions("wms:location:add")
+    public Result<org.jeecg.modules.wms.vo.WmsKingdeeStockSyncResultVO> syncBinsFromKingdee() {
+        try {
+            return Result.OK("同步完成", kingdeeBinSyncService.syncBins());
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
+    }
+
     @AutoLog(value = "库区-金蝶仓库同步", operateType = 2)
     @Operation(summary = "库区-从金蝶同步仓库档案（白名单为空时不做任何查询）")
     @PostMapping(value = "/sync-kingdee")

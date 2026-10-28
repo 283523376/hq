@@ -168,6 +168,16 @@ public class WmsKingdeeProperties {
     private SalesDelivery salesDelivery = new SalesDelivery();
 
     /**
+     * 金蝶仓位属性同步的组织范围（空 = 用 {@code default-org-number}）。
+     *
+     * <p>金蝶仓位是逻辑库位/分类属性，不是物理货位（用户 2026-10-28 明确）。
+     */
+    private List<String> binOrgNumbers = new ArrayList<>();
+
+    public List<String> getBinOrgNumbers() { return binOrgNumbers; }
+    public void setBinOrgNumbers(List<String> binOrgNumbers) { this.binOrgNumbers = binOrgNumbers; }
+
+    /**
      * 销售出库待办配置。
      *
      * <p><b>仓库映射是预留接口</b>：金蝶 101 组织的仓库主数据尚未建立（2026-10-28 用户明确），
