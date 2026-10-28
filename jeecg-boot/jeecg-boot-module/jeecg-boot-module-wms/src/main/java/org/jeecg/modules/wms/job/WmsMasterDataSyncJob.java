@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.util.WmsSyncAutoGate;
 import org.jeecg.modules.wms.service.IWmsKingdeeCategorySyncService;
+import org.jeecg.modules.wms.service.IWmsKingdeeMaterialSyncService;
 import org.jeecg.modules.wms.service.IWmsKingdeeWarehouseSyncService;
 import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
@@ -42,6 +43,9 @@ public class WmsMasterDataSyncJob implements Job {
     private IWmsKingdeeCategorySyncService categorySyncService;
 
     @Autowired
+    private IWmsKingdeeMaterialSyncService materialSyncService;
+
+    @Autowired
     private WmsKingdeeProperties properties;
 
     @Autowired
@@ -54,10 +58,12 @@ public class WmsMasterDataSyncJob implements Job {
     /** 仅供单测注入依赖。 */
     WmsMasterDataSyncJob(IWmsKingdeeWarehouseSyncService warehouseSyncService,
                          IWmsKingdeeCategorySyncService categorySyncService,
+                         IWmsKingdeeMaterialSyncService materialSyncService,
                          WmsKingdeeProperties properties,
                          IWmsKingdeeAuthService kingdeeAuthService) {
         this.warehouseSyncService = warehouseSyncService;
         this.categorySyncService = categorySyncService;
+        this.materialSyncService = materialSyncService;
         this.properties = properties;
         this.kingdeeAuthService = kingdeeAuthService;
     }
@@ -98,6 +104,12 @@ public class WmsMasterDataSyncJob implements Job {
             log.info("主数据同步-分类：{}", vo.getMessage());
         } catch (Exception e) {
             log.error("主数据同步-分类失败：{}", e.getMessage(), e);
+        }
+        try {
+            WmsKingdeeStockSyncResultVO vo = materialSyncService.syncMaterial();
+            log.info("主数据同步-物料：{}", vo.getMessage());
+        } catch (Exception e) {
+            log.error("主数据同步-物料失败：{}", e.getMessage(), e);
         }
     }
 }

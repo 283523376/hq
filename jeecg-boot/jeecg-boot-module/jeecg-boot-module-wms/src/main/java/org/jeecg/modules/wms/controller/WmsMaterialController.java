@@ -60,6 +60,28 @@ import java.util.Set;
 @Slf4j
 public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMaterialService> {
 
+    private final org.jeecg.modules.wms.service.IWmsKingdeeMaterialSyncService kingdeeMaterialSyncService;
+
+    public WmsMaterialController(org.jeecg.modules.wms.service.IWmsKingdeeMaterialSyncService kingdeeMaterialSyncService) {
+        this.kingdeeMaterialSyncService = kingdeeMaterialSyncService;
+    }
+
+    /**
+     * 物料-从金蝶同步（BD_MATERIAL → wms_material，恒等映射；自动化优先 P0）
+     */
+    @AutoLog(value = "物料-从金蝶同步", operateType = 2)
+    @Operation(summary = "物料-从金蝶同步")
+    @PostMapping(value = "/sync-from-kingdee")
+    @RequiresPermissions("wms:material:add")
+    public Result<org.jeecg.modules.wms.vo.WmsKingdeeStockSyncResultVO> syncFromKingdee() {
+        try {
+            return Result.OK("同步完成", kingdeeMaterialSyncService.syncMaterial());
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
+    }
+
     /**
      * 分页列表查询（支持 categoryId / materialCode / materialName / status）
      */

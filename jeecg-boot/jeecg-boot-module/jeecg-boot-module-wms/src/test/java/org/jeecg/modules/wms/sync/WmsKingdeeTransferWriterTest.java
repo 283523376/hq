@@ -35,6 +35,7 @@ class WmsKingdeeTransferWriterTest {
     private WmsKingdeeFormClient formClient;
     private WmsKingdeeProperties properties;
     private WmsTransferOrderMapper transferMapper;
+    private WmsMaterialCodeResolver materialResolver;
     private WmsKingdeeTransferWriterImpl writer;
 
     @BeforeEach
@@ -49,7 +50,10 @@ class WmsKingdeeTransferWriterTest {
         properties.getStockCode().put("MJ", "D.01");
         properties.getStockCode().put("LB", "D.02");
         transferMapper = mock(WmsTransferOrderMapper.class);
-        writer = new WmsKingdeeTransferWriterImpl(formClient, properties, transferMapper);
+        materialResolver = mock(WmsMaterialCodeResolver.class);
+        when(materialResolver.resolveKingdeeCode(anyString())).thenAnswer(
+                inv -> properties.getMaterialMap().getOrDefault((String) inv.getArgument(0), (String) inv.getArgument(0)));
+        writer = new WmsKingdeeTransferWriterImpl(formClient, properties, transferMapper, materialResolver);
     }
 
     private WmsTransferOrder order() {

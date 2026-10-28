@@ -30,9 +30,13 @@ public class WmsKingdeePpbomReaderImpl implements IWmsKingdeePpbomReader {
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
 
-    public WmsKingdeePpbomReaderImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties) {
+    private final WmsMaterialCodeResolver materialResolver;
+
+    public WmsKingdeePpbomReaderImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
+                                     WmsMaterialCodeResolver materialResolver) {
         this.formClient = formClient;
         this.properties = properties;
+        this.materialResolver = materialResolver;
     }
 
     @Override
@@ -90,14 +94,9 @@ public class WmsKingdeePpbomReaderImpl implements IWmsKingdeePpbomReader {
         return vo;
     }
 
-    /** material-map（WMS → 金蝶）反向查找；未配置映射时视为未匹配。 */
+    /** 金蝶码 → WMS 码：表列 kingdee_code 优先（恒等映射天然命中），YAML 反向兜底；未命中视为未匹配。 */
     private String reverseMaterialCode(String kingdeeCode) {
-        for (Map.Entry<String, String> entry : properties.getMaterialMap().entrySet()) {
-            if (kingdeeCode.equals(entry.getValue())) {
-                return entry.getKey();
-            }
-        }
-        return null;
+        return materialResolver.reverseKingdeeCode(kingdeeCode);
     }
 
     private BigDecimal toDecimal(Object value) {

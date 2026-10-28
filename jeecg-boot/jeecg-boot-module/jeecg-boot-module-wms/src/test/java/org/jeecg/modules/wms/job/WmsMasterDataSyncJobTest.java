@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.job;
 
 import org.jeecg.modules.wms.service.IWmsKingdeeCategorySyncService;
+import org.jeecg.modules.wms.service.IWmsKingdeeMaterialSyncService;
 import org.jeecg.modules.wms.service.IWmsKingdeeWarehouseSyncService;
 import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
@@ -23,6 +24,7 @@ class WmsMasterDataSyncJobTest {
 
     private IWmsKingdeeWarehouseSyncService warehouseSyncService;
     private IWmsKingdeeCategorySyncService categorySyncService;
+    private IWmsKingdeeMaterialSyncService materialSyncService;
     private WmsKingdeeProperties properties;
     private IWmsKingdeeAuthService authService;
     private WmsMasterDataSyncJob job;
@@ -31,9 +33,10 @@ class WmsMasterDataSyncJobTest {
     void setUp() {
         warehouseSyncService = mock(IWmsKingdeeWarehouseSyncService.class);
         categorySyncService = mock(IWmsKingdeeCategorySyncService.class);
+        materialSyncService = mock(IWmsKingdeeMaterialSyncService.class);
         properties = new WmsKingdeeProperties();
         authService = mock(IWmsKingdeeAuthService.class);
-        job = new WmsMasterDataSyncJob(warehouseSyncService, categorySyncService, properties, authService);
+        job = new WmsMasterDataSyncJob(warehouseSyncService, categorySyncService, materialSyncService, properties, authService);
     }
 
     @Test

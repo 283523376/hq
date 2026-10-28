@@ -54,13 +54,16 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
     private final WmsKingdeeProperties properties;
     private final WmsKingdeeLookupSupport lookup;
     private final WmsOutboundOrderMapper outboundMapper;
+    private final WmsMaterialCodeResolver materialResolver;
 
     public WmsKingdeePickWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
-                                    WmsKingdeeLookupSupport lookup, WmsOutboundOrderMapper outboundMapper) {
+                                    WmsKingdeeLookupSupport lookup, WmsOutboundOrderMapper outboundMapper,
+                                    WmsMaterialCodeResolver materialResolver) {
         this.formClient = formClient;
         this.properties = properties;
         this.lookup = lookup;
         this.outboundMapper = outboundMapper;
+        this.materialResolver = materialResolver;
     }
 
     @Override
@@ -162,8 +165,7 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
             // 5) 组装分录
             List<Map<String, Object>> entries = new ArrayList<>();
             for (WmsOutboundDetail detail : details) {
-                String kingdeeCode = properties.getMaterialMap()
-                        .getOrDefault(detail.getMaterialCode(), detail.getMaterialCode());
+                String kingdeeCode = materialResolver.resolveKingdeeCode(detail.getMaterialCode());
                 List<Object> material = lookup.material(kingdeeCode, orgNumber);
                 if (material == null || material.isEmpty()) {
                     return WmsOrderSyncResult.fail("金蝶未找到物料编码：" + kingdeeCode);

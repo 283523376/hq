@@ -13,7 +13,12 @@ enum Api {
   importTemplate = '/wms/material/importTemplate',
   checkDelete = '/wms/material/checkDelete',
   checkDeleteBatch = '/wms/material/checkDeleteBatch',
+  syncFromKingdee = '/wms/material/sync-from-kingdee',
 }
+
+/** 从金蝶同步物料主数据（BD_MATERIAL → wms_material，恒等映射）；同步类接口不弹默认绿条 */
+export const syncMaterialFromKingdee = () =>
+  defHttp.post({ url: Api.syncFromKingdee }, { successMessageMode: 'none' });
 
 /** 删除预检：物料当前恒可删；未来库存表接入后这里会给出禁止原因 */
 export const checkMaterialDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });

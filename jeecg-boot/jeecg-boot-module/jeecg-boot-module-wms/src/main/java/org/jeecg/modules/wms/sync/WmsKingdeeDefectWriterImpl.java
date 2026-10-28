@@ -49,13 +49,16 @@ public class WmsKingdeeDefectWriterImpl implements IWmsKingdeeDefectWriter {
     private final WmsKingdeeProperties properties;
     private final WmsKingdeeLookupSupport lookup;
     private final WmsProductionInboundMapper inboundMapper;
+    private final WmsMaterialCodeResolver materialResolver;
 
     public WmsKingdeeDefectWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
-                                      WmsKingdeeLookupSupport lookup, WmsProductionInboundMapper inboundMapper) {
+                                      WmsKingdeeLookupSupport lookup, WmsProductionInboundMapper inboundMapper,
+                                      WmsMaterialCodeResolver materialResolver) {
         this.formClient = formClient;
         this.properties = properties;
         this.lookup = lookup;
         this.inboundMapper = inboundMapper;
+        this.materialResolver = materialResolver;
     }
 
     @Override
@@ -97,8 +100,7 @@ public class WmsKingdeeDefectWriterImpl implements IWmsKingdeeDefectWriter {
             if (oConvertUtils.isEmpty(stockCode)) {
                 return WmsOrderSyncResult.fail("未配置金蝶入库仓库（stock-code.scrap，组织 " + orgNumber + "）");
             }
-            String kingdeeCode = properties.getMaterialMap()
-                    .getOrDefault(inbound.getMaterialCode(), inbound.getMaterialCode());
+            String kingdeeCode = materialResolver.resolveKingdeeCode(inbound.getMaterialCode());
             List<Object> material = lookup.material(kingdeeCode, orgNumber);
             if (material == null || material.isEmpty()) {
                 return WmsOrderSyncResult.fail("金蝶未找到物料编码：" + kingdeeCode);

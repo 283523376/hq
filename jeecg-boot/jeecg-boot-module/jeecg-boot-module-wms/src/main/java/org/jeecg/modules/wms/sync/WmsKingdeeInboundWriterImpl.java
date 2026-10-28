@@ -38,13 +38,16 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
     private final WmsKingdeeProperties properties;
     private final IWmsKingdeeDefectWriter defectWriter;
     private final WmsProductionInboundMapper inboundMapper;
+    private final WmsMaterialCodeResolver materialResolver;
 
     public WmsKingdeeInboundWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
-                                       IWmsKingdeeDefectWriter defectWriter, WmsProductionInboundMapper inboundMapper) {
+                                       IWmsKingdeeDefectWriter defectWriter, WmsProductionInboundMapper inboundMapper,
+                                       WmsMaterialCodeResolver materialResolver) {
         this.formClient = formClient;
         this.properties = properties;
         this.defectWriter = defectWriter;
         this.inboundMapper = inboundMapper;
+        this.materialResolver = materialResolver;
     }
 
     @Override
@@ -128,8 +131,7 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             String businessFlow = mo.size() > 10 ? str(mo.get(10)) : "";
 
             // 3) 物料 / 单位
-            String kingdeeMaterialCode = properties.getMaterialMap()
-                    .getOrDefault(inbound.getMaterialCode(), inbound.getMaterialCode());
+            String kingdeeMaterialCode = materialResolver.resolveKingdeeCode(inbound.getMaterialCode());
             WmsKingdeeResult materialResult = formClient.executeBillQuery("BD_MATERIAL",
                     "FMATERIALID,FNumber,FName,FBaseUnitId,FCreateOrgId,FUseOrgId",
                     "FNumber='" + kingdeeMaterialCode.replace("'", "''") + "'", 10);

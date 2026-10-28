@@ -34,6 +34,7 @@ class WmsKingdeeOutstockWriterImplTest {
     private WmsKingdeeProperties properties;
     private WmsKingdeeLookupSupport lookup;
     private WmsOutboundOrderMapper outboundMapper;
+    private WmsMaterialCodeResolver materialResolver;
     private WmsKingdeeOutstockWriterImpl writer;
 
     @BeforeEach
@@ -51,7 +52,10 @@ class WmsKingdeeOutstockWriterImplTest {
         properties.setMaterialMap(Map.of("FG001", "WA.FG"));
         lookup = mock(WmsKingdeeLookupSupport.class);
         outboundMapper = mock(WmsOutboundOrderMapper.class);
-        writer = new WmsKingdeeOutstockWriterImpl(formClient, properties, lookup, outboundMapper);
+        materialResolver = mock(WmsMaterialCodeResolver.class);
+        when(materialResolver.resolveKingdeeCode(anyString())).thenAnswer(
+                inv -> properties.getMaterialMap().getOrDefault((String) inv.getArgument(0), (String) inv.getArgument(0)));
+        writer = new WmsKingdeeOutstockWriterImpl(formClient, properties, lookup, outboundMapper, materialResolver);
 
         when(lookup.material("WA.FG", "101")).thenReturn(List.of(999L, "WA.FG", "成品", 888L, 1L, "101"));
         when(lookup.unitNumber(888L)).thenReturn("PCS");

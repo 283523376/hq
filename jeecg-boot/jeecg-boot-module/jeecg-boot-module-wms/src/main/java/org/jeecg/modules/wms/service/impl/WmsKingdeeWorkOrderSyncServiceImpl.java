@@ -14,6 +14,7 @@ import org.jeecg.modules.wms.service.IWmsWorkOrderService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
+import org.jeecg.modules.wms.sync.WmsMaterialCodeResolver;
 import org.jeecg.modules.wms.vo.WmsKingdeeWorkOrderSyncResultVO;
 import org.jeecg.modules.wms.vo.WmsWorkOrderInfoVO;
 import org.springframework.stereotype.Service;
@@ -58,16 +59,20 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
     private final WmsMaterialMapper materialMapper;
     private final IWmsSyncLogService syncLogService;
 
+    private final WmsMaterialCodeResolver materialResolver;
+
     public WmsKingdeeWorkOrderSyncServiceImpl(WmsKingdeeFormClient formClient,
                                               WmsKingdeeProperties properties,
                                               IWmsWorkOrderService workOrderService,
                                               WmsMaterialMapper materialMapper,
-                                              IWmsSyncLogService syncLogService) {
+                                              IWmsSyncLogService syncLogService,
+                                              WmsMaterialCodeResolver materialResolver) {
         this.formClient = formClient;
         this.properties = properties;
         this.workOrderService = workOrderService;
         this.materialMapper = materialMapper;
         this.syncLogService = syncLogService;
+        this.materialResolver = materialResolver;
     }
 
     /**
@@ -241,7 +246,8 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
             return false;
         }
         // 产品类型按物料配置（金蝶 FProductType 是主产品/联产品/副产品，不能区分半成品/成品）
-        String productType = properties.getMaterialProductType().get(wmsMaterialCode);
+        // 表列 kingdee_product_type 优先（2026-10-28 映射落库），YAML material-product-type 兜底
+        String productType = materialResolver.resolveProductType(wmsMaterialCode);
         if (oConvertUtils.isEmpty(productType)) {
             String fallback = properties.getProductTypeMap().get(str(rows.get(0).get(2)));
             if (oConvertUtils.isNotEmpty(fallback)) {
@@ -320,14 +326,10 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         return mapped;
     }
 
-    /** 金蝶物料编码 → WMS 物料编码（materialMap 的反向映射）。 */
+    /** 金蝶物料编码 → WMS 物料编码：表列 kingdee_code 优先，YAML 反向兜底，都没有回退原样。 */
     private String reverseMaterialCode(String kingdeeCode) {
-        for (Map.Entry<String, String> entry : properties.getMaterialMap().entrySet()) {
-            if (kingdeeCode.equals(entry.getValue())) {
-                return entry.getKey();
-            }
-        }
-        return kingdeeCode;
+        String resolved = materialResolver.reverseKingdeeCode(kingdeeCode);
+        return oConvertUtils.isEmpty(resolved) ? kingdeeCode : resolved;
     }
 
     private void validateDate(String date) {

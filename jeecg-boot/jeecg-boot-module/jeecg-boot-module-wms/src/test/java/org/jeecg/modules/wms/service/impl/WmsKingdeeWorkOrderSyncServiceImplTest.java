@@ -9,6 +9,7 @@ import org.jeecg.modules.wms.service.IWmsWorkOrderService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
+import org.jeecg.modules.wms.sync.WmsMaterialCodeResolver;
 import org.jeecg.modules.wms.vo.WmsKingdeeWorkOrderSyncResultVO;
 import org.jeecg.modules.wms.vo.WmsWorkOrderInfoVO;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +49,7 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
     private IWmsWorkOrderService workOrderService;
     private WmsMaterialMapper materialMapper;
     private IWmsSyncLogService syncLogService;
+    private WmsMaterialCodeResolver materialResolver;
     private WmsKingdeeWorkOrderSyncServiceImpl service;
 
     @BeforeEach
@@ -60,8 +62,19 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
         workOrderService = mock(IWmsWorkOrderService.class);
         materialMapper = mock(WmsMaterialMapper.class);
         syncLogService = mock(IWmsSyncLogService.class);
+        materialResolver = mock(WmsMaterialCodeResolver.class);
+        when(materialResolver.resolveProductType(anyString())).thenAnswer(
+                inv -> properties.getMaterialProductType().get((String) inv.getArgument(0)));
+        when(materialResolver.reverseKingdeeCode(anyString())).thenAnswer(inv -> {
+            for (Map.Entry<String, String> e : properties.getMaterialMap().entrySet()) {
+                if (e.getValue().equals(inv.getArgument(0))) {
+                    return e.getKey();
+                }
+            }
+            return null;
+        });
         service = new WmsKingdeeWorkOrderSyncServiceImpl(
-                formClient, properties, workOrderService, materialMapper, syncLogService);
+                formClient, properties, workOrderService, materialMapper, syncLogService, materialResolver);
     }
 
     private WmsKingdeeResult rows(List<List<Object>> rows) {

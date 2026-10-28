@@ -9,6 +9,15 @@
           <template #tableTitle>
             <a-button
               type="primary"
+              preIcon="ant-design:sync-outlined"
+              :loading="syncing"
+              v-auth="'wms:material:add'"
+              @click="handleSyncKingdee"
+            >
+              从金蝶同步
+            </a-button>
+            <a-button
+              type="primary"
               preIcon="ant-design:plus-outlined"
               v-auth="'wms:material:add'"
               @click="handleCreate"
@@ -84,8 +93,10 @@
     getTemplateUrl,
     checkMaterialDelete,
     checkMaterialDeleteBatch,
+    syncMaterialFromKingdee,
   } from './material.api';
   import { useWmsDeleteCheck } from '../common/useWmsDeleteCheck';
+  import { useMessage } from '/@/hooks/web/useMessage';
 
   const { prefixCls } = useDesign('wms-material');
   const categoryTreeRef = ref();
@@ -152,6 +163,34 @@
     },
     handleSuccess,
   );
+
+  const { createMessage, createConfirm } = useMessage();
+  const syncing = ref(false);
+
+  /** 从金蝶同步物料主数据：同步类接口已关默认绿条，成败都按返回 message 提示 */
+  function handleSyncKingdee() {
+    createConfirm({
+      title: '从金蝶同步物料',
+      content: '将拉取金蝶 BD_MATERIAL 物料并按编码 upsert 到本地（编码为金蝶编码，恒等映射），继续？',
+      onOk: async () => {
+        syncing.value = true;
+        try {
+          const res: any = await syncMaterialFromKingdee();
+          const message = res?.result?.message || '同步完成';
+          if (message.includes('跳过')) {
+            createMessage.warning(message);
+          } else {
+            createMessage.success(message);
+          }
+          reload();
+        } catch (e: any) {
+          createMessage.error(e?.message || '同步失败');
+        } finally {
+          syncing.value = false;
+        }
+      },
+    });
+  }
 
   function handleCreate() {
     openModal(true, { isUpdate: false, categoryId: categoryId.value });

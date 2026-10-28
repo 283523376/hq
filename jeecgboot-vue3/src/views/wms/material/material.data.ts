@@ -20,6 +20,7 @@ export const columns: BasicColumn[] = [
   { title: '分类', align: 'center', dataIndex: 'categoryName', width: 140 },
   { title: '规格', align: 'center', dataIndex: 'spec' },
   { title: '单位', align: 'center', dataIndex: 'unit', width: 80 },
+  { title: '金蝶编码', align: 'center', dataIndex: 'kingdeeCode', width: 110 },
   { title: '保质期(到期日)', align: 'center', dataIndex: 'shelfLife', width: 130 },
   {
     title: '状态',
@@ -83,6 +84,8 @@ export const formSchema: FormSchema[] = [
   },
   { label: '规格', field: 'spec', component: 'Input' },
   { label: '单位', field: 'unit', component: 'Input' },
+  { label: '金蝶编码', field: 'kingdeeCode', component: 'Input', helpMessage: 'WMS→金蝶编码映射；ERP 同步物料恒等，手工物料需维护' },
+  { label: '产品类型', field: 'kingdeeProductType', component: 'Input', helpMessage: '半成品/成品；金蝶无此概念，人工维护' },
   {
     label: '保质期(到期日)',
     field: 'shelfLife',

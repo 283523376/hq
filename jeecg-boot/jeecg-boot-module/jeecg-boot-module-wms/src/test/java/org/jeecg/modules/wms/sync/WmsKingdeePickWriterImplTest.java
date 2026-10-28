@@ -47,6 +47,7 @@ class WmsKingdeePickWriterImplTest {
     private WmsKingdeeProperties properties;
     private WmsKingdeeLookupSupport lookup;
     private WmsOutboundOrderMapper outboundMapper;
+    private WmsMaterialCodeResolver materialResolver;
     private WmsKingdeePickWriterImpl writer;
 
     @BeforeEach
@@ -61,7 +62,18 @@ class WmsKingdeePickWriterImplTest {
         properties.setMaterialMap(Map.of("PBC001", "WA.1"));
         lookup = mock(WmsKingdeeLookupSupport.class);
         outboundMapper = mock(WmsOutboundOrderMapper.class);
-        writer = new WmsKingdeePickWriterImpl(formClient, properties, lookup, outboundMapper);
+        materialResolver = mock(WmsMaterialCodeResolver.class);
+        when(materialResolver.resolveKingdeeCode(anyString())).thenAnswer(
+                inv -> properties.getMaterialMap().getOrDefault((String) inv.getArgument(0), (String) inv.getArgument(0)));
+        when(materialResolver.reverseKingdeeCode(anyString())).thenAnswer(inv -> {
+            for (Map.Entry<String, String> e : properties.getMaterialMap().entrySet()) {
+                if (e.getValue().equals(inv.getArgument(0))) {
+                    return e.getKey();
+                }
+            }
+            return null;
+        });
+        writer = new WmsKingdeePickWriterImpl(formClient, properties, lookup, outboundMapper, materialResolver);
 
         when(lookup.material("WA.1", "100")).thenReturn(List.of(123L, "WA.1", "子项", 456L, 1L, "100"));
         when(lookup.unitNumber(456L)).thenReturn("zhi");

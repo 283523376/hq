@@ -36,6 +36,7 @@ class WmsKingdeeDefectWriterImplTest {
     private WmsKingdeeProperties properties;
     private WmsKingdeeLookupSupport lookup;
     private WmsProductionInboundMapper inboundMapper;
+    private WmsMaterialCodeResolver materialResolver;
     private WmsKingdeeDefectWriterImpl writer;
 
     @BeforeEach
@@ -49,7 +50,10 @@ class WmsKingdeeDefectWriterImplTest {
         properties.getMaterialMap().put("PBC001", "WA.1");
         lookup = mock(WmsKingdeeLookupSupport.class);
         inboundMapper = mock(WmsProductionInboundMapper.class);
-        writer = new WmsKingdeeDefectWriterImpl(formClient, properties, lookup, inboundMapper);
+        materialResolver = mock(WmsMaterialCodeResolver.class);
+        when(materialResolver.resolveKingdeeCode(anyString())).thenAnswer(
+                inv -> properties.getMaterialMap().getOrDefault((String) inv.getArgument(0), (String) inv.getArgument(0)));
+        writer = new WmsKingdeeDefectWriterImpl(formClient, properties, lookup, inboundMapper, materialResolver);
 
         when(lookup.stockCode("101", "scrap")).thenReturn("F.03");
         when(lookup.material("WA.1", "101")).thenReturn(List.of(123L, "WA.1", "子件", 456L, 1L, "101"));

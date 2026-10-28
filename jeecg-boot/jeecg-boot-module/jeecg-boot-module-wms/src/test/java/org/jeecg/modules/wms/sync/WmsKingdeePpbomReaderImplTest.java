@@ -29,6 +29,7 @@ class WmsKingdeePpbomReaderImplTest {
 
     private WmsKingdeeFormClient formClient;
     private WmsKingdeeProperties properties;
+    private WmsMaterialCodeResolver materialResolver;
     private WmsKingdeePpbomReaderImpl reader;
 
     @BeforeEach
@@ -37,7 +38,16 @@ class WmsKingdeePpbomReaderImplTest {
         properties = new WmsKingdeeProperties();
         properties.setEnabled(true);
         properties.setMaterialMap(Map.of("PBC001", "WA.123"));
-        reader = new WmsKingdeePpbomReaderImpl(formClient, properties);
+        materialResolver = mock(WmsMaterialCodeResolver.class);
+        when(materialResolver.reverseKingdeeCode(anyString())).thenAnswer(inv -> {
+            for (Map.Entry<String, String> e : properties.getMaterialMap().entrySet()) {
+                if (e.getValue().equals(inv.getArgument(0))) {
+                    return e.getKey();
+                }
+            }
+            return null;
+        });
+        reader = new WmsKingdeePpbomReaderImpl(formClient, properties, materialResolver);
     }
 
     @Test

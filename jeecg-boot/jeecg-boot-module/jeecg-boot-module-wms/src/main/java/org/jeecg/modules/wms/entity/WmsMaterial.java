@@ -77,6 +77,15 @@ public class WmsMaterial extends JeecgEntity {
     @Schema(description = "单位")
     private String unit;
 
+    /** 金蝶物料编码（ERP 同步物料 = material_code 恒等；存量手工物料经页面维护或 YAML 兜底） */
+    @Excel(name = "金蝶编码", width = 20)
+    @Schema(description = "金蝶物料编码")
+    private String kingdeeCode;
+
+    /** 产品类型（半成品/成品）：金蝶无此概念（FProductType 是主/联/副产品），人工维护，YAML 兜底 */
+    @Schema(description = "产品类型（半成品/成品）")
+    private String kingdeeProductType;
+
     /**
      * 保质期（到期日）
      */

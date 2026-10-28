@@ -48,12 +48,15 @@ public class WmsKingdeeTransferWriterImpl implements IWmsKingdeeTransferWriter {
     private String simulateErpStatus;
 
     private final WmsTransferOrderMapper transferMapper;
+    private final WmsMaterialCodeResolver materialResolver;
 
     public WmsKingdeeTransferWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
-                                        WmsTransferOrderMapper transferMapper) {
+                                        WmsTransferOrderMapper transferMapper,
+                                        WmsMaterialCodeResolver materialResolver) {
         this.formClient = formClient;
         this.properties = properties;
         this.transferMapper = transferMapper;
+        this.materialResolver = materialResolver;
     }
 
     @Override
@@ -126,8 +129,7 @@ public class WmsKingdeeTransferWriterImpl implements IWmsKingdeeTransferWriter {
             // 4) 明细（11 项必填 + 仓库/批次/数量；不传仓位）
             List<Map<String, Object>> entries = new ArrayList<>();
             for (WmsTransferDetail detail : details) {
-                String materialCode = properties.getMaterialMap()
-                        .getOrDefault(detail.getMaterialCode(), detail.getMaterialCode());
+                String materialCode = materialResolver.resolveKingdeeCode(detail.getMaterialCode());
                 String unit = resolveUnitNumber(materialCode, orgNumber);
                 if (oConvertUtils.isEmpty(unit)) {
                     return WmsOrderSyncResult.fail("金蝶未找到物料或基本单位：" + materialCode);

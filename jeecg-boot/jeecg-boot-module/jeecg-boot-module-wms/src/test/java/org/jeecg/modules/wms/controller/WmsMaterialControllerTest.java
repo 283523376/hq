@@ -81,7 +81,8 @@ class WmsMaterialControllerTest {
     }
 
     private static WmsMaterialController controller(IWmsMaterialService service) {
-        WmsMaterialController controller = new WmsMaterialController();
+        WmsMaterialController controller = new WmsMaterialController(
+                org.mockito.Mockito.mock(org.jeecg.modules.wms.service.IWmsKingdeeMaterialSyncService.class));
         WmsTestSupport.inject(controller, "service", service);
         return controller;
     }
