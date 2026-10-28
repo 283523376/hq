@@ -66,6 +66,10 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
     @Autowired
     private org.jeecg.modules.wms.service.IWmsPickDemandService pickDemandService;
 
+    /** 销售出库待办自动生成（金蝶发货通知单 → WMS，2026-10-28） */
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsSalesDemandService salesDemandService;
+
     @Operation(summary = "出库-同步金蝶委外订单为外协出库草稿")
     @PostMapping(value = "/sync-subcontract")
     @RequiresPermissions("wms:outbound:add")
@@ -117,6 +121,17 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
     public Result<org.jeecg.modules.wms.vo.WmsPickDemandResultVO> generatePickDemands() {
         try {
             return Result.OK("生成完成", pickDemandService.generatePendingPicks());
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @Operation(summary = "出库-按金蝶发货通知单生成销售出库待办（仅已审核 C）")
+    @PostMapping(value = "/generate-sales-demands")
+    @RequiresPermissions("wms:outbound:sales")
+    public Result<org.jeecg.modules.wms.vo.WmsDemandResultVO> generateSalesDemands() {
+        try {
+            return Result.OK("生成完成", salesDemandService.generatePendingSalesOutbounds());
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }

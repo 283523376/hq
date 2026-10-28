@@ -164,6 +164,32 @@ public class WmsKingdeeProperties {
     /** 批号主档保障配置（批号缺失自动创建可用批号）。 */
     private Batch batch = new Batch();
 
+    /** 销售出库待办（金蝶发货通知单 → WMS）配置。 */
+    private SalesDelivery salesDelivery = new SalesDelivery();
+
+    /**
+     * 销售出库待办配置。
+     *
+     * <p><b>仓库映射是预留接口</b>：金蝶 101 组织的仓库主数据尚未建立（2026-10-28 用户明确），
+     * 因此 {@code stockMap} 现在必然为空；未命中映射的行走「跳过并记录原因」，
+     * 等业务把金蝶仓库建好、在此登记映射后无需改代码即可生效。
+     */
+    public static class SalesDelivery {
+        /** 只处理该销售组织的发货通知单（默认跟 default-org-number，即 101）。 */
+        private String orgNumber;
+        /** 金蝶出货仓库编码 → WMS 库区编码。未配置 = 该行跳过。 */
+        private Map<String, String> stockMap = new LinkedHashMap<>();
+        /** 单轮最多处理多少张发货通知单。 */
+        private int batchSize = 100;
+
+        public String getOrgNumber() { return orgNumber; }
+        public void setOrgNumber(String orgNumber) { this.orgNumber = orgNumber; }
+        public Map<String, String> getStockMap() { return stockMap; }
+        public void setStockMap(Map<String, String> stockMap) { this.stockMap = stockMap; }
+        public int getBatchSize() { return batchSize; }
+        public void setBatchSize(int batchSize) { this.batchSize = batchSize; }
+    }
+
     /**
      * 批号主档（BD_BatchMainFile）保障配置。
      *

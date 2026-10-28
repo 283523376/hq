@@ -24,6 +24,23 @@ public interface IWmsOutboundService extends IService<WmsOutboundOrder> {
     WmsOutboundOrder createSales(WmsOutboundSalesCreateDTO dto);
 
     /**
+     * 按金蝶发货通知单生成销售出库单（出库单反向生成）。
+     *
+     * <p>与 {@link #createSales} 的区别：**不依赖 WMS 销售订单快照**——发货通知单的源销售订单
+     * 未必已同步（2026-10-28 探测结论），客户/数量直接取通知单。
+     *
+     * @param noticeNo      发货通知单号（写入 source_bill_no，用于幂等与分批扣减）
+     * @param customerCode  客户编码
+     * @param customerName  客户名称
+     * @param deliveryDate  要货日期（可空）
+     * @param remark        备注
+     * @param details       明细（物料须已在 WMS 建档）
+     */
+    WmsOutboundOrder createSalesFromNotice(String noticeNo, String customerCode, String customerName,
+                                           java.util.Date deliveryDate, String remark,
+                                           java.util.List<org.jeecg.modules.wms.dto.WmsOutboundDetailDTO> details);
+
+    /**
      * 建样品出库单：不绑定工单/销售订单，出库后按 E5 确认的形态回写金蝶。
      */
     WmsOutboundOrder createSample(org.jeecg.modules.wms.dto.WmsOutboundSampleCreateDTO dto);

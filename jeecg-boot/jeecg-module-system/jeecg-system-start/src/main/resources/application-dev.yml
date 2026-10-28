@@ -562,6 +562,16 @@ wms:
         batch:
           auto-create-enabled: "${KINGDEE_BATCH_AUTO_CREATE:true}"
           auto-repair-enabled: "${KINGDEE_BATCH_AUTO_REPAIR:false}"
+        # 销售出库待办：金蝶发货通知单（SAL_DELIVERYNOTICE，仅已审核 C 且未出库量>0）→ WMS 销售出库单
+        # stock-map 是【预留接口】：金蝶 101 组织的仓库主数据尚未建立，配置为空时所有行按「未配置映射」跳过，
+        # 等业务把金蝶仓库建好后在这里登记「金蝶仓编码: WMS库区编码」即可，无需改代码
+        sales-delivery:
+          # 不填则用上面的 default-org-number（101）
+          # org-number: "101"
+          batch-size: 100
+          # 映射为空 = 全部按「未配置映射」跳过。金蝶仓库建好后在此登记（缩进与 batch-size 同级）：
+          # stock-map:
+          #   "S.05": "MJ"
         # 纯不良品自动开单：金蝶其他入库单（STK_Miscellaneous，spec 2026-10-28-yx-wms-defect-outbound-erp-design）
         # 入库仓用上面 stock-code.scrap（F.03 暂配待顾问确认）；部门留空则用工单车间编号
         defect:

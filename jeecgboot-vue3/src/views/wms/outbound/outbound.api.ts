@@ -22,6 +22,10 @@ export const createPick = (params) => defHttp.post({ url: `${OUTBOUND}/pick`, pa
 export const generatePickDemands = () =>
   defHttp.post({ url: `${OUTBOUND}/generate-pick-demands` }, { successMessageMode: 'none' });
 
+/** 按金蝶发货通知单生成销售出库待办（仅已审核 C；仓库映射未配置时全部跳过） */
+export const generateSalesDemands = () =>
+  defHttp.post({ url: `${OUTBOUND}/generate-sales-demands` }, { successMessageMode: 'none' });
+
 /** CK-002 创建销售订单与出库单；保留原始报文以便展示后端「销售订单同步失败」文案 */
 export const createSales = (params) =>
   defHttp.post({ url: `${OUTBOUND}/sales`, params }, { isTransformResponse: false });

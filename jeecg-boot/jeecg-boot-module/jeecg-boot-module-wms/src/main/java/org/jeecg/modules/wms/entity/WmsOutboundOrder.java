@@ -108,6 +108,10 @@ public class WmsOutboundOrder extends JeecgEntity {
     @Schema(description = "金蝶单号")
     private String erpBillNo;
 
+    /** ERP 来源单号（销售出库=金蝶发货通知单 FHTZD…）；出库单反向生成时写入，用于幂等与分批扣减 */
+    @Schema(description = "ERP来源单号")
+    private String sourceBillNo;
+
     /** 关单原因。 */
     @Schema(description = "关单原因")
     private String closeReason;

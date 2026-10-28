@@ -732,6 +732,37 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public WmsOutboundOrder createSalesFromNotice(String noticeNo, String customerCode, String customerName,
+                                                  Date deliveryDate, String remark,
+                                                  List<WmsOutboundDetailDTO> details) {
+        if (oConvertUtils.isEmpty(noticeNo)) {
+            throw new RuntimeException("发货通知单号不能为空");
+        }
+        if (details == null || details.isEmpty()) {
+            throw new RuntimeException("出库明细不能为空");
+        }
+        WmsOutboundOrder order = new WmsOutboundOrder()
+                .setOutboundNo(nextNo(WmsConstants.OUTBOUND_NO_PREFIX_SALES))
+                .setOutboundType(WmsConstants.OUTBOUND_TYPE_SALES)
+                .setSourceBillNo(noticeNo.trim())
+                .setCustomerCode(customerCode)
+                .setCustomerName(customerName)
+                .setDeliveryDate(deliveryDate != null ? deliveryDate : new Date())
+                .setStatus(WmsConstants.OUTBOUND_STATUS_PENDING_ALLOCATE)
+                .setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED)
+                .setRetryCount(0)
+                .setSyncFailCount(0)
+                .setOperator(WmsUtils.currentUsername())
+                .setSubmitTime(new Date())
+                .setRemark(oConvertUtils.isEmpty(remark) ? "金蝶发货通知单 " + noticeNo + " 自动生成" : remark);
+        persist(order, details);
+        log.info("销售出库待办生成：单号={}，发货通知单={}，明细={}",
+                order.getOutboundNo(), noticeNo, details.size());
+        return order;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public WmsOutboundOrder createSample(WmsOutboundSampleCreateDTO dto) {
         if (dto == null || oConvertUtils.isEmpty(dto.getMaterialCode())) {
             throw new RuntimeException("物料编码不能为空");

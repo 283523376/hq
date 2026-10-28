@@ -22,6 +22,9 @@
         <a-button type="primary" preIcon="ant-design:thunderbolt-outlined" v-auth="'wms:outbound:add'" :loading="generatingDemands" @click="handleGeneratePickDemands">
           生成领料待办
         </a-button>
+        <a-button type="primary" preIcon="ant-design:carry-out-outlined" v-auth="'wms:outbound:sales'" :loading="generatingSales" @click="handleGenerateSalesDemands">
+          生成销售待办
+        </a-button>
         <a-button type="primary" preIcon="ant-design:experiment-outlined" v-auth="'wms:outbound:add'" @click="openCreate('sample')">
           新建样品
         </a-button>
@@ -44,7 +47,7 @@
   import { useMessage } from '/@/hooks/web/useMessage';
   import { useWmsSyncMode } from '../common/useWmsSyncMode';
   import { columns, searchFormSchema } from './outbound.data';
-  import { allocateOutbound, closeOutbound, dispatchOutbound, generatePickDemands, listOutbound, syncOutbound, syncSubcontractOrders } from './outbound.api';
+  import { allocateOutbound, closeOutbound, dispatchOutbound, generatePickDemands, generateSalesDemands, listOutbound, syncOutbound, syncSubcontractOrders } from './outbound.api';
   import OutboundCreateModal from './components/OutboundCreateModal.vue';
   import OutboundDetailDrawer from './components/OutboundDetailDrawer.vue';
 
@@ -110,6 +113,27 @@
       createMessage.error(e?.message || '生成失败');
     } finally {
       generatingDemands.value = false;
+    }
+  }
+
+  /** 销售出库待办：按金蝶发货通知单（已审核 C）生成；仓库映射未配置时后端会全部跳过并给原因 */
+  const generatingSales = ref(false);
+  async function handleGenerateSalesDemands() {
+    generatingSales.value = true;
+    try {
+      const res: any = await generateSalesDemands();
+      const vo = res?.result || {};
+      const msg = vo.message || '生成完成';
+      if (vo.created > 0) {
+        createMessage.success(`${msg}：${(vo.createdOrders || []).join('、')}`);
+      } else {
+        createMessage.warning(`${msg}${vo.skippedReasons?.length ? '；' + vo.skippedReasons[0] : ''}`);
+      }
+      reload();
+    } catch (e: any) {
+      createMessage.error(e?.message || '生成失败');
+    } finally {
+      generatingSales.value = false;
     }
   }
 
