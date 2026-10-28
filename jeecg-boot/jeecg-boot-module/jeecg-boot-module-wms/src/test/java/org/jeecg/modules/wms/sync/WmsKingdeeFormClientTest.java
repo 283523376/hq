@@ -39,7 +39,10 @@ class WmsKingdeeFormClientTest {
     void shouldSendStartRowFromFiveArgOverload() {
         server.expect(requestTo(org.hamcrest.Matchers.containsString("ExecuteBillQuery")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"StartRow\":500")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"TopRowCount\":10")))
+                // 翻页必须靠 Limit：TopRowCount>0 时金蝶先截断结果集，StartRow 再跳过就是空，
+                // 物料同步曾因此只同步到第一页 500 条（2026-10-28 真机）
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"TopRowCount\":0")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"Limit\":10")))
                 .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
         client.executeBillQuery("BD_STOCK", "FNumber,FName", "", 10, 500);

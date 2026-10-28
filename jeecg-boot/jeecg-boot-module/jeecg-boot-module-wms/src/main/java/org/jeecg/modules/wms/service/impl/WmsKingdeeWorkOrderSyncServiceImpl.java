@@ -121,6 +121,15 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
                 }
                 sb.append("FDate<='").append(effectiveEnd).append("'");
             }
+            // 必须限定生产组织：其它组织（如 100 江西兆鑫）的工单物料不在本组织物料集里，
+            // 拉进来只会全部「物料不存在」跳过，白占 maxTop 配额
+            String orgNumber = properties.getWorkOrderOrgNumber();
+            if (oConvertUtils.isNotEmpty(orgNumber)) {
+                if (sb.length() > 0) {
+                    sb.append(" AND ");
+                }
+                sb.append("FPrdOrgId.FNumber='").append(orgNumber.trim().replace("'", "''")).append("'");
+            }
             filter = sb.toString();
         }
         WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, resolveFieldKeys(), filter, limit);

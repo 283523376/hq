@@ -526,6 +526,9 @@ wms:
         default-org-id: "209624"
         # ORG_Organizations.FNumber
         default-org-number: "101"
+        # 生产工单（PRD_MO）同步的组织过滤：FPrdOrgId.FNumber。留空=不过滤（仅排查用）
+        # 不限定组织会把 100 江西兆鑫的工单也拉进来，其物料不在 101 物料集，全部跳过
+        work-order-org-number: "${KINGDEE_WORK_ORDER_ORG:101}"
         # BOS_BillType.FNumber（测试环境：SCRKD01_SYS 汇报入库）
         bill-type: "SCRKD01_SYS"
         owner-type: "BD_OwnerOrg"

@@ -226,6 +226,32 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
     }
 
     @Test
+    void filterIncludesProductionOrg() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of()));
+
+        service.syncFromKingdee(null, "2026-10-01", "2026-10-15", 50);
+
+        ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
+        verify(formClient).executeBillQuery(eq("PRD_MO"), anyString(), filter.capture(), anyInt());
+        // 不限定生产组织会把其它组织（100 江西兆鑫）的工单拉进来，物料必然匹配不上
+        assertTrue(filter.getValue().contains("FPrdOrgId.FNumber='101'"));
+    }
+
+    @Test
+    void filterOmitsOrgWhenConfiguredBlank() {
+        properties.setWorkOrderOrgNumber("");
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of()));
+
+        service.syncFromKingdee(null, "2026-10-01", "2026-10-15", 50);
+
+        ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
+        verify(formClient).executeBillQuery(eq("PRD_MO"), anyString(), filter.capture(), anyInt());
+        assertTrue(!filter.getValue().contains("FPrdOrgId"));
+    }
+
+    @Test
     void sync_queryFailure_throws() {
         when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
                 .thenReturn(WmsKingdeeResult.fail("鉴权失败"));

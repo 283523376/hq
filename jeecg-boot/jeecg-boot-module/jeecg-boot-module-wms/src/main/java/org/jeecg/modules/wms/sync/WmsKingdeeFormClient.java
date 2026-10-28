@@ -84,18 +84,30 @@ public class WmsKingdeeFormClient {
     /**
      * 通用单据查询（带翻页起点）。
      *
-     * <p>金蝶 ExecuteBillQuery 用 {@code StartRow} 指定偏移、{@code TopRowCount} 指定本页条数；
-     * 调用方按「返回行数 < 页大小」判断已到末页。
+     * <p><b>翻页只能用 {@code Limit}，不能把页大小塞进 {@code TopRowCount}。</b>
+     * 真机实测（2026-10-28，BD_MATERIAL / 组织 101）：
+     * <ul>
+     *   <li>{@code TopRowCount=500 & StartRow=500} → <b>返回空</b>：TopRowCount 会先把结果集
+     *       截断到 N 行，StartRow 在这个截断之后才生效，于是第二页永远取不到；</li>
+     *   <li>{@code TopRowCount=0 & Limit=3 & StartRow=5000} → 正常返回，
+     *       物料同步因此从「只有 500 条」恢复为全量。</li>
+     * </ul>
+     *
+     * @param top      本页最多返回条数（= Limit）
+     * @param startRow 起始行偏移
      */
     public WmsKingdeeResult executeBillQuery(String formId, String fieldKeys, String filter, int top,
                                              int startRow) {
+        int limit = top <= 0 ? 100 : top;
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("FormId", formId);
         data.put("FieldKeys", fieldKeys);
         data.put("FilterString", filter == null ? "" : filter);
         data.put("OrderString", "");
-        data.put("TopRowCount", top <= 0 ? 100 : top);
+        // 必须为 0：>0 时金蝶会先把结果集截断到该行数，StartRow 再跳过就必然为空
+        data.put("TopRowCount", 0);
         data.put("StartRow", Math.max(startRow, 0));
+        data.put("Limit", limit);
         return post(QUERY_PATH, Map.of("data", data), true);
     }
 

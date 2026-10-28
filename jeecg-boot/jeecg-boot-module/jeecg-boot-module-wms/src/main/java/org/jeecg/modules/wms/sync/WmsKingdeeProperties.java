@@ -39,6 +39,15 @@ public class WmsKingdeeProperties {
     private String defaultOrgId;
     /** 组织编码（ORG_Organizations.FNumber），基础资料字典用，测试环境为 100。 */
     private String defaultOrgNumber;
+
+    /**
+     * 生产工单同步的组织过滤（{@code PRD_MO.FPrdOrgId.FNumber}）。
+     *
+     * <p>PRD_MO 必须限定组织：测试账套里 100（江西兆鑫）也有生产订单，其物料不属于
+     * 101 的物料集，拉进来只会全部「物料不存在」跳过（2026-10-28 真机：5 单全跳）。
+     * 留空 = 不过滤，仅用于排查。
+     */
+    private String workOrderOrgNumber = "101";
     private String billType;
     private String ownerType;
     private String ownerId;
