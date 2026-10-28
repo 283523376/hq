@@ -136,12 +136,16 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         return all;
     }
 
+    /**
+     * 已废弃：WMS 仓库编码与金蝶 1:1（2026-10-28 决策）后，不再允许自建本地仓库档案。
+     *
+     * <p>原实现会新建 CJ/TC 并把 LB/MJ 改名，这些编码在金蝶里不存在，会破坏 1:1 口径。
+     * 保留空实现只为兼容既有调用方（前端按钮/定时任务），调用时只记一条提示。
+     */
     @Override
     public void initLocalArchives() {
-        renameIfPresent("LB", "半成品仓");
-        renameIfPresent("MJ", "产成品仓");
-        createIfAbsent("CJ", "初级产成品仓");
-        createIfAbsent("TC", "涂层产成品仓");
+        log.warn("初始化本地档案已废弃：WMS 仓库编码必须与金蝶 BD_STOCK.FNumber 1:1，"
+                + "请改用「同步金蝶仓库」；本次调用未做任何改动");
     }
 
     /** 去掉空白项后的白名单；全空白 = 未配置 = 全量同步。 */

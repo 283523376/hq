@@ -534,15 +534,17 @@ wms:
           # 仅控制「定时任务是否跑」，手工同步接口不受此开关限制
           enabled: false
           org-id: "101"
-          # 金蝶仓库编码 → 既有 WMS 仓库编码：命中则只把名称改成金蝶名称，编码保持不变
-          # （LB/MJ/FPC01 是 WMS 自建库区，编码被代码与配置引用，不能改）
-          stock-code-map:
-            "D.02": "LB"     # 半成品立体库
-            "D.01": "MJ"     # 成品敏捷仓
-            "F.03": "FPC01"  # 废品仓
+          # 仓库编码与金蝶 1:1（用户 2026-10-28 决策），不再维护「金蝶仓 → WMS 仓」映射：
+          # WMS 的 warehouse_code 直接等于 BD_STOCK.FNumber，按编码 upsert 即可。
           # 外部仓（VMI/供应商仓）：同步进来但标「外部仓」，不同步库存、不作入库目标
           external-stock-codes:
             - "CK007"
+          # 工序汇报 → 半成品入库草稿（阶段 C）。
+          # 不做游标表：金蝶允许补录/迟交，改用「滚动窗口 + 幂等 upsert」，每轮回看 lookback-days 天
+          operation-report:
+            enabled: true
+            lookback-days: 3
+            max-rows: 2000
         # BOS_BillType.FNumber（测试环境：SCRKD01_SYS 汇报入库）
         bill-type: "SCRKD01_SYS"
         owner-type: "BD_OwnerOrg"
@@ -567,8 +569,9 @@ wms:
             stereo: "D.02"
             agile: "D.01"
             # CK-004 调拨按 WMS 库区编码取值（调拨单只到库区级）
-            LB: "D.02"      # 半成品立库
-            MJ: "D.01"      # 成品敏捷仓
+            # 2026-10-28 起 WMS 仓库编码与金蝶 1:1，键即金蝶编码（LB/MJ 已迁到 D.02/D.01）
+            "D.02": "D.02"  # 半成品立库
+            "D.01": "D.01"  # 成品敏捷仓
         # 启用仓位管理的仓库：仓库编码 → 仓位编号（BD_FLEXVALUES 分录编号），回写时解析为内码传 FStockLocId
         stock-loc:
           "02.001": "01"     # 产成品仓-仓位A

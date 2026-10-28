@@ -141,33 +141,16 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
         assertEquals("X.2.4", created.getErpStockCode());
     }
 
+    /**
+     * 2026-10-28 起「初始化本地档案」废弃：WMS 仓库编码必须与金蝶 1:1，
+     * 自建 CJ/TC、改 LB/MJ 会造出金蝶里不存在的编码。
+     */
     @Test
-    void shouldInitializeLocalArchivesIdempotently() {
-        WmsWarehouse lb = warehouse("wh-lb", "LB", "半成品立库");
-        WmsWarehouse mj = warehouse("wh-mj", "MJ", "成品敏捷仓");
-        when(warehouseMapper.selectOne(any())).thenReturn(lb, mj, null, null);
-
+    void initLocalArchivesIsDeprecatedNoOp() {
         service.initLocalArchives();
 
-        ArgumentCaptor<WmsWarehouse> editCaptor = ArgumentCaptor.forClass(WmsWarehouse.class);
-        verify(warehouseService, times(2)).editWarehouse(editCaptor.capture());
-        List<WmsWarehouse> edited = editCaptor.getAllValues();
-        assertEquals("半成品仓", edited.get(0).getWarehouseName());
-        assertEquals("产成品仓", edited.get(1).getWarehouseName());
-
-        ArgumentCaptor<WmsWarehouse> addCaptor = ArgumentCaptor.forClass(WmsWarehouse.class);
-        verify(warehouseService, times(2)).addWarehouse(addCaptor.capture());
-        List<WmsWarehouse> added = addCaptor.getAllValues();
-        assertEquals("CJ", added.get(0).getWarehouseCode());
-        assertEquals(WmsConstants.WAREHOUSE_TYPE_NORMAL, added.get(0).getWarehouseType());
-        assertEquals("TC", added.get(1).getWarehouseCode());
-
-        // 二次执行：四个仓都已存在 → 不再新增
-        WmsWarehouse cj = warehouse("wh-cj", "CJ", "初级产成品仓");
-        WmsWarehouse tc = warehouse("wh-tc", "TC", "涂层产成品仓");
-        when(warehouseMapper.selectOne(any())).thenReturn(lb, mj, cj, tc);
-        service.initLocalArchives();
-        verify(warehouseService, times(2)).addWarehouse(any());
+        verify(warehouseService, never()).addWarehouse(any());
+        verify(warehouseService, never()).editWarehouse(any());
     }
 
     // ------------------------------------------------ 审查修复（Critical/Important）
