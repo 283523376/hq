@@ -31,8 +31,17 @@ import java.util.Map;
 public class WmsKingdeeBatchSupport {
 
     private static final String FORM_ID = "BD_BatchMainFile";
-    /** 批号可用状态值（真机验证：新建不传该字段时默认 T=不可用）。 */
-    private static final String LOT_STATUS_USABLE = "2";
+    /**
+     * 批号「不可用」状态值 T。
+     *
+     * <p>2026-10-28 真机校准：BD_BatchMainFile 的 FLotStatus 实际存在 {@code T}（不可用/作废）、
+     * {@code 1}、{@code 2} 三种取值；三种都能通过其他入库单保存，但**真机领料成功用的是 1**，
+     * 历史失败（「批号已作废」）用的是 T。因此判据是「不等于 T 即可用」，
+     * 而不是早先写的「必须等于 2」——后者会把状态 1 的正常批号全部误拒。
+     */
+    private static final String LOT_STATUS_UNUSABLE = "T";
+    /** 新建批号时写入的状态值（历史验证可建；具体枚举含义待顾问确认）。 */
+    private static final String LOT_STATUS_ON_CREATE = "2";
 
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
@@ -72,7 +81,7 @@ public class WmsKingdeeBatchSupport {
         }
         String status = query.getRows().get(0).size() > 2
                 ? str(query.getRows().get(0).get(2)) : "";
-        if (LOT_STATUS_USABLE.equals(status)) {
+        if (!LOT_STATUS_UNUSABLE.equalsIgnoreCase(status)) {
             return null;
         }
         if (!batch.isAutoRepairEnabled()) {
@@ -90,7 +99,7 @@ public class WmsKingdeeBatchSupport {
         model.put("FMaterialId", dict(materialCode));
         model.put("FUseOrgId", dict(orgNumber));
         model.put("FCreateOrgId", dict(orgNumber));
-        model.put("FLotStatus", LOT_STATUS_USABLE);
+        model.put("FLotStatus", LOT_STATUS_ON_CREATE);
         WmsKingdeeResult saved = formClient.save(FORM_ID, model);
         if (!saved.isSuccess()) {
             return "批号[" + lot + "]在金蝶不存在，自动创建失败：" + saved.getMessage();
@@ -105,7 +114,7 @@ public class WmsKingdeeBatchSupport {
         model.put("FNumber", lot);
         model.put("FMaterialId", dict(materialCode));
         model.put("FUseOrgId", dict(orgNumber));
-        model.put("FLotStatus", LOT_STATUS_USABLE);
+        model.put("FLotStatus", LOT_STATUS_ON_CREATE);
         WmsKingdeeResult saved = formClient.save(FORM_ID, model);
         if (!saved.isSuccess()) {
             return "批号[" + lot + "]状态为 " + oldStatus + "，自动改为可用失败：" + saved.getMessage();

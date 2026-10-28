@@ -101,7 +101,14 @@ public class WmsPickDemandServiceImpl implements IWmsPickDemandService {
                         workOrder.getWorkOrderNo(), created.getOutboundNo(), details.size());
             } catch (Exception e) {
                 log.warn("工单[{}]领料待办生成失败：{}", workOrder.getWorkOrderNo(), e.getMessage());
-                skip(vo, workOrder.getWorkOrderNo(), e.getMessage());
+                String reason = e.getMessage();
+                // 「物料编码不存在」在多组织场景最常见：物料同步按 master-data.org-id 只拉一个组织，
+                // 其它组织的工单物料不在本地。这里把原因说清楚，避免用户以为数据丢了
+                if (reason != null && reason.contains("物料编码不存在")) {
+                    reason = reason + "（该物料未在 WMS 主数据中，可能属于其它组织；"
+                            + "请先在物料页执行「从金蝶同步」，或核对 master-data.org-id 配置）";
+                }
+                skip(vo, workOrder.getWorkOrderNo(), reason);
             }
         }
         vo.setMessage(String.format("扫描工单 %d，生成领料单 %d，跳过 %d",

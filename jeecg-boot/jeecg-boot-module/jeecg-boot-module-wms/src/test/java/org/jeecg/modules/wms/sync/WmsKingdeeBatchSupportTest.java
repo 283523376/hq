@@ -71,7 +71,10 @@ class WmsKingdeeBatchSupportTest {
     }
 
     @Test
-    void ensure_passesWhenLotUsable() {
+    void ensure_passesWhenLotStatusIsNotT() {
+        // 真机校准：1 与 2 都可用（领料成功用的是 1），只有 T 不可用
+        stubQuery(List.of(List.of("B1", "WA.1", "1")));
+        assertNull(support.ensureUsable("WA.1", "B1", "101"));
         stubQuery(List.of(List.of("B1", "WA.1", "2")));
         assertNull(support.ensureUsable("WA.1", "B1", "101"));
         verify(formClient, never()).save(anyString(), any());

@@ -98,6 +98,14 @@ public class WmsKingdeeDefectWriterImpl implements IWmsKingdeeDefectWriter {
             }
 
             // 3) 仓库 / 物料 / 单位
+            // 按组织覆盖表存在但没配 scrap 时，不能退回通用值——通用仓通常属于另一个组织，
+            // 金蝶只会报「收货仓库必填」，用户无从下手（2026-10-28 真机踩到）
+            java.util.Map<String, String> byOrg = properties.getStockCodeByOrg().get(orgNumber);
+            if (byOrg != null && oConvertUtils.isEmpty(byOrg.get(STOCK_KEY))) {
+                return WmsOrderSyncResult.fail("组织[" + orgNumber + "]未配置不良品仓库"
+                        + "（stock-code-by-org." + orgNumber + ".scrap）——通用 stock-code.scrap 属于其它组织，"
+                        + "直接套用会让金蝶报「收货仓库必填」，请补配置");
+            }
             String stockCode = lookup.stockCode(orgNumber, STOCK_KEY);
             if (oConvertUtils.isEmpty(stockCode)) {
                 return WmsOrderSyncResult.fail("未配置金蝶入库仓库（stock-code.scrap，组织 " + orgNumber + "）");
