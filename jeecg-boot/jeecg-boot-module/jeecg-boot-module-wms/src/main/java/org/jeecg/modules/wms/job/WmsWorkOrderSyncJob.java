@@ -52,6 +52,10 @@ public class WmsWorkOrderSyncJob implements Job {
     @Autowired
     private ISysBaseAPI sysBaseAPI;
 
+    /** 领料待办自动生成（出库单反向生成）：工单同步落地后按用料清单补领料单。 */
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsPickDemandService pickDemandService;
+
     @Value("${wms.sync.alert-to-user:admin}")
     private String alertToUser;
 
@@ -123,6 +127,14 @@ public class WmsWorkOrderSyncJob implements Job {
             }
         }
         log.info("工单ERP同步任务：失败单重试 {} 条，成功 {}", failed.size(), retried);
+
+        // ④领料待办：工单已同步，按金蝶用料清单自动生成领料单（无缺口/缺料清单的工单跳过）
+        try {
+            org.jeecg.modules.wms.vo.WmsPickDemandResultVO demand = pickDemandService.generatePendingPicks();
+            log.info("领料待办自动生成：{}", demand.getMessage());
+        } catch (Exception e) {
+            log.error("领料待办自动生成失败（不影响工单同步）：{}", e.getMessage(), e);
+        }
 
         // ③连续失败告警：仅在 retry_count 恰好达到上限时发一次
         List<String> exhausted = safeList(() -> syncLogService.listExhaustedObjectNos(

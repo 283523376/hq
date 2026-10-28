@@ -18,6 +18,10 @@ export const scanPick = (workOrderNo: string) =>
 /** CK-001 创建领料出库单 */
 export const createPick = (params) => defHttp.post({ url: `${OUTBOUND}/pick`, params });
 
+/** 按金蝶用料清单自动生成领料待办（出库单反向生成）；同步类接口不弹默认绿条 */
+export const generatePickDemands = () =>
+  defHttp.post({ url: `${OUTBOUND}/generate-pick-demands` }, { successMessageMode: 'none' });
+
 /** CK-002 创建销售订单与出库单；保留原始报文以便展示后端「销售订单同步失败」文案 */
 export const createSales = (params) =>
   defHttp.post({ url: `${OUTBOUND}/sales`, params }, { isTransformResponse: false });

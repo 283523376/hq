@@ -19,6 +19,9 @@
         <a-button type="primary" preIcon="ant-design:sync-outlined" v-auth="'wms:outbound:add'" :loading="syncingSub" @click="handleSyncSubcontract">
           同步委外订单
         </a-button>
+        <a-button type="primary" preIcon="ant-design:thunderbolt-outlined" v-auth="'wms:outbound:add'" :loading="generatingDemands" @click="handleGeneratePickDemands">
+          生成领料待办
+        </a-button>
         <a-button type="primary" preIcon="ant-design:experiment-outlined" v-auth="'wms:outbound:add'" @click="openCreate('sample')">
           新建样品
         </a-button>
@@ -41,7 +44,7 @@
   import { useMessage } from '/@/hooks/web/useMessage';
   import { useWmsSyncMode } from '../common/useWmsSyncMode';
   import { columns, searchFormSchema } from './outbound.data';
-  import { allocateOutbound, closeOutbound, dispatchOutbound, listOutbound, syncOutbound, syncSubcontractOrders } from './outbound.api';
+  import { allocateOutbound, closeOutbound, dispatchOutbound, generatePickDemands, listOutbound, syncOutbound, syncSubcontractOrders } from './outbound.api';
   import OutboundCreateModal from './components/OutboundCreateModal.vue';
   import OutboundDetailDrawer from './components/OutboundDetailDrawer.vue';
 
@@ -86,6 +89,27 @@
       reload();
     } finally {
       syncingSub.value = false;
+    }
+  }
+
+  /** 出库单反向生成：按金蝶用料清单自动补领料待办（无缺口/无用料清单的工单自动跳过） */
+  const generatingDemands = ref(false);
+  async function handleGeneratePickDemands() {
+    generatingDemands.value = true;
+    try {
+      const res: any = await generatePickDemands();
+      const vo = res?.result || {};
+      const msg = vo.message || '生成完成';
+      if (vo.created > 0) {
+        createMessage.success(`${msg}：${(vo.createdOrders || []).join('、')}`);
+      } else {
+        createMessage.warning(msg);
+      }
+      reload();
+    } catch (e: any) {
+      createMessage.error(e?.message || '生成失败');
+    } finally {
+      generatingDemands.value = false;
     }
   }
 

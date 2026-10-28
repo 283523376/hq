@@ -62,6 +62,10 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
     @Autowired
     private IWmsSubcontractOrderSyncService subcontractOrderSyncService;
 
+    /** 领料待办自动生成（出库单反向生成，2026-10-28） */
+    @Autowired
+    private org.jeecg.modules.wms.service.IWmsPickDemandService pickDemandService;
+
     @Operation(summary = "出库-同步金蝶委外订单为外协出库草稿")
     @PostMapping(value = "/sync-subcontract")
     @RequiresPermissions("wms:outbound:add")
@@ -102,6 +106,17 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
     public Result<WmsOutboundOrder> createPick(@RequestBody WmsOutboundPickCreateDTO dto) {
         try {
             return Result.OK("创建成功", service.createPick(dto));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @Operation(summary = "出库-按用料清单自动生成领料待办（出库单反向生成）")
+    @PostMapping(value = "/generate-pick-demands")
+    @RequiresPermissions("wms:outbound:add")
+    public Result<org.jeecg.modules.wms.vo.WmsPickDemandResultVO> generatePickDemands() {
+        try {
+            return Result.OK("生成完成", pickDemandService.generatePendingPicks());
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }
