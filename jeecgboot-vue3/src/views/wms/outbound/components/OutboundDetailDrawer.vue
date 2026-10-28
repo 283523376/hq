@@ -42,6 +42,7 @@
           <a-descriptions-item label="客户">{{ order.customerName || order.customerCode || '-' }}</a-descriptions-item>
           <a-descriptions-item label="需求来源">{{ order.requirementSource || '-' }}</a-descriptions-item>
           <a-descriptions-item label="同步状态">{{ order.syncStatus || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="金蝶单号">{{ order.erpBillNo || '-' }}</a-descriptions-item>
           <a-descriptions-item label="创建时间">{{ order.createTime || '-' }}</a-descriptions-item>
           <a-descriptions-item label="提交时间">{{ order.submitTime || '-' }}</a-descriptions-item>
           <a-descriptions-item label="完成时间">{{ order.completeTime || '-' }}</a-descriptions-item>

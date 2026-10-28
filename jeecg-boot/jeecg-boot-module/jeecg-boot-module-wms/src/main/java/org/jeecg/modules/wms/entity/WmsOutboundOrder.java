@@ -104,6 +104,10 @@ public class WmsOutboundOrder extends JeecgEntity {
     @Schema(description = "后台同步累计失败次数")
     private Integer syncFailCount;
 
+    /** 金蝶单号（领料 SOUT…/销售出库 XSCK…）。ERP 是单号唯一来源，回存展示与幂等用 */
+    @Schema(description = "金蝶单号")
+    private String erpBillNo;
+
     /** 关单原因。 */
     @Schema(description = "关单原因")
     private String closeReason;

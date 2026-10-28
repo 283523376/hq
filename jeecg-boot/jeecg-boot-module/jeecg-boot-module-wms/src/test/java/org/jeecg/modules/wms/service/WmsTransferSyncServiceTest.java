@@ -90,7 +90,8 @@ class WmsTransferSyncServiceTest {
         WmsTransferOrder patch = capturedPatch();
         assertEquals(WmsConstants.TRANSFER_SYNC_SUBMITTED, patch.getSyncStatus());
         assertEquals(WmsConstants.KINGDEE_DOC_STATUS_SUBMITTED, patch.getErpDocumentStatus());
-        assertEquals("DB1001", patch.getErpBillNo());
+        // 2026-10-28「ERP 单号为准」：erp_bill_no 由 writer 用金蝶返回单号回存，服务层不再拿 WMS 单号占位
+        assertEquals(null, patch.getErpBillNo());
     }
 
     @Test

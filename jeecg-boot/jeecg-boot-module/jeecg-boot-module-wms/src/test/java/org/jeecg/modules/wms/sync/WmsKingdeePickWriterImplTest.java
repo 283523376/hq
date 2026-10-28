@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.sync;
 
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
+import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -45,6 +46,7 @@ class WmsKingdeePickWriterImplTest {
     private WmsKingdeeFormClient formClient;
     private WmsKingdeeProperties properties;
     private WmsKingdeeLookupSupport lookup;
+    private WmsOutboundOrderMapper outboundMapper;
     private WmsKingdeePickWriterImpl writer;
 
     @BeforeEach
@@ -58,7 +60,8 @@ class WmsKingdeePickWriterImplTest {
         properties.setStockStatusId("KCZT01_SYS");
         properties.setMaterialMap(Map.of("PBC001", "WA.1"));
         lookup = mock(WmsKingdeeLookupSupport.class);
-        writer = new WmsKingdeePickWriterImpl(formClient, properties, lookup);
+        outboundMapper = mock(WmsOutboundOrderMapper.class);
+        writer = new WmsKingdeePickWriterImpl(formClient, properties, lookup, outboundMapper);
 
         when(lookup.material("WA.1", "100")).thenReturn(List.of(123L, "WA.1", "子项", 456L, 1L, "100"));
         when(lookup.unitNumber(456L)).thenReturn("zhi");
@@ -116,7 +119,8 @@ class WmsKingdeePickWriterImplTest {
         verify(formClient).save(eq("PRD_PickMtrl"), captor.capture());
         Map<String, Object> model = captor.getValue();
 
-        assertEquals("LL1", model.get("FBillNo"));
+        // 单号以金蝶为准：不再传 FBillNo，由金蝶生成
+        assertFalse(model.containsKey("FBillNo"));
         assertEquals("100", ((Map<?, ?>) model.get("FPrdOrgId")).get("FNumber"));
         assertEquals("100", ((Map<?, ?>) model.get("FStockOrgId")).get("FNumber"));
         assertEquals("SCLLD01_SYS", ((Map<?, ?>) model.get("FBillType")).get("FNumber"));

@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.sync;
 
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
+import org.jeecg.modules.wms.mapper.WmsProductionInboundMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -33,6 +34,7 @@ class WmsKingdeeInboundWriterImplTest {
 
     private WmsKingdeeFormClient formClient;
     private IWmsKingdeeDefectWriter defectWriter;
+    private WmsProductionInboundMapper inboundMapper;
     private WmsKingdeeProperties properties;
     private WmsKingdeeInboundWriterImpl writer;
 
@@ -55,7 +57,8 @@ class WmsKingdeeInboundWriterImplTest {
         // 既有用例覆盖「旧 Save 路径」（成品仍走它）；下推路径由后面的专门用例覆盖
         properties.setPushInboundEnabled(false);
         defectWriter = mock(IWmsKingdeeDefectWriter.class);
-        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, defectWriter);
+        inboundMapper = mock(WmsProductionInboundMapper.class);
+        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, defectWriter, inboundMapper);
     }
 
     private WmsProductionInbound inbound(String good, String bad) {
@@ -105,7 +108,8 @@ class WmsKingdeeInboundWriterImplTest {
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(formClient).save(eq("PRD_INSTOCK"), captor.capture());
         Map<String, Object> model = captor.getValue();
-        assertEquals("SC1", model.get("FBillNo"));
+        // 单号以金蝶为准：不再传 FBillNo
+        assertFalse(model.containsKey("FBillNo"));
         assertEquals("101", ((Map<?, ?>) model.get("FPrdOrgId")).get("FNumber"));
         assertEquals("SCRKD01_SYS", ((Map<?, ?>) model.get("FBillType")).get("FNumber"));
         List<Map<String, Object>> entries = (List<Map<String, Object>>) model.get("FEntity");
@@ -214,7 +218,7 @@ class WmsKingdeeInboundWriterImplTest {
 
     @Test
     void write_pureBadQty_withoutDefectWriter_reportsReadableError() {
-        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, null);
+        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, null, inboundMapper);
         WmsOrderSyncResult result = writer.write(inbound("0", "2"));
         assertFalse(result.isSuccess());
         assertTrue(result.getErrorMessage().contains("纯不良品回写器未注入"));

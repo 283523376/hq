@@ -104,7 +104,8 @@ public class WmsTransferSyncServiceImpl implements IWmsTransferSyncService {
         if (result.isSuccess()) {
             patch.setSyncStatus(WmsConstants.TRANSFER_SYNC_SUBMITTED)
                     .setErpDocumentStatus(WmsConstants.KINGDEE_DOC_STATUS_SUBMITTED)
-                    .setErpBillNo(order.getTransferNo())
+                    // erp_bill_no 只存金蝶真实单号（2026-10-28「ERP 单号为准」修正），
+                    // 模拟提交没有真实单号就留空，不能拿 WMS 单号占位
                     .setSubmitTime(new Date())
                     .setLastSyncTime(new Date())
                     .setLastSyncError(result.isMocked() ? "金蝶未启用（模拟提交）" : null)

@@ -256,7 +256,8 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
     public void markErpWriteback(String id, boolean success, String message) {
         WmsStocktakeOrder order = requireById(id);
         order.setErpSyncStatus(success ? "已回写" : "回写失败");
-        order.setErpBillNo(message);
+        // erp_bill_no 只存金蝶真实单号（由 WmsStocktakeErpWriterImpl 回存），
+        // 不再挪用存状态文案（2026-10-28「ERP 单号为准」修正）
         orderMapper.updateById(order);
     }
 

@@ -4,6 +4,7 @@ import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsStocktakeDetail;
 import org.jeecg.modules.wms.entity.WmsStocktakeOrder;
 import org.jeecg.modules.wms.mapper.WmsStocktakeDetailMapper;
+import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
@@ -37,6 +38,7 @@ class WmsStocktakeErpWriterTest {
     private WmsKingdeeFormClient formClient;
     private WmsKingdeeProperties properties;
     private WmsStocktakeDetailMapper detailMapper;
+    private WmsStocktakeOrderMapper orderMapper;
     private WmsStocktakeErpWriterImpl writer;
 
     @BeforeEach
@@ -45,7 +47,8 @@ class WmsStocktakeErpWriterTest {
         properties = new WmsKingdeeProperties();
         properties.setEnabled(true);
         detailMapper = mock(WmsStocktakeDetailMapper.class);
-        writer = new WmsStocktakeErpWriterImpl(properties, formClient, detailMapper);
+        orderMapper = mock(WmsStocktakeOrderMapper.class);
+        writer = new WmsStocktakeErpWriterImpl(properties, formClient, detailMapper, orderMapper);
     }
 
     private WmsStocktakeOrder order() {

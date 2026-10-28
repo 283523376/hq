@@ -5,6 +5,7 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsTransferDetail;
 import org.jeecg.modules.wms.entity.WmsTransferOrder;
+import org.jeecg.modules.wms.mapper.WmsTransferOrderMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -46,9 +47,13 @@ public class WmsKingdeeTransferWriterImpl implements IWmsKingdeeTransferWriter {
     @org.springframework.beans.factory.annotation.Value("${wms.transfer.simulate-erp-status:}")
     private String simulateErpStatus;
 
-    public WmsKingdeeTransferWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties) {
+    private final WmsTransferOrderMapper transferMapper;
+
+    public WmsKingdeeTransferWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
+                                        WmsTransferOrderMapper transferMapper) {
         this.formClient = formClient;
         this.properties = properties;
+        this.transferMapper = transferMapper;
     }
 
     @Override
@@ -104,8 +109,8 @@ public class WmsKingdeeTransferWriterImpl implements IWmsKingdeeTransferWriter {
             }
 
             // 3) 表头（9 项必填）
+            // 单号以金蝶为准（2026-10-28 改造）：不传 FBillNo，由金蝶按编码规则生成
             Map<String, Object> model = new LinkedHashMap<>();
-            model.put("FBillNo", billNo);
             model.put("FBillTypeID", dict(billType()));
             model.put("FStockOrgId", dict(orgNumber));
             model.put("FStockOutOrgId", dict(orgNumber));
@@ -155,8 +160,19 @@ public class WmsKingdeeTransferWriterImpl implements IWmsKingdeeTransferWriter {
             if (!saved.isSuccess()) {
                 return WmsOrderSyncResult.fail("金蝶调拨单保存失败：" + saved.getMessage());
             }
-            String number = oConvertUtils.isEmpty(saved.getNumber()) ? billNo : saved.getNumber();
-            return submit(number);
+            String number = saved.getNumber();
+            if (oConvertUtils.isEmpty(number)) {
+                return WmsOrderSyncResult.fail("金蝶调拨单保存后未返回单号（WMS单号 " + billNo + "）");
+            }
+            WmsOrderSyncResult result = submit(number);
+            if (result.isSuccess()) {
+                // 回存失败必须抛出：没有 erp_bill_no，重试会重复开单
+                WmsTransferOrder patch = new WmsTransferOrder();
+                patch.setId(order.getId());
+                patch.setErpBillNo(number);
+                transferMapper.updateById(patch);
+            }
+            return result;
         } catch (Exception e) {
             log.warn("调拨单[{}]回写金蝶异常：{}", billNo, e.getMessage());
             return WmsOrderSyncResult.fail("回写金蝶异常：" + e.getMessage());
@@ -194,7 +210,7 @@ public class WmsKingdeeTransferWriterImpl implements IWmsKingdeeTransferWriter {
         if (!submitted.isSuccess()) {
             return WmsOrderSyncResult.fail("金蝶调拨单提交失败：" + submitted.getMessage());
         }
-        log.info("调拨单回写金蝶并提交成功：FBillNo={}（等待金蝶审批到 C）", number);
+        log.info("调拨单回写金蝶并提交成功：ERP单号={}（等待金蝶审批到 C）", number);
         return WmsOrderSyncResult.ok();
     }
 

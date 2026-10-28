@@ -2,10 +2,10 @@ package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
-import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsStocktakeDetail;
 import org.jeecg.modules.wms.entity.WmsStocktakeOrder;
 import org.jeecg.modules.wms.mapper.WmsStocktakeDetailMapper;
+import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
@@ -24,6 +24,9 @@ import java.util.Map;
  *
  * <p>金蝶测试账套没有标准盘点单据（spec F4），所以默认载体是其他出入库单；
  * 客户后续建盘点单（E2）时切 {@code stocktake.writeback-mode=STOCK_COUNT} 再实现。
+ *
+ * <p>单号以金蝶为准（2026-10-28 改造）：不传 FBillNo（原先的 {@code stocktakeNo-GY/-GK}
+ * 已废弃），保存后把金蝶返回的 QTRK…/QTCK… 单号分号拼接回存 {@code erp_bill_no}。
  *
  * <p>配置键是 {@code wms.sync.erp.kingdee.stocktake.stock-code}——spec §7 的
  * {@code wms.stocktake.*} 前缀是笔误，以本类常量注释为准（终审 I3 的教训：文案必须
@@ -44,13 +47,16 @@ public class WmsStocktakeErpWriterImpl {
     private final WmsKingdeeProperties properties;
     private final WmsKingdeeFormClient formClient;
     private final WmsStocktakeDetailMapper detailMapper;
+    private final WmsStocktakeOrderMapper orderMapper;
 
     public WmsStocktakeErpWriterImpl(WmsKingdeeProperties properties,
                                      WmsKingdeeFormClient formClient,
-                                     WmsStocktakeDetailMapper detailMapper) {
+                                     WmsStocktakeDetailMapper detailMapper,
+                                     WmsStocktakeOrderMapper orderMapper) {
         this.properties = properties;
         this.formClient = formClient;
         this.detailMapper = detailMapper;
+        this.orderMapper = orderMapper;
     }
 
     /** 盘盈 → 其他入库单 QTRK。 */
@@ -96,8 +102,8 @@ public class WmsStocktakeErpWriterImpl {
             return WmsOrderSyncResult.ok();
         }
         // WmsOrderSyncResult 无带参 ok()，成功结果统一用 ok() + 上层记日志
+        // 单号以金蝶为准（2026-10-28 改造）：不传 FBillNo，由金蝶生成 QTRK…/QTCK…，保存后回存
         Map<String, Object> model = new LinkedHashMap<>();
-        model.put("FBillNo", order.getStocktakeNo() + (gain ? "-GY" : "-GK"));
         model.put("FDate", java.time.LocalDate.now().toString());
         model.put("FStockId", mapByNumber(properties.getStocktake().getStockCode()));
         model.put("FEntity", entries);
@@ -105,7 +111,38 @@ public class WmsStocktakeErpWriterImpl {
         if (!result.isSuccess()) {
             return WmsOrderSyncResult.fail("盘点回写[" + formId + "]失败：" + result.getMessage());
         }
+        if (result.getNumber() == null || result.getNumber().isEmpty()) {
+            return WmsOrderSyncResult.fail("盘点回写[" + formId + "]保存后未返回单号（盘点单 "
+                    + order.getStocktakeNo() + "）");
+        }
+        persistErpBillNo(order, result.getNumber());
         return WmsOrderSyncResult.ok();
+    }
+
+    /**
+     * 回存金蝶单号：盘盈/盘亏是两张独立单据，{@code erp_bill_no} 用分号拼接
+     * （如 {@code QTRK10126100001;QTCK10126100002}），已存在则去重不重复追加。
+     */
+    private void persistErpBillNo(WmsStocktakeOrder order, String erpBillNo) {
+        String existing = order.getErpBillNo();
+        java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>();
+        if (existing != null && !existing.isBlank()) {
+            for (String part : existing.split(";")) {
+                if (!part.isBlank()) {
+                    merged.add(part.trim());
+                }
+            }
+        }
+        merged.add(erpBillNo);
+        String joined = String.join(";", merged);
+        if (joined.equals(existing)) {
+            return;
+        }
+        WmsStocktakeOrder patch = new WmsStocktakeOrder();
+        patch.setId(order.getId());
+        patch.setErpBillNo(joined);
+        orderMapper.updateById(patch);
+        order.setErpBillNo(joined);
     }
 
     private static Map<String, Object> mapByNumber(String number) {

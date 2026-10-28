@@ -2,8 +2,10 @@ package org.jeecg.modules.wms.sync;
 
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
+import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -33,7 +35,9 @@ import java.util.Map;
  * <p><b>前置校验</b>（先给出可执行的中文原因，避免把金蝶的原始报错直接甩给用户）：
  * 生产订单已审核 → 用料清单存在且已审核 → 批号存在且可用 → 领料仓有可用库存。
  *
- * <p>组织跟随生产订单；幂等键 FBillNo = WMS 出库单号（后续「ERP 单号为准」改造会调整）。
+ * <p>组织跟随生产订单。单号以金蝶为准（2026-10-28 改造）：不传 FBillNo，保存后把金蝶单号
+ * 回存 {@code wms_outbound_order.erp_bill_no}；幂等改为「erp_bill_no 有值按它查，
+ * 无值先用旧 WMS 单号做一次兼容查询（接住改造前存量单），再走创建」。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-10-21
@@ -49,12 +53,14 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
     private final WmsKingdeeLookupSupport lookup;
+    private final WmsOutboundOrderMapper outboundMapper;
 
     public WmsKingdeePickWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
-                                    WmsKingdeeLookupSupport lookup) {
+                                    WmsKingdeeLookupSupport lookup, WmsOutboundOrderMapper outboundMapper) {
         this.formClient = formClient;
         this.properties = properties;
         this.lookup = lookup;
+        this.outboundMapper = outboundMapper;
     }
 
     @Override
@@ -64,18 +70,27 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
         }
         String billNo = order.getOutboundNo();
         try {
-            // 1) 幂等：已存在则按状态处理
-            WmsKingdeeResult existing = formClient.executeBillQuery(FORM_ID, "FBillNo,FDocumentStatus",
-                    "FBillNo='" + billNo.replace("'", "''") + "'", 1);
-            if (!existing.isSuccess()) {
-                return WmsOrderSyncResult.fail("金蝶生产领料单查询失败：" + existing.getMessage());
+            // 1) 幂等：本地已回存金蝶单号 → 按它跟进状态
+            if (oConvertUtils.isNotEmpty(order.getErpBillNo())) {
+                return followUp(order, order.getErpBillNo());
             }
-            if (!existing.getRows().isEmpty()) {
-                String status = str(existing.getRows().get(0).get(1));
+            // 1.1) 兼容查询：改造前按 WMS 单号开过单，接住存量（查到即回存单号），避免重复开单
+            WmsKingdeeResult legacy = formClient.executeBillQuery(FORM_ID, "FBillNo,FDocumentStatus",
+                    "FBillNo='" + billNo.replace("'", "''") + "'", 1);
+            if (!legacy.isSuccess()) {
+                return WmsOrderSyncResult.fail("金蝶生产领料单查询失败：" + legacy.getMessage());
+            }
+            if (!legacy.getRows().isEmpty()) {
+                String status = str(legacy.getRows().get(0).get(1));
                 if ("C".equals(status) || "B".equals(status)) {
+                    persistErpBillNo(order.getId(), billNo);
                     return WmsOrderSyncResult.ok();
                 }
-                return submit(billNo);
+                WmsOrderSyncResult legacyResult = submit(billNo);
+                if (legacyResult.isSuccess()) {
+                    persistErpBillNo(order.getId(), billNo);
+                }
+                return legacyResult;
             }
 
             // 2) 生产订单：组织、车间、父项物料（必须已审核，PPBOM 才会自动审核）
@@ -224,8 +239,8 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
                 entries.add(entry);
             }
 
+            // 单号以金蝶为准：不传 FBillNo，由金蝶按编码规则生成
             Map<String, Object> model = new LinkedHashMap<>();
-            model.put("FBillNo", billNo);
             model.put("FDate", formatDate());
             model.put("FPrdOrgId", dict(orgNumber));
             model.put("FStockOrgId", dict(orgNumber));
@@ -237,7 +252,16 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
             if (!saved.isSuccess()) {
                 return WmsOrderSyncResult.fail("金蝶生产领料保存失败：" + saved.getMessage());
             }
-            return submit(oConvertUtils.isEmpty(saved.getNumber()) ? billNo : saved.getNumber());
+            String erpBillNo = saved.getNumber();
+            if (oConvertUtils.isEmpty(erpBillNo)) {
+                return WmsOrderSyncResult.fail("金蝶生产领料保存后未返回单号（WMS单号 " + billNo + "）");
+            }
+            WmsOrderSyncResult result = submit(erpBillNo);
+            if (result.isSuccess()) {
+                // 回存失败必须抛出：没有 erp_bill_no，重试会重复开单
+                persistErpBillNo(order.getId(), erpBillNo);
+            }
+            return result;
         } catch (Exception e) {
             log.warn("领料出库[{}]回写金蝶异常：{}", billNo, e.getMessage());
             return WmsOrderSyncResult.fail("回写金蝶异常：" + e.getMessage());
@@ -353,12 +377,38 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
         return null;
     }
 
+    /** 本地已有金蝶单号：按状态跟进——B/C 视为完成，其余补提交。 */
+    private WmsOrderSyncResult followUp(WmsOutboundOrder order, String erpBillNo) {
+        WmsKingdeeResult existing = formClient.executeBillQuery(FORM_ID, "FBillNo,FDocumentStatus",
+                "FBillNo='" + erpBillNo.replace("'", "''") + "'", 1);
+        if (!existing.isSuccess()) {
+            return WmsOrderSyncResult.fail("金蝶生产领料单查询失败：" + existing.getMessage());
+        }
+        if (existing.getRows().isEmpty()) {
+            return WmsOrderSyncResult.fail("金蝶生产领料单不存在（本地单号 " + erpBillNo
+                    + "，可能被人工删除），请核对后清理 erp_bill_no");
+        }
+        String status = str(existing.getRows().get(0).get(1));
+        if ("C".equals(status) || "B".equals(status)) {
+            return WmsOrderSyncResult.ok();
+        }
+        return submit(erpBillNo);
+    }
+
+    /** 回存金蝶单号（只更新 erp_bill_no 列）。失败抛出 → 本次同步失败，防重试重复开单。 */
+    private void persistErpBillNo(String orderId, String erpBillNo) {
+        WmsOutboundOrder patch = new WmsOutboundOrder();
+        patch.setId(orderId);
+        patch.setErpBillNo(erpBillNo);
+        outboundMapper.updateById(patch);
+    }
+
     private WmsOrderSyncResult submit(String number) {
         WmsKingdeeResult submitted = formClient.submit(FORM_ID, List.of(number));
         if (!submitted.isSuccess()) {
             return WmsOrderSyncResult.fail("金蝶生产领料提交失败：" + submitted.getMessage());
         }
-        log.info("生产领料回写金蝶成功：FBillNo={}", number);
+        log.info("生产领料回写金蝶成功：ERP单号={}", number);
         return WmsOrderSyncResult.ok();
     }
 

@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.sync;
 
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
+import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -32,6 +33,7 @@ class WmsKingdeeOutstockWriterImplTest {
     private WmsKingdeeFormClient formClient;
     private WmsKingdeeProperties properties;
     private WmsKingdeeLookupSupport lookup;
+    private WmsOutboundOrderMapper outboundMapper;
     private WmsKingdeeOutstockWriterImpl writer;
 
     @BeforeEach
@@ -48,7 +50,8 @@ class WmsKingdeeOutstockWriterImplTest {
         properties.setKeeperType("BD_KeeperOrg");
         properties.setMaterialMap(Map.of("FG001", "WA.FG"));
         lookup = mock(WmsKingdeeLookupSupport.class);
-        writer = new WmsKingdeeOutstockWriterImpl(formClient, properties, lookup);
+        outboundMapper = mock(WmsOutboundOrderMapper.class);
+        writer = new WmsKingdeeOutstockWriterImpl(formClient, properties, lookup, outboundMapper);
 
         when(lookup.material("WA.FG", "101")).thenReturn(List.of(999L, "WA.FG", "成品", 888L, 1L, "101"));
         when(lookup.unitNumber(888L)).thenReturn("PCS");
@@ -84,7 +87,8 @@ class WmsKingdeeOutstockWriterImplTest {
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(formClient).save(eq("SAL_OUTSTOCK"), captor.capture());
         Map<String, Object> model = captor.getValue();
-        assertEquals("XS1", model.get("FBillNo"));
+        // 单号以金蝶为准：不再传 FBillNo
+        assertFalse(model.containsKey("FBillNo"));
         assertEquals("XSCKD01_SYS", ((Map<?, ?>) model.get("FBillTypeID")).get("FNumber"));
         assertEquals(777L, ((Map<?, ?>) model.get("FCustomerID")).get("Id"));
         assertEquals("201012", ((Map<?, ?>) model.get("FDeliveryDeptID")).get("FNumber"));

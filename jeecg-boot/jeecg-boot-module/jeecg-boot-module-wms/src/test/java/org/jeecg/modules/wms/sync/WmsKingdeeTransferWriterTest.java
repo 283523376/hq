@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.sync;
 
 import org.jeecg.modules.wms.entity.WmsTransferDetail;
 import org.jeecg.modules.wms.entity.WmsTransferOrder;
+import org.jeecg.modules.wms.mapper.WmsTransferOrderMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -33,6 +34,7 @@ class WmsKingdeeTransferWriterTest {
 
     private WmsKingdeeFormClient formClient;
     private WmsKingdeeProperties properties;
+    private WmsTransferOrderMapper transferMapper;
     private WmsKingdeeTransferWriterImpl writer;
 
     @BeforeEach
@@ -46,7 +48,8 @@ class WmsKingdeeTransferWriterTest {
         properties.setTransferStockerNumber("0050");
         properties.getStockCode().put("MJ", "D.01");
         properties.getStockCode().put("LB", "D.02");
-        writer = new WmsKingdeeTransferWriterImpl(formClient, properties);
+        transferMapper = mock(WmsTransferOrderMapper.class);
+        writer = new WmsKingdeeTransferWriterImpl(formClient, properties, transferMapper);
     }
 
     private WmsTransferOrder order() {
@@ -120,7 +123,8 @@ class WmsKingdeeTransferWriterTest {
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
         verify(formClient).save(eq("STK_TransferDirect"), captor.capture());
         Map<String, Object> model = captor.getValue();
-        assertEquals("DB1001", model.get("FBillNo"));
+        // 单号以金蝶为准：不再传 FBillNo
+        assertFalse(model.containsKey("FBillNo"));
         assertEquals("ZJDB01_SYS", ((Map<?, ?>) model.get("FBillTypeID")).get("FNumber"));
         assertEquals("101", ((Map<?, ?>) model.get("FStockOrgId")).get("FNumber"));
         assertEquals("101", ((Map<?, ?>) model.get("FStockOutOrgId")).get("FNumber"));
