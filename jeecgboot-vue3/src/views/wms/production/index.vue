@@ -76,12 +76,43 @@
     <BasicTable @register="registerTable">
       <template #tableTitle>
         <a-button preIcon="ant-design:reload-outlined" @click="reload()">刷新</a-button>
+        <a-button
+          preIcon="ant-design:cloud-download-outlined"
+          v-auth="'wms:production:manual'"
+          @click="openOperationReport"
+        >
+          同步工序汇报
+        </a-button>
         <span class="wms-production__hint">任务状态每 5 秒自动刷新</span>
       </template>
       <template #action="{ record }">
         <TableAction :actions="getTableAction(record)" />
       </template>
     </BasicTable>
+
+    <!-- 工序汇报 → 半成品入库草稿（阶段 C） -->
+    <a-modal
+      v-model:open="oprOpen"
+      title="从金蝶工序汇报同步半成品入库草稿"
+      :confirm-loading="oprLoading"
+      width="560px"
+      @ok="handleOperationReport"
+    >
+      <a-alert
+        type="info"
+        show-icon
+        message="只生成草稿：不分配库位、不下发 WCS、不回写金蝶"
+        style="margin-bottom: 12px"
+      />
+      <a-form layout="vertical">
+        <a-form-item label="单据日期区间（留空=全部已审核）">
+          <a-range-picker v-model:value="oprRange" value-format="YYYY-MM-DD" style="width: 100%" />
+        </a-form-item>
+        <a-form-item label="最多处理行数">
+          <a-input-number v-model:value="oprMaxRows" :min="1" :max="5000" style="width: 160px" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
 
     <a-drawer v-model:open="detailOpen" title="生产入库详情" width="720" destroy-on-close>
       <template v-if="detail">
@@ -140,6 +171,7 @@
     resyncProductionInbound,
     scanWorkOrder,
     submitProductionInbound,
+    syncOperationReport,
   } from './production.api';
 
   const { createMessage } = useMessage();
@@ -170,9 +202,53 @@
     workOrderInputRef.value?.focus?.();
   }
 
+  // ---------------------------------------------- 工序汇报 → 半成品入库草稿
+  const oprOpen = ref(false);
+  const oprLoading = ref(false);
+  const oprRange = ref<string[]>([]);
+  const oprMaxRows = ref(1000);
+
+  function openOperationReport() {
+    oprRange.value = [];
+    oprMaxRows.value = 1000;
+    oprOpen.value = true;
+  }
+
+  async function handleOperationReport() {
+    oprLoading.value = true;
+    try {
+      const res: any = await syncOperationReport({
+        startDate: oprRange.value?.[0],
+        endDate: oprRange.value?.[1],
+        maxRows: oprMaxRows.value,
+      });
+      oprOpen.value = false;
+      const lines = [
+        `拉取 ${res?.fetched ?? 0} 行`,
+        `新建草稿 ${res?.created ?? 0}`,
+        `更新 ${res?.updated ?? 0}`,
+        `跳过 ${res?.skipped ?? 0}`,
+      ];
+      const reasons = (res?.messages || []).slice(0, 5);
+      Modal.info({
+        title: '工序汇报同步完成',
+        content: h('div', [
+          h('div', lines.join('　')),
+          reasons.length
+            ? h('div', { style: 'margin-top:8px;color:#8c8c8c;font-size:12px' },
+                reasons.map((m: string) => h('div', m)))
+            : null,
+        ]),
+      });
+      reload();
+    } finally {
+      oprLoading.value = false;
+    }
+  }
+
   async function handleScan() {
     if (!workOrderNo.value || !workOrderNo.value.trim()) {
-      createMessage.warning('请先扫码或录入工单号');
+      createMessage.warning('请先录入工单号');
       return;
     }
     scanning.value = true;
@@ -195,7 +271,7 @@
       return;
     }
     if (!workOrder.value) {
-      createMessage.warning('请先扫码调出工单');
+      createMessage.warning('请先录入工单号调出工单');
       return;
     }
     // 输入框被手工改过但未重新查询：禁止把货记到上一次的工单上
