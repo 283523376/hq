@@ -33,10 +33,13 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
 
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
+    private final IWmsKingdeeDefectWriter defectWriter;
 
-    public WmsKingdeeInboundWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties) {
+    public WmsKingdeeInboundWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
+                                       IWmsKingdeeDefectWriter defectWriter) {
         this.formClient = formClient;
         this.properties = properties;
+        this.defectWriter = defectWriter;
     }
 
     @Override
@@ -46,7 +49,11 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
         }
         BigDecimal goodQty = inbound.getGoodQty() == null ? BigDecimal.ZERO : inbound.getGoodQty();
         if (goodQty.signum() <= 0) {
-            return WmsOrderSyncResult.fail("金蝶生产入库单不支持纯不良品回写（PRD_INSTOCK 无不良数量字段），请人工处理");
+            // 纯不良品：PRD_INSTOCK 没有不良数量字段，自动开其他入库单记账（spec 2026-10-28）
+            if (defectWriter == null) {
+                return WmsOrderSyncResult.fail("纯不良品回写器未注入，无法自动开单，请人工处理");
+            }
+            return defectWriter.write(inbound);
         }
         String billNo = inbound.getInboundNo();
         try {

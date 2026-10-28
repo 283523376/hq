@@ -103,6 +103,7 @@
           <a-descriptions-item label="库位">{{ detail.locationCode || detail.locationId || '-' }}</a-descriptions-item>
           <a-descriptions-item label="RMS 库位">{{ detail.stackCode || '-' }}</a-descriptions-item>
           <a-descriptions-item label="同步状态">{{ detail.syncStatus }}</a-descriptions-item>
+          <a-descriptions-item label="金蝶单号">{{ detail.erpBillNo || '-' }}</a-descriptions-item>
           <a-descriptions-item label="重试次数">{{ detail.retryCount ?? 0 }}</a-descriptions-item>
           <a-descriptions-item label="不良原因" :span="2">{{ detail.defectRemark || '-' }}</a-descriptions-item>
           <a-descriptions-item v-if="detail.taskError" label="任务失败原因" :span="2">

@@ -555,6 +555,11 @@ wms:
         stock-loc:
           "02.001": "01"     # 产成品仓-仓位A
           "02.002": "01"     # 自制半成品仓-仓位A
+        # 纯不良品自动开单：金蝶其他入库单（STK_Miscellaneous，spec 2026-10-28-yx-wms-defect-outbound-erp-design）
+        # 入库仓用上面 stock-code.scrap（F.03 暂配待顾问确认）；部门留空则用工单车间编号
+        defect:
+          bill-type: "QTRKD01_SYS"
+          # dept-number: "10.10.14.11"
         # WMS 物料编码 → 金蝶物料编码（测试环境样例映射，生产按主数据映射表维护）
         material-map:
           PBC001: "WA.2206.2201.02000430.A003"

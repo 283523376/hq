@@ -32,6 +32,7 @@ import static org.mockito.Mockito.when;
 class WmsKingdeeInboundWriterImplTest {
 
     private WmsKingdeeFormClient formClient;
+    private IWmsKingdeeDefectWriter defectWriter;
     private WmsKingdeeProperties properties;
     private WmsKingdeeInboundWriterImpl writer;
 
@@ -53,7 +54,8 @@ class WmsKingdeeInboundWriterImplTest {
         properties.setMaterialMap(Map.of("PBC001", "WA.2206.2201.02000430.A003"));
         // 既有用例覆盖「旧 Save 路径」（成品仍走它）；下推路径由后面的专门用例覆盖
         properties.setPushInboundEnabled(false);
-        writer = new WmsKingdeeInboundWriterImpl(formClient, properties);
+        defectWriter = mock(IWmsKingdeeDefectWriter.class);
+        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, defectWriter);
     }
 
     private WmsProductionInbound inbound(String good, String bad) {
@@ -203,10 +205,19 @@ class WmsKingdeeInboundWriterImplTest {
     }
 
     @Test
-    void write_pureBadQty_isRejected() {
+    void write_pureBadQty_delegatesToDefectWriter() {
+        // 2026-10-28：纯不良品不再「请人工处理」，自动开金蝶其他入库单（委托 defect writer）
+        WmsProductionInbound record = inbound("0", "2");
+        writer.write(record);
+        verify(defectWriter).write(record);
+    }
+
+    @Test
+    void write_pureBadQty_withoutDefectWriter_reportsReadableError() {
+        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, null);
         WmsOrderSyncResult result = writer.write(inbound("0", "2"));
         assertFalse(result.isSuccess());
-        assertTrue(result.getErrorMessage().contains("不支持纯不良品"));
+        assertTrue(result.getErrorMessage().contains("纯不良品回写器未注入"));
         verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
     }
 

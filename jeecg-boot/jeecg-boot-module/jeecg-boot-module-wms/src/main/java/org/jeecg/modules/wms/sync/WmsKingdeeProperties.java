@@ -158,6 +158,27 @@ public class WmsKingdeeProperties {
     /** 盘点差异回写配置（spec §5.3）。 */
     private Stocktake stocktake = new Stocktake();
 
+    /** 纯不良品入库回写配置（spec 2026-10-28-yx-wms-defect-outbound-erp-design）。 */
+    private Defect defect = new Defect();
+
+    /**
+     * 纯不良品 → 金蝶其他入库单（STK_Miscellaneous）。
+     *
+     * <p>报文为 2026-10-27 真机验证过的结构（Save+Submit 通过；Audit 挂工作流不可 WebAPI）。
+     * 入库仓库复用 {@code stock-code.scrap}（含 stock-code-by-org 按组织覆盖），不另设键。
+     */
+    public static class Defect {
+        /** 其他入库单单据类型（QTRKD01_SYS 标准 / QTRKD03_SYS 废品其他入库）。 */
+        private String billType = "QTRKD01_SYS";
+        /** 部门编码；留空则用工单上的车间编号。 */
+        private String deptNumber;
+
+        public String getBillType() { return billType; }
+        public void setBillType(String billType) { this.billType = billType; }
+        public String getDeptNumber() { return deptNumber; }
+        public void setDeptNumber(String deptNumber) { this.deptNumber = deptNumber; }
+    }
+
     /**
      * 委外订单同步配置。
      *

@@ -127,6 +127,10 @@ public class WmsProductionInbound extends JeecgEntity {
     @Schema(description = "同步状态")
     private String syncStatus;
 
+    /** 金蝶单号（纯不良品=其他入库单 QTRK…；良品入库=生产入库单 SCRK…）。ERP 是单号唯一来源，回存展示与幂等用 */
+    @Schema(description = "金蝶单号")
+    private String erpBillNo;
+
     /** 最近一次同步尝试中的重试次数 */
     @Schema(description = "重试次数")
     private Integer retryCount;
