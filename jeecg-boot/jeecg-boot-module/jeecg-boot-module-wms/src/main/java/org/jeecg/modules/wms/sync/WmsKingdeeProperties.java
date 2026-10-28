@@ -320,6 +320,9 @@ public class WmsKingdeeProperties {
         /** 金蝶仓库编码 → 既有 WMS 仓库编码（命中则只改名不改码）。 */
         private Map<String, String> stockCodeMap = new LinkedHashMap<>();
 
+        /** 工序汇报同步（半成品入库草稿）。 */
+        private OperationReport operationReport = new OperationReport();
+
         /** 分类映射规则，格式「金蝶分组前缀=WMS 分类编码」，如 {@code BC.1012=CP}。 */
         private List<String> categoryMap = new ArrayList<>();
 
@@ -328,5 +331,20 @@ public class WmsKingdeeProperties {
 
         /** 金蝶字段值 → WMS 工单类型，如 {@code 客户订单=客户订单}。 */
         private Map<String, String> orderTypeValueMap = new LinkedHashMap<>();
+    }
+
+
+    /** 工序汇报同步配置：滚动窗口 + 幂等 upsert，不维护游标表。 */
+    @Data
+    public static class OperationReport {
+
+        /** 是否注册定时任务。 */
+        private boolean enabled = true;
+
+        /** 每次回看天数（含当天）：容忍补录与迟到的汇报。 */
+        private int lookbackDays = 3;
+
+        /** 单轮最多处理行数。 */
+        private int maxRows = 2000;
     }
 }

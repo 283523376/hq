@@ -704,6 +704,16 @@ public final class WmsConstants {
     /** 默认每天 08:00，避开 ERP 补偿任务的凌晨节奏。 */
     public static final String INVENTORY_WARNING_SCAN_JOB_CRON = "0 0 8 * * ?";
 
+    // ==================== 工序汇报（半成品来源） ====================
+
+    /** 工序汇报同步任务在 sys_quartz_job 中的主键；必须与 Flyway 种子行一致。 */
+    public static final String OPERATION_REPORT_SYNC_JOB_ID = "1920000000000000390";
+    /** 工序汇报同步任务类名。 */
+    public static final String OPERATION_REPORT_SYNC_JOB_CLASS =
+            "org.jeecg.modules.wms.job.WmsOperationReportSyncJob";
+    /** 每小时 :41（避开工单 :01、订单 :03、设备 :07、入库 :09/:13、出库 :17、调拨 :23、销售 :29）。 */
+    public static final String OPERATION_REPORT_SYNC_JOB_CRON = "0 41 * * * ?";
+
     /** 同步日志对象类型：库存预警扫描。 */
     public static final String SYNC_LOG_TYPE_INVENTORY_WARNING = "INVENTORY_WARNING";
     /** 同步日志方向：WMS 内部计算（非 ERP 交互）。 */
