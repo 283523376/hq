@@ -301,8 +301,21 @@ public class WmsKingdeeProperties {
         /** BD_STOCK 组织过滤（101 宜昌永鑫；100 江西兆鑫为历史组织）。 */
         private String orgId = "101";
 
-        /** 仓库白名单（金蝶仓库编码）；空 = 不拉任何仓。 */
+        /**
+         * 仓库白名单（金蝶仓库编码）；**空 = 全量同步**本组织所有仓库。
+         *
+         * <p>2026-10-28 用户明确：WMS 库区名称与金蝶保持一致，把金蝶仓库全量同步过来。
+         * 非空时退化为「只同步这些仓」，用于临时排查。
+         */
         private List<String> stockWhitelist = new ArrayList<>();
+
+        /**
+         * 外部仓编码（金蝶仓库编码）：同步进 WMS 但标成「外部仓」，不同步库存、不作入库目标。
+         *
+         * <p>默认 {@code CK007}（宜昌永鑫…vmi）：VMI 仓货权不在自己，工序汇报里大量入库到这里，
+         * 混进 WMS 库存会把账搞乱。
+         */
+        private List<String> externalStockCodes = new ArrayList<>(List.of("CK007"));
 
         /** 金蝶仓库编码 → 既有 WMS 仓库编码（命中则只改名不改码）。 */
         private Map<String, String> stockCodeMap = new LinkedHashMap<>();

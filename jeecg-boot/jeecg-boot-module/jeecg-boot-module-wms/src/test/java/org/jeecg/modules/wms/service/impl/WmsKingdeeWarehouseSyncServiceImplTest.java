@@ -57,27 +57,38 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
                 formClient, properties, warehouseService, warehouseMapper, syncLogService);
     }
 
+    /**
+     * 2026-10-28 起白名单为空 = **全量同步**本组织仓库（用户要求 WMS 库区与金蝶保持一致），
+     * 不再是「白名单未配置就跳过」。
+     */
     @Test
-    void shouldSkipWithoutQueryWhenWhitelistBlank() {
+    void shouldSyncWholeOrgWhenWhitelistBlank() {
+        properties.getMasterData().setOrgId("101");
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", Collections.emptyList(), null, null));
+
         WmsKingdeeStockSyncResultVO vo = service.syncStock();
 
+        ArgumentCaptor<String> filterCaptor = ArgumentCaptor.forClass(String.class);
+        verify(formClient).executeBillQuery(eq("BD_STOCK"), anyString(), filterCaptor.capture(), anyInt(), anyInt());
+        String filter = filterCaptor.getValue();
+        assertTrue(filter.contains("FUseOrgId.FNumber='101'"), filter);
+        // 全量时不能带 in(...) 白名单条件
+        assertTrue(!filter.contains("FNumber in"), filter);
         assertEquals(0, vo.getFetched());
-        assertTrue(vo.getMessage().contains("白名单"));
-        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
-        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt());
     }
 
     @Test
     void shouldFilterByOrgAndWhitelist() {
         properties.getMasterData().setOrgId("101");
         properties.getMasterData().setStockWhitelist(new ArrayList<>(List.of("X.2.4")));
-        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt()))
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", Collections.emptyList(), null, null));
 
         service.syncStock();
 
         ArgumentCaptor<String> filterCaptor = ArgumentCaptor.forClass(String.class);
-        verify(formClient).executeBillQuery(eq("BD_STOCK"), anyString(), filterCaptor.capture(), anyInt());
+        verify(formClient).executeBillQuery(eq("BD_STOCK"), anyString(), filterCaptor.capture(), anyInt(), anyInt());
         String filter = filterCaptor.getValue();
         assertTrue(filter.contains("FUseOrgId.FNumber='101'"), filter);
         assertTrue(filter.contains("FNumber in"), filter);
@@ -94,7 +105,7 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
         existing.setWarehouseCode("MJ");
         existing.setWarehouseName("成品敏捷仓");
         when(warehouseMapper.selectOne(any())).thenReturn(existing);
-        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt()))
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", rows(List.of("02.001", "产成品仓")), null, null));
 
         WmsKingdeeStockSyncResultVO vo = service.syncStock();
@@ -114,7 +125,7 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
     void shouldCreateUnmappedWarehouseAsNormal() {
         properties.getMasterData().setStockWhitelist(new ArrayList<>(List.of("X.2.4")));
         when(warehouseMapper.selectOne(any())).thenReturn(null);
-        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt()))
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", rows(List.of("X.2.4", "涂层产成品仓")), null, null));
 
         WmsKingdeeStockSyncResultVO vo = service.syncStock();
@@ -185,13 +196,34 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
     }
 
     @Test
-    void shouldSkipWhenWhitelistHasOnlyBlankEntries() {
+    void shouldTreatBlankWhitelistEntriesAsFullSync() {
+        properties.getMasterData().setOrgId("101");
         properties.getMasterData().setStockWhitelist(new ArrayList<>(List.of(" ", "")));
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", Collections.emptyList(), null, null));
 
         WmsKingdeeStockSyncResultVO vo = service.syncStock();
 
         assertEquals(0, vo.getFetched());
-        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
+        ArgumentCaptor<String> filterCaptor = ArgumentCaptor.forClass(String.class);
+        verify(formClient).executeBillQuery(eq("BD_STOCK"), anyString(), filterCaptor.capture(), anyInt(), anyInt());
+        assertTrue(!filterCaptor.getValue().contains("FNumber in"), filterCaptor.getValue());
+    }
+
+    @Test
+    void shouldMarkExternalWarehouse() {
+        properties.getMasterData().setOrgId("101");
+        when(warehouseMapper.selectOne(any())).thenReturn(null);
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]",
+                        rows(List.of("CK007", "宜昌永鑫精工科技股份有限公司vmi")), null, null));
+
+        service.syncStock();
+
+        ArgumentCaptor<WmsWarehouse> captor = ArgumentCaptor.forClass(WmsWarehouse.class);
+        verify(warehouseService).addWarehouse(captor.capture());
+        // CK007 是 VMI 外部仓：同步进来但标外部仓，后续不同步库存、不作入库目标
+        assertEquals("外部仓", captor.getValue().getWarehouseType());
     }
 
     @Test
@@ -202,7 +234,7 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
         WmsWarehouse mapped = warehouse("wh-tc", "TC", "涂层产成品仓");
         WmsWarehouse squatter = warehouse("wh-x24", "X.2.4", "涂层产成品仓");
         when(warehouseMapper.selectOne(any())).thenReturn(mapped, squatter);
-        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt()))
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", rows(List.of("X.2.4", "涂层产成品仓")), null, null));
 
         RuntimeException e = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
@@ -215,7 +247,7 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
     void shouldWriteSyncLogWithProjectVocabulary() {
         properties.getMasterData().setStockWhitelist(new ArrayList<>(List.of("X.2.4")));
         when(warehouseMapper.selectOne(any())).thenReturn(null);
-        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt()))
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", rows(List.of("X.2.4", "涂层产成品仓")), null, null));
 
         service.syncStock();
@@ -226,6 +258,7 @@ class WmsKingdeeWarehouseSyncServiceImplTest {
 
     @Test
     void shouldLogSkippedSync() {
+        properties.setEnabled(false);
         service.syncStock();
 
         verify(syncLogService).logSync(eq("ERP_TO_WMS"), eq("WAREHOUSE"), anyString(),

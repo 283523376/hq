@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -37,8 +38,9 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
 
     private static final String FORM_ID = "BD_STOCK";
     private static final String FIELD_KEYS = "FNumber,FName";
-    /** 白名单之外的返回行上限（白名单条数 + 余量，防止金蝶忽略 in 条件时拉全表）。 */
-    private static final int TOP_MARGIN = 50;
+    /** 单页条数（全量同步 101 组织约 200 个仓，一页足够，保留翻页防增长）。 */
+    private static final int PAGE_SIZE = 500;
+    private static final int MAX_PAGES = 20;
 
     private static final String SYNC_OBJECT_TYPE = "WAREHOUSE";
     private static final String SYNC_TARGET = "WMS";
@@ -72,23 +74,17 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
             return skip("组织未配置（master-data.org-id 为空），拒绝无组织过滤的查询，跳过");
         }
         List<String> whitelist = effectiveWhitelist(masterData.getStockWhitelist());
-        if (whitelist.isEmpty()) {
-            return skip("仓库同步白名单未配置，跳过（spec 反目标：不得整表灌入）");
-        }
+        String filter = whitelist.isEmpty()
+                ? "FUseOrgId.FNumber='" + masterData.getOrgId().trim().replace("'", "''") + "'"
+                : buildFilter(masterData.getOrgId(), whitelist);
 
-        String filter = buildFilter(masterData.getOrgId(), whitelist);
         WmsKingdeeStockSyncResultVO vo = new WmsKingdeeStockSyncResultVO();
         long start = System.currentTimeMillis();
-        WmsKingdeeResult result = formClient.executeBillQuery(
-                FORM_ID, FIELD_KEYS, filter, whitelist.size() + TOP_MARGIN);
-        if (!result.isSuccess()) {
-            logSyncFailed(filter, result.getMessage(), System.currentTimeMillis() - start);
-            throw new RuntimeException("金蝶仓库查询失败：" + result.getMessage());
-        }
-
-        List<List<Object>> rows = result.getRows() == null ? List.of() : result.getRows();
+        List<List<Object>> rows = fetchAllStocks(filter, start);
         vo.setFetched(rows.size());
         Map<String, String> codeMap = masterData.getStockCodeMap();
+        Set<String> externals = effectiveExternalCodes(masterData.getExternalStockCodes());
+        int external = 0;
         for (List<Object> row : rows) {
             if (row.size() < 2) {
                 continue;
@@ -98,19 +94,46 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
             if (erpCode.isEmpty()) {
                 continue;
             }
+            boolean isExternal = externals.contains(erpCode);
+            if (isExternal) {
+                external++;
+            }
             String mappedCode = codeMap == null ? null : codeMap.get(erpCode);
             if (mappedCode != null && !mappedCode.isEmpty()) {
                 if (renameMapped(mappedCode, erpCode, erpName)) {
                     vo.setRenamed(vo.getRenamed() + 1);
                 }
-            } else if (createOrUpdateByErpCode(erpCode, erpName)) {
+                if (isExternal) {
+                    markExternal(mappedCode);
+                }
+            } else if (createOrUpdateByErpCode(erpCode, erpName, isExternal)) {
                 vo.setCreated(vo.getCreated() + 1);
             }
         }
-        vo.setMessage(String.format("拉取 %d 行，改名 %d，新建 %d",
-                vo.getFetched(), vo.getRenamed(), vo.getCreated()));
+        vo.setMessage(String.format("拉取 %d 个仓库（含外部仓 %d）：改名 %d，新建 %d",
+                vo.getFetched(), external, vo.getRenamed(), vo.getCreated()));
         logSyncSuccess(filter, vo.getMessage(), System.currentTimeMillis() - start);
         return vo;
+    }
+
+    /** 翻页拉全量：金蝶 ExecuteBillQuery 的翻页靠 Limit（TopRowCount 会先截断结果集）。 */
+    private List<List<Object>> fetchAllStocks(String filter, long start) {
+        List<List<Object>> all = new java.util.ArrayList<>();
+        for (int page = 0; page < MAX_PAGES; page++) {
+            WmsKingdeeResult result = formClient.executeBillQuery(
+                    FORM_ID, FIELD_KEYS, filter, PAGE_SIZE, page * PAGE_SIZE);
+            if (!result.isSuccess()) {
+                logSyncFailed(filter, result.getMessage(), System.currentTimeMillis() - start);
+                throw new RuntimeException("金蝶仓库查询失败：" + result.getMessage());
+            }
+            List<List<Object>> rows = result.getRows() == null ? List.of() : result.getRows();
+            all.addAll(rows);
+            if (rows.size() < PAGE_SIZE) {
+                return all;
+            }
+        }
+        log.warn("仓库同步达到翻页上限 {} 页，已截断", MAX_PAGES);
+        return all;
     }
 
     @Override
@@ -121,7 +144,7 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         createIfAbsent("TC", "涂层产成品仓");
     }
 
-    /** 去掉空白项后的白名单；全空白等价于未配置，防止「留个空格」退化成拉全组织。 */
+    /** 去掉空白项后的白名单；全空白 = 未配置 = 全量同步。 */
     static List<String> effectiveWhitelist(List<String> raw) {
         if (raw == null) {
             return List.of();
@@ -130,6 +153,29 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
                 .filter(code -> code != null && !code.trim().isEmpty())
                 .map(String::trim)
                 .collect(Collectors.toList());
+    }
+
+    /** 外部仓编码集合（去空白、大写不敏感比较由调用方保证原样匹配）。 */
+    static Set<String> effectiveExternalCodes(List<String> raw) {
+        if (raw == null) {
+            return Set.of();
+        }
+        return raw.stream()
+                .filter(code -> code != null && !code.trim().isEmpty())
+                .map(String::trim)
+                .collect(Collectors.toSet());
+    }
+
+    /** 把已映射的 WMS 仓标成外部仓（其余属性不动）。 */
+    private void markExternal(String warehouseCode) {
+        WmsWarehouse existing = findByWarehouseCode(warehouseCode);
+        if (existing == null) {
+            return;
+        }
+        if (!WmsConstants.WAREHOUSE_TYPE_EXTERNAL.equals(existing.getWarehouseType())) {
+            existing.setWarehouseType(WmsConstants.WAREHOUSE_TYPE_EXTERNAL);
+            warehouseService.editWarehouse(existing);
+        }
     }
 
     /** 组织 + 白名单过滤。组织过滤是硬约束：同码不同组织是两份档案。 */
@@ -176,7 +222,7 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
      *
      * <p>先按 erp_stock_code 找，再按 warehouse_code 找——重复同步幂等。
      */
-    private boolean createOrUpdateByErpCode(String erpCode, String erpName) {
+    private boolean createOrUpdateByErpCode(String erpCode, String erpName, boolean external) {
         WmsWarehouse existing = findByErpStockCode(erpCode);
         if (existing == null) {
             existing = findByWarehouseCode(erpCode);
@@ -185,13 +231,17 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
             existing.setWarehouseName(erpName);
             existing.setErpStockCode(erpCode);
             existing.setErpStockName(erpName);
+            if (external) {
+                existing.setWarehouseType(WmsConstants.WAREHOUSE_TYPE_EXTERNAL);
+            }
             warehouseService.editWarehouse(existing);
             return false;
         }
         WmsWarehouse created = new WmsWarehouse();
         created.setWarehouseCode(erpCode);
         created.setWarehouseName(erpName);
-        created.setWarehouseType(WmsConstants.WAREHOUSE_TYPE_NORMAL);
+        created.setWarehouseType(external
+                ? WmsConstants.WAREHOUSE_TYPE_EXTERNAL : WmsConstants.WAREHOUSE_TYPE_NORMAL);
         created.setStatus("1");
         created.setErpStockCode(erpCode);
         created.setErpStockName(erpName);

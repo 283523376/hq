@@ -529,6 +529,20 @@ wms:
         # 生产工单（PRD_MO）同步的组织过滤：FPrdOrgId.FNumber。留空=不过滤（仅排查用）
         # 不限定组织会把 100 江西兆鑫的工单也拉进来，其物料不在 101 物料集，全部跳过
         work-order-org-number: "${KINGDEE_WORK_ORDER_ORG:101}"
+        # ---- 主数据同步 ----
+        master-data:
+          # 仅控制「定时任务是否跑」，手工同步接口不受此开关限制
+          enabled: false
+          org-id: "101"
+          # 金蝶仓库编码 → 既有 WMS 仓库编码：命中则只把名称改成金蝶名称，编码保持不变
+          # （LB/MJ/FPC01 是 WMS 自建库区，编码被代码与配置引用，不能改）
+          stock-code-map:
+            "D.02": "LB"     # 半成品立体库
+            "D.01": "MJ"     # 成品敏捷仓
+            "F.03": "FPC01"  # 废品仓
+          # 外部仓（VMI/供应商仓）：同步进来但标「外部仓」，不同步库存、不作入库目标
+          external-stock-codes:
+            - "CK007"
         # BOS_BillType.FNumber（测试环境：SCRKD01_SYS 汇报入库）
         bill-type: "SCRKD01_SYS"
         owner-type: "BD_OwnerOrg"

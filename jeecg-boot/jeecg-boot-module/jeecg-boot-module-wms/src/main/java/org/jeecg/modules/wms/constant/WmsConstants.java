@@ -183,6 +183,11 @@ public final class WmsConstants {
 
     /** 库区类型-普通仓（初级产成品仓 / 涂层产成品仓：既非立库也非敏捷仓）。 */
     public static final String WAREHOUSE_TYPE_NORMAL = "普通仓";
+    /**
+     * 外部仓（VMI/供应商仓）：货权不属于自己，不同步库存、不作为入库目标。
+     * 由 {@code master-data.external-stock-codes} 标记（默认 CK007 宜昌永鑫…vmi）。
+     */
+    public static final String WAREHOUSE_TYPE_EXTERNAL = "外部仓";
 
     /**
      * 库区树中「库区类型」节点的 key 前缀。
@@ -349,6 +354,9 @@ public final class WmsConstants {
     public static final String IDENT_TYPE_RFID = "RFID";
     /** 标识类型：二维码（贴在料箱上）。 */
     public static final String IDENT_TYPE_QRCODE = "二维码";
+
+    /** 生产入库状态：草稿（工序汇报落进来，未分配库位、未下发 WCS）。 */
+    public static final String PROD_STATUS_DRAFT = "草稿";
 
     /** 生产入库状态：待上架。 */
     public static final String PROD_STATUS_PENDING_PUTAWAY = "待上架";
