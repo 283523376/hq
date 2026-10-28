@@ -4,7 +4,8 @@
 -->
 <template>
   <div class="anticon" :class="getAppLogoClass" @click="goHome">
-    <img src="../../../assets/images/logo.png" />
+    <!-- 深色底用白色图形、浅色底用深色图形：同一份齿轮 logo 的两种墨色，背景均透明 -->
+    <img :src="logoSrc" alt="永鑫WMS" />
     <div class="ml-2 truncate md:opacity-100" :class="getTitleClass" v-show="showTitle">
       {{ shortTitle }}
     </div>
@@ -12,6 +13,8 @@
 </template>
 <script lang="ts" setup>
   import { computed, unref } from 'vue';
+  import logoInk from '/@/assets/images/logo.png';
+  import logoWhite from '/@/assets/images/logo-white.png';
   import { useGlobSetting } from '/@/hooks/setting';
   import { useGo } from '/@/hooks/web/usePage';
   import { useMenuSetting } from '/@/hooks/setting/useMenuSetting';
@@ -42,6 +45,9 @@
   const go = useGo();
 
   const getAppLogoClass = computed(() => [prefixCls, props.theme, { 'collapsed-show-title': unref(getCollapsedShowTitle) }]);
+
+  /** 深色底（左侧菜单/混合菜单）用白色 logo，浅色底（登录卡）用深色 logo */
+  const logoSrc = computed(() => (props.theme === 'dark' ? logoWhite : logoInk));
 
   const getTitleClass = computed(() => [
     `${prefixCls}__title`,
