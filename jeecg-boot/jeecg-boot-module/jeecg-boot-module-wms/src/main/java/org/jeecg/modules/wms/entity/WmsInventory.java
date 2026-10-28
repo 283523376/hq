@@ -45,4 +45,13 @@ public class WmsInventory extends JeecgEntity {
     /** 出库分配锁定数量：可用量 = quantity - lockedQty。 */
     @Schema(description = "出库分配锁定数量")
     private java.math.BigDecimal lockedQty;
+
+    /**
+     * 批次首次入库时间（超期预警起算点）。
+     *
+     * <p>不是行创建时间：调拨到新库位、盘盈新建行时都**继承/沿用**原批次首次入库时间，
+     * 否则货龄会被重置。见 spec 2026-10-28 决策 D1/D3/D4。
+     */
+    @Schema(description = "批次首次入库时间")
+    private java.util.Date firstInboundTime;
 }

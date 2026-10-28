@@ -361,6 +361,8 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
             created.setContainerCode(detail.getContainerCode());
             created.setQuantity(detail.getActualQty());
             created.setLockedQty(BigDecimal.ZERO);
+            // 盘盈是新增行：实物入库时点无从得知，取发现时间（spec 2026-10-28 D4）
+            created.setFirstInboundTime(new Date());
             inventoryMapper.insert(created);
             return;
         }

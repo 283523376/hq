@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsBatchTraceMapper">
+
+    <!-- 某批次的当前库存明细（跨物料/库位/容器） -->
+    <select id="selectBatchStock" resultType="org.jeecg.modules.wms.vo.WmsInventoryStockRowVO">
+        SELECT i.id,
+               i.material_id,
+               m.material_code,
+               m.material_name,
+               w.id AS warehouse_id,
+               w.warehouse_code,
+               w.warehouse_name,
+               l.id AS location_id,
+               l.location_code,
+               i.batch_no,
+               i.container_code,
+               i.quantity,
+               i.locked_qty,
+               (i.quantity - i.locked_qty) AS available_qty,
+               i.first_inbound_time
+          FROM wms_inventory i
+          JOIN wms_location l ON l.id = i.location_id AND l.deleted_at = 0
+          JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
+          LEFT JOIN wms_material m ON m.id = i.material_id
+         WHERE i.batch_no = #{batchNo}
+         ORDER BY i.first_inbound_time ASC, l.location_code ASC
+    </select>
+
+    <!--
+      某批次的流转记录：入库 / 生产入库 / 出库 / 调拨(拆出入两条) / 盘点(仅差异行)。
+      数量口径：正=入库或盘盈，负=出库或盘亏。
+    -->
+    <select id="selectBatchFlow" resultType="org.jeecg.modules.wms.vo.WmsBatchFlowVO">
+        SELECT * FROM (
+            SELECT o.create_time AS event_time,
+                   'INBOUND' AS event_type,
+                   o.order_no AS bill_no,
+                   d.material_code,
+                   d.material_name,
+                   l.location_code,
+                   NULL AS container_code,
+                   COALESCE(d.actual_quantity, d.quantity) AS qty,
+                   o.supplier_name AS counterparty,
+                   o.create_by AS operator,
+                   NULL AS remark
+              FROM wms_inbound_detail d
+              JOIN wms_inbound_order o ON o.id = d.inbound_id AND o.deleted_at = 0
+              LEFT JOIN wms_location l ON l.id = d.location_id AND l.deleted_at = 0
+             WHERE d.batch_no = #{batchNo} AND d.deleted_at = 0
+            UNION ALL
+            SELECT COALESCE(p.complete_time, p.create_time) AS event_time,
+                   'PROD_INBOUND' AS event_type,
+                   p.inbound_no AS bill_no,
+                   p.material_code,
+                   p.material_name,
+                   l.location_code,
+                   p.carrier_code AS container_code,
+                   p.good_qty AS qty,
+                   p.work_order_no AS counterparty,
+                   p.operator AS operator,
+                   p.manual_remark AS remark
+              FROM wms_production_inbound p
+              LEFT JOIN wms_location l ON l.id = p.location_id AND l.deleted_at = 0
+             WHERE p.batch_no = #{batchNo} AND p.deleted_at = 0
+            UNION ALL
+            SELECT o.create_time AS event_time,
+                   'OUTBOUND' AS event_type,
+                   o.outbound_no AS bill_no,
+                   d.material_code,
+                   d.material_name,
+                   NULL AS location_code,
+                   NULL AS container_code,
+                   -d.actual_qty AS qty,
+                   o.customer_name AS counterparty,
+                   o.operator AS operator,
+                   o.remark AS remark
+              FROM wms_outbound_detail d
+              JOIN wms_outbound_order o ON o.id = d.outbound_id AND o.deleted_at = 0
+             WHERE d.batch_no = #{batchNo} AND d.deleted_at = 0 AND d.actual_qty IS NOT NULL
+            UNION ALL
+            SELECT o.create_time AS event_time,
+                   'TRANSFER' AS event_type,
+                   o.transfer_no AS bill_no,
+                   d.material_code,
+                   d.material_name,
+                   d.out_location_code AS location_code,
+                   d.container_code,
+                   -d.actual_qty AS qty,
+                   CONCAT('→ ', COALESCE(d.in_location_code, '')) AS counterparty,
+                   o.operator AS operator,
+                   d.remark AS remark
+              FROM wms_transfer_detail d
+              JOIN wms_transfer_order o ON o.id = d.transfer_id AND o.deleted_at = 0
+             WHERE d.batch_no = #{batchNo} AND d.deleted_at = 0 AND d.actual_qty IS NOT NULL
+            UNION ALL
+            SELECT o.create_time AS event_time,
+                   'TRANSFER' AS event_type,
+                   o.transfer_no AS bill_no,
+                   d.material_code,
+                   d.material_name,
+                   d.in_location_code AS location_code,
+                   d.container_code,
+                   d.actual_qty AS qty,
+                   CONCAT('← ', COALESCE(d.out_location_code, '')) AS counterparty,
+                   o.operator AS operator,
+                   d.remark AS remark
+              FROM wms_transfer_detail d
+              JOIN wms_transfer_order o ON o.id = d.transfer_id AND o.deleted_at = 0
+             WHERE d.batch_no = #{batchNo} AND d.deleted_at = 0 AND d.actual_qty IS NOT NULL
+            UNION ALL
+            SELECT COALESCE(o.adjust_time, o.create_time) AS event_time,
+                   'STOCKTAKE' AS event_type,
+                   o.stocktake_no AS bill_no,
+                   d.material_code,
+                   m.material_name,
+                   d.location_code,
+                   d.container_code,
+                   d.diff_qty AS qty,
+                   d.diff_reason AS counterparty,
+                   o.initiator AS operator,
+                   d.diff_reason AS remark
+              FROM wms_stocktake_detail d
+              JOIN wms_stocktake_order o ON o.id = d.stocktake_id AND o.deleted_at = 0
+              LEFT JOIN wms_material m ON m.id = d.material_id
+             WHERE d.batch_no = #{batchNo} AND d.deleted_at = 0
+               AND d.diff_qty IS NOT NULL AND d.diff_qty &lt;&gt; 0
+        ) t
+         ORDER BY t.event_time DESC
+         LIMIT #{limit}
+    </select>
+
+</mapper>

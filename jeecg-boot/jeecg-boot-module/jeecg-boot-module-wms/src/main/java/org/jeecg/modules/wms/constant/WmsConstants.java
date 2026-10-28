@@ -652,4 +652,54 @@ public final class WmsConstants {
     public static final String SALES_ORDER_STATUS_APPROVED = "C";
     /** 销售订单拉取失败告警标题。 */
     public static final String SALES_ORDER_SYNC_ALERT_TITLE = "WMS销售订单拉取失败告警";
+
+    // ==================== KC-001 库存预警 ====================
+
+    /** 预警规则类型：库存下限。 */
+    public static final String WARNING_TYPE_LOW_STOCK = "LOW_STOCK";
+    /** 预警规则类型：存放超期。 */
+    public static final String WARNING_TYPE_OVERDUE = "OVERDUE";
+
+    /** 规则作用域：单物料。 */
+    public static final String WARNING_SCOPE_MATERIAL = "MATERIAL";
+    /** 规则作用域：物料分类。 */
+    public static final String WARNING_SCOPE_CATEGORY = "CATEGORY";
+    /** 规则作用域：全部物料。 */
+    public static final String WARNING_SCOPE_ALL = "ALL";
+
+    /** 预警状态：待处理。 */
+    public static final String WARNING_STATUS_PENDING = "PENDING";
+    /** 预警状态：已解除。 */
+    public static final String WARNING_STATUS_RESOLVED = "RESOLVED";
+
+    /** 处理方式：补料。 */
+    public static final String WARNING_HANDLE_REPLENISH = "REPLENISH";
+    /** 处理方式：清理。 */
+    public static final String WARNING_HANDLE_CLEAR = "CLEAR";
+    /** 处理方式：其他。 */
+    public static final String WARNING_HANDLE_OTHER = "OTHER";
+
+    /** 预警单号前缀。 */
+    public static final String WARNING_NO_PREFIX = "WRN";
+    /** 超期天数上限（10 年），超出视为配置错误。 */
+    public static final int WARNING_OVERDUE_MAX_DAYS = 3650;
+    /** 单次扫描单条规则最多产出的超期行数，防慢 SQL 与大结果集。 */
+    public static final int WARNING_SCAN_ROW_LIMIT = 2000;
+    /** 合并去重键解除后缀分隔符。 */
+    public static final String WARNING_DEDUP_RESOLVED_SEP = "#R#";
+
+    /** 预警扫描任务在 sys_quartz_job 中的主键；必须与 Flyway 种子行一致。 */
+    public static final String INVENTORY_WARNING_SCAN_JOB_ID = "1920000000000000380";
+    /** 预警扫描任务类名。 */
+    public static final String INVENTORY_WARNING_SCAN_JOB_CLASS =
+            "org.jeecg.modules.wms.job.WmsInventoryWarningScanJob";
+    /** 默认每天 08:00，避开 ERP 补偿任务的凌晨节奏。 */
+    public static final String INVENTORY_WARNING_SCAN_JOB_CRON = "0 0 8 * * ?";
+
+    /** 同步日志对象类型：库存预警扫描。 */
+    public static final String SYNC_LOG_TYPE_INVENTORY_WARNING = "INVENTORY_WARNING";
+    /** 同步日志方向：WMS 内部计算（非 ERP 交互）。 */
+    public static final String SYNC_LOG_DIRECTION_WMS_INTERNAL = "WMS_INTERNAL";
+    /** 同步日志对端：WMS 自身。 */
+    public static final String SYNC_LOG_TARGET_WMS = "WMS";
 }

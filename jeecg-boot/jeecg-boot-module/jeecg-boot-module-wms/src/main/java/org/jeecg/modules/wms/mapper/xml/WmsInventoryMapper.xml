@@ -5,9 +5,11 @@
     <!-- 聚合上架：同 (material_id, location_id, batch_no, container_code) 存在则数量累加，否则插入新行 -->
     <insert id="upsertInventory" parameterType="org.jeecg.modules.wms.entity.WmsInventory">
         INSERT INTO wms_inventory
-            (id, material_id, location_id, batch_no, container_code, quantity, create_by, create_time, update_by, update_time)
+            (id, material_id, location_id, batch_no, container_code, quantity,
+             first_inbound_time, create_by, create_time, update_by, update_time)
         VALUES
-            (#{id}, #{materialId}, #{locationId}, #{batchNo}, #{containerCode}, #{quantity}, #{createBy}, NOW(), #{updateBy}, NOW())
+            (#{id}, #{materialId}, #{locationId}, #{batchNo}, #{containerCode}, #{quantity},
+             COALESCE(#{firstInboundTime}, NOW()), #{createBy}, NOW(), #{updateBy}, NOW())
         ON DUPLICATE KEY UPDATE
             quantity = quantity + VALUES(quantity),
             update_by = #{updateBy},

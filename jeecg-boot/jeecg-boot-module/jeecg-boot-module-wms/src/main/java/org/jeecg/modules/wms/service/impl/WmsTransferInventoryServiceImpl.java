@@ -153,13 +153,17 @@ public class WmsTransferInventoryServiceImpl implements IWmsTransferInventorySer
                     .set("update_time", new Date())
                     .eq("id", exist.getId()));
         } else {
+            // 移库不是新入库：目标行继承源行的批次首次入库时间，否则超期预警的货龄会被重置
+            WmsInventory sourceRow = task.getInventoryId() == null
+                    ? null : inventoryMapper.selectById(task.getInventoryId());
             WmsInventory created = new WmsInventory()
                     .setMaterialId(detail.getMaterialId())
                     .setLocationId(locationId)
                     .setBatchNo(batchNo)
                     .setContainerCode(containerCode)
                     .setQuantity(qty)
-                    .setLockedQty(BigDecimal.ZERO);
+                    .setLockedQty(BigDecimal.ZERO)
+                    .setFirstInboundTime(sourceRow == null ? null : sourceRow.getFirstInboundTime());
             created.setId(IdWorker.getIdStr());
             inventoryMapper.upsertInventory(created);
         }

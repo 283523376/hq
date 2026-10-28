@@ -35,6 +35,25 @@ public final class WmsUtils {
     }
 
     /**
+     * 取当前登录用户姓名；取不到姓名时退回账号，再无则返回 null。
+     */
+    public static String currentRealname() {
+        try {
+            Object principal = SecurityUtils.getSubject().getPrincipal();
+            if (principal instanceof LoginUser) {
+                LoginUser user = (LoginUser) principal;
+                if (user.getRealname() != null && !user.getRealname().trim().isEmpty()) {
+                    return user.getRealname();
+                }
+                return user.getUsername();
+            }
+        } catch (Exception ignored) {
+            // 非 Web/未登录上下文，忽略
+        }
+        return null;
+    }
+
+    /**
      * 新增时填充审计字段。
      */
     public static <T extends JeecgEntity> void fillCreate(T entity) {
