@@ -15,6 +15,7 @@ import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.util.WmsSyncAutoGate;
 import org.jeecg.modules.wms.service.IWmsProductionInboundService;
+import org.jeecg.modules.wms.service.IWmsOperationReportDraftService;
 import org.jeecg.modules.wms.service.IWmsProductionSyncService;
 import org.jeecg.modules.wms.service.IWmsProductionTaskService;
 import org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService;
@@ -55,6 +56,9 @@ public class WmsProductionController {
 
     @Autowired
     private IWmsProductionSyncService syncService;
+
+    @Autowired
+    private IWmsOperationReportDraftService operationReportDraftService;
     /** 「自动同步」开关：关闭时**不即时回写**，单据留在「待同步」由页面手工同步。 */
     @Autowired(required = false)
     private IWmsSystemConfigService systemConfigService;
@@ -204,6 +208,21 @@ public class WmsProductionController {
     public Result<WmsProductionInbound> detail(@PathVariable("id") String id) {
         try {
             return Result.OK(service.detail(id));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @AutoLog(value = "生产入库-同步工序汇报", operateType = 1)
+    @Operation(summary = "生产入库-从金蝶工序汇报落半成品入库草稿（阶段 C：不分配库位/不下发 WCS）")
+    @PostMapping(value = "/sync-operation-report")
+    @RequiresPermissions("wms:production:manual")
+    public Result<org.jeecg.modules.wms.vo.WmsOperationReportSyncResultVO> syncOperationReport(
+            @RequestParam(name = "startDate", required = false) String startDate,
+            @RequestParam(name = "endDate", required = false) String endDate,
+            @RequestParam(name = "maxRows", required = false) Integer maxRows) {
+        try {
+            return Result.OK("同步完成", operationReportDraftService.ingest(startDate, endDate, maxRows));
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }

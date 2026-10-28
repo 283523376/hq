@@ -131,6 +131,14 @@ public class WmsProductionInbound extends JeecgEntity {
     @Schema(description = "金蝶单号")
     private String erpBillNo;
 
+    /**
+     * 工序汇报分录幂等键：`金蝶单号#工序序列#工序号`。
+     *
+     * <p>一张工序汇报单有多个分录行（每道工序一行），只用单号去重会把它们并成一条。
+     */
+    @Schema(description = "工序汇报分录幂等键")
+    private String erpEntryKey;
+
     /** 最近一次同步尝试中的重试次数 */
     @Schema(description = "重试次数")
     private Integer retryCount;
