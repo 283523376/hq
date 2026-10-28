@@ -35,6 +35,7 @@ class WmsKingdeeInboundWriterImplTest {
     private WmsKingdeeFormClient formClient;
     private IWmsKingdeeDefectWriter defectWriter;
     private WmsProductionInboundMapper inboundMapper;
+    private WmsKingdeeBatchSupport batchSupport;
     private WmsMaterialCodeResolver materialResolver;
     private WmsKingdeeProperties properties;
     private WmsKingdeeInboundWriterImpl writer;
@@ -62,7 +63,9 @@ class WmsKingdeeInboundWriterImplTest {
         materialResolver = mock(WmsMaterialCodeResolver.class);
         when(materialResolver.resolveKingdeeCode(anyString())).thenAnswer(
                 inv -> properties.getMaterialMap().getOrDefault((String) inv.getArgument(0), (String) inv.getArgument(0)));
-        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, defectWriter, inboundMapper, materialResolver);
+        batchSupport = mock(WmsKingdeeBatchSupport.class);
+        when(batchSupport.ensureUsable(anyString(), anyString(), anyString())).thenReturn(null);
+        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, defectWriter, inboundMapper, materialResolver, batchSupport);
     }
 
     private WmsProductionInbound inbound(String good, String bad) {
@@ -222,7 +225,7 @@ class WmsKingdeeInboundWriterImplTest {
 
     @Test
     void write_pureBadQty_withoutDefectWriter_reportsReadableError() {
-        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, null, inboundMapper, materialResolver);
+        writer = new WmsKingdeeInboundWriterImpl(formClient, properties, null, inboundMapper, materialResolver, batchSupport);
         WmsOrderSyncResult result = writer.write(inbound("0", "2"));
         assertFalse(result.isSuccess());
         assertTrue(result.getErrorMessage().contains("纯不良品回写器未注入"));

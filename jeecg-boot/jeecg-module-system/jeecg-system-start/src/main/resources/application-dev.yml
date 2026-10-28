@@ -555,6 +555,12 @@ wms:
         stock-loc:
           "02.001": "01"     # 产成品仓-仓位A
           "02.002": "01"     # 自制半成品仓-仓位A
+        # 批号主档保障（2026-10-28 自动化优先）：批号主档无 Submit/Audit/Delete 接口，只能 Save
+        # auto-create：批号缺失时自动创建为可用；auto-repair：已存在但不可用时是否自动改为可用
+        # （改写金蝶主数据，默认关；质量部门有意停用的批号不应被系统擅自启用）
+        batch:
+          auto-create-enabled: "${KINGDEE_BATCH_AUTO_CREATE:true}"
+          auto-repair-enabled: "${KINGDEE_BATCH_AUTO_REPAIR:false}"
         # 纯不良品自动开单：金蝶其他入库单（STK_Miscellaneous，spec 2026-10-28-yx-wms-defect-outbound-erp-design）
         # 入库仓用上面 stock-code.scrap（F.03 暂配待顾问确认）；部门留空则用工单车间编号
         defect:

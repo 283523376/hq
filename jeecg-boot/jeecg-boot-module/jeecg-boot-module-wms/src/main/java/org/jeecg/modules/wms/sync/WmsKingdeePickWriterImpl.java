@@ -47,23 +47,23 @@ import java.util.Map;
 public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
 
     private static final String FORM_ID = "PRD_PickMtrl";
-    /** 批号主档「可用」状态值；新建批号不传该字段时默认 T（不可用），领料会报「批号已作废」。 */
-    private static final String LOT_STATUS_USABLE = "2";
 
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
     private final WmsKingdeeLookupSupport lookup;
     private final WmsOutboundOrderMapper outboundMapper;
     private final WmsMaterialCodeResolver materialResolver;
+    private final WmsKingdeeBatchSupport batchSupport;
 
     public WmsKingdeePickWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
                                     WmsKingdeeLookupSupport lookup, WmsOutboundOrderMapper outboundMapper,
-                                    WmsMaterialCodeResolver materialResolver) {
+                                    WmsMaterialCodeResolver materialResolver, WmsKingdeeBatchSupport batchSupport) {
         this.formClient = formClient;
         this.properties = properties;
         this.lookup = lookup;
         this.outboundMapper = outboundMapper;
         this.materialResolver = materialResolver;
+        this.batchSupport = batchSupport;
     }
 
     @Override
@@ -188,7 +188,7 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
                 // 5.2 批号：物料启用批号管理时必须存在且为「可用」状态，否则金蝶报「批号已作废」
                 String lot = detail.getBatchNo();
                 if (oConvertUtils.isNotEmpty(lot)) {
-                    String lotError = checkBatchUsable(kingdeeCode, lot);
+                    String lotError = checkBatchUsable(kingdeeCode, lot, orgNumber);
                     if (lotError != null) {
                         return WmsOrderSyncResult.fail(lotError);
                     }
@@ -309,32 +309,16 @@ public class WmsKingdeePickWriterImpl implements IWmsKingdeePickWriter {
     }
 
     /**
-     * 批号校验：必须存在且 {@code FLotStatus=2}（可用）。
+     * 批号保障：必须存在且可用；缺失时按 {@code batch.auto-create-enabled} 自动创建
+     * （2026-10-28 自动化优先：批号主档无 Submit/Audit/Delete 接口，过去只能人工建）。
      *
      * <p>踩过的坑：新建批号若不带 FLotStatus，金蝶默认给 T（不可用），领料时报
      * 「批号已作废或批号状态不正确」——这条错误对用户毫无指向性。
      *
-     * @return null 表示通过；否则返回给用户看的原因
+     * @return null 表示通过（含已自动创建）；否则返回给用户看的原因
      */
-    private String checkBatchUsable(String materialCode, String lot) {
-        WmsKingdeeResult batch = formClient.executeBillQuery("BD_BatchMainFile",
-                "FNumber,FMaterialId.FNumber,FLotStatus",
-                "FNumber='" + lot.replace("'", "''") + "' AND FMaterialId.FNumber='"
-                        + materialCode.replace("'", "''") + "'", 5);
-        if (!batch.isSuccess()) {
-            // 查询失败不拦路：交给金蝶在保存时判
-            log.warn("批号[{}]校验查询失败：{}", lot, batch.getMessage());
-            return null;
-        }
-        if (batch.getRows().isEmpty()) {
-            return "批号[" + lot + "]在物料[" + materialCode + "]下不存在，请先在金蝶创建批号主档";
-        }
-        String status = batch.getRows().get(0).size() > 2 ? str(batch.getRows().get(0).get(2)) : "";
-        if (!LOT_STATUS_USABLE.equals(status)) {
-            return "批号[" + lot + "]状态为 " + status + "（非可用），金蝶拒绝领料；"
-                    + "请在批号主档把状态改为可用（FLotStatus=2）";
-        }
-        return null;
+    private String checkBatchUsable(String materialCode, String lot, String orgNumber) {
+        return batchSupport.ensureUsable(materialCode, lot, orgNumber);
     }
 
     /**

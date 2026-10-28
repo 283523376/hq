@@ -47,6 +47,7 @@ class WmsKingdeePickWriterImplTest {
     private WmsKingdeeProperties properties;
     private WmsKingdeeLookupSupport lookup;
     private WmsOutboundOrderMapper outboundMapper;
+    private WmsKingdeeBatchSupport batchSupport;
     private WmsMaterialCodeResolver materialResolver;
     private WmsKingdeePickWriterImpl writer;
 
@@ -73,7 +74,9 @@ class WmsKingdeePickWriterImplTest {
             }
             return null;
         });
-        writer = new WmsKingdeePickWriterImpl(formClient, properties, lookup, outboundMapper, materialResolver);
+        batchSupport = mock(WmsKingdeeBatchSupport.class);
+        when(batchSupport.ensureUsable(anyString(), anyString(), anyString())).thenReturn(null);
+        writer = new WmsKingdeePickWriterImpl(formClient, properties, lookup, outboundMapper, materialResolver, batchSupport);
 
         when(lookup.material("WA.1", "100")).thenReturn(List.of(123L, "WA.1", "子项", 456L, 1L, "100"));
         when(lookup.unitNumber(456L)).thenReturn("zhi");
@@ -208,8 +211,10 @@ class WmsKingdeePickWriterImplTest {
 
     @Test
     void write_rejectsUnusableBatch() {
-        when(formClient.executeBillQuery(eq("BD_BatchMainFile"), anyString(), anyString(), anyInt()))
-                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("B1", "WA.1", "T")), null, null));
+        // 2026-10-28：批号保障下沉到 WmsKingdeeBatchSupport（缺失自动创建、不可用按配置拒绝），
+        // 这里验证「保障不通过时不保存」
+        when(batchSupport.ensureUsable(anyString(), anyString(), anyString()))
+                .thenReturn("批号[B1]状态为 T（非可用），金蝶拒绝领料");
 
         WmsOrderSyncResult result = writer.write(order(), List.of(detail()));
 

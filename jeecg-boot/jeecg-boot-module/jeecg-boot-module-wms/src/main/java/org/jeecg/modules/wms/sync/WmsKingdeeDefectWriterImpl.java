@@ -50,15 +50,17 @@ public class WmsKingdeeDefectWriterImpl implements IWmsKingdeeDefectWriter {
     private final WmsKingdeeLookupSupport lookup;
     private final WmsProductionInboundMapper inboundMapper;
     private final WmsMaterialCodeResolver materialResolver;
+    private final WmsKingdeeBatchSupport batchSupport;
 
     public WmsKingdeeDefectWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
                                       WmsKingdeeLookupSupport lookup, WmsProductionInboundMapper inboundMapper,
-                                      WmsMaterialCodeResolver materialResolver) {
+                                      WmsMaterialCodeResolver materialResolver, WmsKingdeeBatchSupport batchSupport) {
         this.formClient = formClient;
         this.properties = properties;
         this.lookup = lookup;
         this.inboundMapper = inboundMapper;
         this.materialResolver = materialResolver;
+        this.batchSupport = batchSupport;
     }
 
     @Override
@@ -104,6 +106,11 @@ public class WmsKingdeeDefectWriterImpl implements IWmsKingdeeDefectWriter {
             List<Object> material = lookup.material(kingdeeCode, orgNumber);
             if (material == null || material.isEmpty()) {
                 return WmsOrderSyncResult.fail("金蝶未找到物料编码：" + kingdeeCode);
+            }
+            // 批号保障：金蝶批号主档缺失时按配置自动创建为可用
+            String lotError = batchSupport.ensureUsable(kingdeeCode, inbound.getBatchNo(), orgNumber);
+            if (lotError != null) {
+                return WmsOrderSyncResult.fail(lotError);
             }
             Object unitId = material.size() > 3 ? material.get(3) : null;
             String unitNumber = lookup.unitNumber(unitId);

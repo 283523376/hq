@@ -161,6 +161,27 @@ public class WmsKingdeeProperties {
     /** 纯不良品入库回写配置（spec 2026-10-28-yx-wms-defect-outbound-erp-design）。 */
     private Defect defect = new Defect();
 
+    /** 批号主档保障配置（批号缺失自动创建可用批号）。 */
+    private Batch batch = new Batch();
+
+    /**
+     * 批号主档（BD_BatchMainFile）保障配置。
+     *
+     * <p>默认只做「缺失时创建」，不改金蝶既有批号状态——改写主数据可能推翻质量部门的有意停用，
+     * 因此 auto-repair 默认关闭，由顾问决定。
+     */
+    public static class Batch {
+        /** 批号不存在时自动创建为可用（FLotStatus=2）。 */
+        private boolean autoCreateEnabled = true;
+        /** 批号存在但不可用时自动改为可用。 */
+        private boolean autoRepairEnabled = false;
+
+        public boolean isAutoCreateEnabled() { return autoCreateEnabled; }
+        public void setAutoCreateEnabled(boolean autoCreateEnabled) { this.autoCreateEnabled = autoCreateEnabled; }
+        public boolean isAutoRepairEnabled() { return autoRepairEnabled; }
+        public void setAutoRepairEnabled(boolean autoRepairEnabled) { this.autoRepairEnabled = autoRepairEnabled; }
+    }
+
     /**
      * 纯不良品 → 金蝶其他入库单（STK_Miscellaneous）。
      *

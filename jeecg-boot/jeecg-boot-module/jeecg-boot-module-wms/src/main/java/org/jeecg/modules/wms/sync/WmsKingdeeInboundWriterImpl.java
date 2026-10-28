@@ -39,15 +39,17 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
     private final IWmsKingdeeDefectWriter defectWriter;
     private final WmsProductionInboundMapper inboundMapper;
     private final WmsMaterialCodeResolver materialResolver;
+    private final WmsKingdeeBatchSupport batchSupport;
 
     public WmsKingdeeInboundWriterImpl(WmsKingdeeFormClient formClient, WmsKingdeeProperties properties,
                                        IWmsKingdeeDefectWriter defectWriter, WmsProductionInboundMapper inboundMapper,
-                                       WmsMaterialCodeResolver materialResolver) {
+                                       WmsMaterialCodeResolver materialResolver, WmsKingdeeBatchSupport batchSupport) {
         this.formClient = formClient;
         this.properties = properties;
         this.defectWriter = defectWriter;
         this.inboundMapper = inboundMapper;
         this.materialResolver = materialResolver;
+        this.batchSupport = batchSupport;
     }
 
     @Override
@@ -132,6 +134,11 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
 
             // 3) 物料 / 单位
             String kingdeeMaterialCode = materialResolver.resolveKingdeeCode(inbound.getMaterialCode());
+            // 批号保障：金蝶批号主档缺失时按配置自动创建为可用（批号主档无审核接口，只能 Save）
+            String lotError = batchSupport.ensureUsable(kingdeeMaterialCode, inbound.getBatchNo(), moOrgNumber);
+            if (lotError != null) {
+                return WmsOrderSyncResult.fail(lotError);
+            }
             WmsKingdeeResult materialResult = formClient.executeBillQuery("BD_MATERIAL",
                     "FMATERIALID,FNumber,FName,FBaseUnitId,FCreateOrgId,FUseOrgId",
                     "FNumber='" + kingdeeMaterialCode.replace("'", "''") + "'", 10);
