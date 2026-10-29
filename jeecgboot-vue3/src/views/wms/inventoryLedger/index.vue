@@ -271,7 +271,9 @@
   }
 
   function handleDownload(record: any) {
-    handleExportXlsx(record.fileName || '库存台账', '/wms/inventoryLedger/export/task/' + record.id + '/download');
+    // handleExportXlsx 会自己补 .xlsx 后缀，这里传去掉后缀的名字，否则下载出来是 .xlsx.xlsx
+    const name = (record.fileName || '库存台账').replace(/\.xlsx$/i, '');
+    handleExportXlsx(name, '/wms/inventoryLedger/export/task/' + record.id + '/download');
   }
 
   async function handleRetry(record: any) {

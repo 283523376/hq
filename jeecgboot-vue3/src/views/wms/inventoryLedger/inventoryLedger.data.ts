@@ -66,4 +66,5 @@ export const taskColumns: BasicColumn[] = [
   { title: '完成时间', align: 'center', dataIndex: 'finishTime', width: 160 },
   { title: '过期时间', align: 'center', dataIndex: 'expireTime', width: 160 },
   { title: '失败原因', align: 'left', dataIndex: 'errorMsg', width: 240, ellipsis: true },
+  { title: '操作', align: 'center', dataIndex: 'action', width: 210, fixed: 'right' },
 ];
