@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.entity.WmsExportTask;
 
+import java.io.File;
+
 /**
  * @Description: 导出任务（KC-004）。
  *
@@ -25,4 +27,25 @@ public interface IWmsExportTaskService {
 
     /** 当前账号的导出任务分页（强制按 operator 过滤，不接受外部指定账号）。 */
     IPage<WmsExportTask> pageMine(String operator, int pageNo, int pageSize);
+
+    /**
+     * 取可下载的文件。
+     *
+     * @throws RuntimeException 非本人 / 未成功 / 文件已过期或被清理
+     */
+    File resolveDownload(String taskId, String operator);
+
+    /**
+     * 重试失败任务（只允许 FAILED），重新入队。
+     *
+     * @throws RuntimeException 非本人 / 正在处理中 / 已完成
+     */
+    void retry(String taskId, String operator);
+
+    /**
+     * 删除任务记录与文件（进行中的任务不允许删）。
+     *
+     * @throws RuntimeException 非本人 / 正在处理中
+     */
+    void deleteTask(String taskId, String operator);
 }

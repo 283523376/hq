@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.entity.WmsExportTask;
+import org.jeecg.modules.wms.exporter.WmsExportFileStore;
 import org.jeecg.modules.wms.exporter.WmsExportTaskRunner;
 import org.jeecg.modules.wms.mapper.WmsExportTaskMapper;
 import org.jeecg.modules.wms.service.WmsExportProperties;
@@ -55,7 +56,8 @@ class WmsExportTaskCreateTest {
         taskMapper = mock(WmsExportTaskMapper.class);
         runner = mock(WmsExportTaskRunner.class);
         executor = mock(TaskExecutor.class);
-        service = new WmsExportTaskServiceImpl(taskMapper, runner, executor, new WmsExportProperties());
+        service = new WmsExportTaskServiceImpl(taskMapper, runner, executor, new WmsExportProperties(),
+                new WmsExportFileStore(java.nio.file.Paths.get("target")));
     }
 
     @Test

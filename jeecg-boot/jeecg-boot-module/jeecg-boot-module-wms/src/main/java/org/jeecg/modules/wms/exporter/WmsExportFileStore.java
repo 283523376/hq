@@ -47,8 +47,8 @@ public class WmsExportFileStore {
         this(Paths.get(resolveRootDir(properties, uploadRoot)), true);
     }
 
-    /** 测试用：直接指定根目录，不创建。 */
-    WmsExportFileStore(Path root) {
+    /** 直接指定根目录，不创建（单测用，也可给嵌入式场景用）。 */
+    public WmsExportFileStore(Path root) {
         this(root, false);
     }
 
