@@ -1,9 +1,13 @@
 package org.jeecg.modules.wms.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.Param;
+import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.entity.WmsInventory;
 import org.jeecg.modules.wms.vo.WmsInventoryAvailableVO;
+import org.jeecg.modules.wms.vo.WmsInventoryLedgerVO;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -56,4 +60,26 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
 
     /** 扣减库存并释放锁定：锁定不足或库存不足时影响 0 行。 */
     int deductLocked(@Param("id") String id, @Param("qty") BigDecimal qty);
+
+    /**
+     * 库存台账分页（KC-004）。
+     *
+     * <p>排序按 `wms_inventory` 唯一键的四列，与 {@link #selectLedgerCursor} 保持一致，
+     * 这样页面看到的顺序和导出文件里的一致。
+     */
+    IPage<WmsInventoryLedgerVO> selectLedgerPage(Page<WmsInventoryLedgerVO> page,
+                                                 @Param("q") WmsInventoryLedgerQueryDTO q);
+
+    /**
+     * 库存台账游标分批（导出专用）。
+     *
+     * <p>`lastXxx` 全部为 null 时取第一批；否则取严格大于该四元组的下一批。
+     * 四列是唯一键 `uk_wms_inv_mat_loc_batch_container`，所以游标不会重复或遗漏。
+     */
+    List<WmsInventoryLedgerVO> selectLedgerCursor(@Param("q") WmsInventoryLedgerQueryDTO q,
+                                                  @Param("lastMaterialId") String lastMaterialId,
+                                                  @Param("lastLocationId") String lastLocationId,
+                                                  @Param("lastBatchNo") String lastBatchNo,
+                                                  @Param("lastContainerCode") String lastContainerCode,
+                                                  @Param("limit") int limit);
 }

@@ -102,4 +102,78 @@
            AND quantity &gt;= #{qty}
     </update>
 
+    <!-- ============================================================
+         KC-004 库存台账
+         ============================================================ -->
+
+    <sql id="ledgerFrom">
+          FROM wms_inventory i
+          JOIN wms_material  m ON m.id = i.material_id  AND m.deleted_at = 0
+          JOIN wms_location  l ON l.id = i.location_id  AND l.deleted_at = 0
+          JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
+    </sql>
+
+    <sql id="ledgerColumns">
+        SELECT i.id,
+               i.material_id,
+               i.location_id,
+               m.material_code,
+               m.material_name,
+               m.spec,
+               m.unit,
+               i.batch_no,
+               w.warehouse_code,
+               w.warehouse_name,
+               w.status AS warehouse_status,
+               l.location_code,
+               i.container_code,
+               i.quantity,
+               i.locked_qty,
+               (i.quantity - i.locked_qty) AS available_qty,
+               i.first_inbound_time,
+               DATEDIFF(NOW(), i.first_inbound_time) AS stock_age_days
+    </sql>
+
+    <sql id="ledgerWhere">
+        <where>
+            <if test="q.onlyPositive != null and q.onlyPositive">
+                AND i.quantity &lt;&gt; 0
+            </if>
+            <if test="q.materialKeyword != null and q.materialKeyword != ''">
+                AND (m.material_code LIKE CONCAT('%', #{q.materialKeyword}, '%')
+                  OR m.material_name LIKE CONCAT('%', #{q.materialKeyword}, '%'))
+            </if>
+            <if test="q.batchNo != null and q.batchNo != ''">
+                AND i.batch_no LIKE CONCAT('%', #{q.batchNo}, '%')
+            </if>
+            <if test="q.locationCode != null and q.locationCode != ''">
+                AND l.location_code LIKE CONCAT('%', #{q.locationCode}, '%')
+            </if>
+            <if test="q.warehouseId != null and q.warehouseId != ''">
+                AND w.id = #{q.warehouseId}
+            </if>
+        </where>
+    </sql>
+
+    <!-- 分页：与游标版同一排序，页面与导出看到的顺序一致 -->
+    <select id="selectLedgerPage" resultType="org.jeecg.modules.wms.vo.WmsInventoryLedgerVO">
+        <include refid="ledgerColumns"/>
+        <include refid="ledgerFrom"/>
+        <include refid="ledgerWhere"/>
+         ORDER BY i.material_id ASC, i.location_id ASC, i.batch_no ASC, i.container_code ASC
+    </select>
+
+    <!-- 导出分批：游标四列即唯一键 uk_wms_inv_mat_loc_batch_container，走索引范围扫描，不用 OFFSET -->
+    <select id="selectLedgerCursor" resultType="org.jeecg.modules.wms.vo.WmsInventoryLedgerVO">
+        <include refid="ledgerColumns"/>
+        <include refid="ledgerFrom"/>
+        <include refid="ledgerWhere"/>
+        <if test="lastMaterialId != null">
+           AND (i.material_id, i.location_id, i.batch_no, i.container_code) &gt;
+               (#{lastMaterialId}, #{lastLocationId}, #{lastBatchNo}, #{lastContainerCode})
+        </if>
+         ORDER BY i.material_id ASC, i.location_id ASC, i.batch_no ASC, i.container_code ASC
+         LIMIT #{limit}
+    </select>
+
 </mapper>
