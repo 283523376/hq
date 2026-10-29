@@ -132,6 +132,22 @@ class WmsProductionInboundServiceImplTest {
         assertEquals(0, captor.getValue().getQuantity().compareTo(new BigDecimal("5")));
     }
 
+    /**
+     * 模型 B（2026-10-28）：工单不带产品类型——金蝶没有这个概念。
+     * 工单作业台提交的是完工入库，按「成品」处理：二维码 + 敏捷仓默认库位。
+     */
+    @Test
+    void submit_withoutProductType_defaultsToFinished() {
+        stubWorkOrder(null, "0");
+        service.submit(dto("1", "0", "QR-1"));
+        ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
+        verify(inboundMapper).insert(captor.capture());
+        WmsProductionInbound created = captor.getValue();
+        assertEquals("成品", created.getProductType());
+        assertEquals("二维码", created.getIdentType());
+        assertEquals("default-loc", created.getLocationId());
+    }
+
     @Test
     void submit_activeCarrier_isRejected() {
         stubWorkOrder("半成品", "0");

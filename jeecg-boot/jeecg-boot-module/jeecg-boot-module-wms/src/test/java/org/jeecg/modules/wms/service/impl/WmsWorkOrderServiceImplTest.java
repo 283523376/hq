@@ -58,6 +58,27 @@ class WmsWorkOrderServiceImplTest {
         assertEquals(0, service.scan("WO1").getRemainingQty().compareTo(new BigDecimal("70")));
     }
 
+    /**
+     * 模型 B（2026-10-28）：工单不带产品类型。工单作业台走完工入库→成品，载具应为二维码；
+     * 只有显式标了「半成品」的历史工单才提示 RFID。
+     */
+    @Test
+    void scan_withoutProductType_hintsQrCode() {
+        WmsWorkOrder wo = new WmsWorkOrder().setWorkOrderNo("WO1").setPlanQty(new BigDecimal("10"));
+        when(mapper.selectOne(any())).thenReturn(wo);
+        when(inboundMapper.sumInboundedQty("WO1")).thenReturn(BigDecimal.ZERO);
+        assertEquals("二维码", service.scan("WO1").getIdentType());
+    }
+
+    @Test
+    void scan_withSemiProductType_hintsRfid() {
+        WmsWorkOrder wo = new WmsWorkOrder().setWorkOrderNo("WO1")
+                .setPlanQty(new BigDecimal("10")).setProductType("半成品");
+        when(mapper.selectOne(any())).thenReturn(wo);
+        when(inboundMapper.sumInboundedQty("WO1")).thenReturn(BigDecimal.ZERO);
+        assertEquals("RFID", service.scan("WO1").getIdentType());
+    }
+
     // ---------------------------------------------------------------- BD-002 V2.2 push 合并规则
 
     private WmsWorkOrderPushDTO baseDto() {

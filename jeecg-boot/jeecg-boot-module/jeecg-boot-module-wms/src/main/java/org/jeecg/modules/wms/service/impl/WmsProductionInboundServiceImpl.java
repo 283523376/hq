@@ -126,11 +126,10 @@ public class WmsProductionInboundServiceImpl
             throw new RuntimeException("载具正在使用中");
         }
 
-        boolean semi = WmsConstants.PRODUCT_TYPE_SEMI.equals(order.getProductType());
-        boolean finished = WmsConstants.PRODUCT_TYPE_FINISHED.equals(order.getProductType());
-        if (!semi && !finished) {
-            throw new RuntimeException("产品类型不支持生产入库");
-        }
+        // 产品类型按「入库来源」判定（2026-10-28 用户口径）：工单作业台提交的是**完工入库 → 成品**。
+        // 工单本身不携带产品类型（金蝶没有这个概念），所以这里不能因为字段为空就拒绝入库。
+        String productType = resolveProductType(order.getProductType());
+        boolean semi = WmsConstants.PRODUCT_TYPE_SEMI.equals(productType);
         String identType = semi ? WmsConstants.IDENT_TYPE_RFID : WmsConstants.IDENT_TYPE_QRCODE;
 
         String locationId = null;
@@ -156,7 +155,7 @@ public class WmsProductionInboundServiceImpl
         WmsProductionInbound record = new WmsProductionInbound()
                 .setInboundNo(nextNo(WmsConstants.INBOUND_NO_PREFIX_PRODUCTION))
                 .setWorkOrderNo(order.getWorkOrderNo())
-                .setProductType(order.getProductType())
+                .setProductType(productType)
                 .setMaterialId(order.getMaterialId())
                 .setMaterialCode(order.getMaterialCode())
                 .setMaterialName(order.getMaterialName())
@@ -609,6 +608,20 @@ public class WmsProductionInboundServiceImpl
     /** 生成业务单号：前缀 + 雪花 ID（多实例部署不撞号）。 */
     String nextNo(String prefix) {
         return prefix + com.baomidou.mybatisplus.core.toolkit.IdWorker.getIdStr();
+    }
+
+    /**
+     * 工单作业台提交入库时的产品类型判定。
+     *
+     * <p>口径（2026-10-28 用户明确）：金蝶里没有成品/半成品之分——**半成品是工序汇报产生的库存，
+     * 成品是完工入库产生的库存**。工单作业台走的是完工入库，所以工单没带类型时按**成品**处理；
+     * 显式写了「半成品」的（历史数据/特殊工单）沿用原值。
+     */
+    private String resolveProductType(String raw) {
+        if (WmsConstants.PRODUCT_TYPE_SEMI.equals(raw)) {
+            return WmsConstants.PRODUCT_TYPE_SEMI;
+        }
+        return WmsConstants.PRODUCT_TYPE_FINISHED;
     }
 
     private BigDecimal nvl(BigDecimal value) {

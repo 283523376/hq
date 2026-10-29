@@ -265,11 +265,9 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
                         wmsMaterialCode, str(rows.get(0).get(2)), fallback);
             }
         }
-        if (oConvertUtils.isEmpty(productType)) {
-            vo.getMessages().add(workOrderNo + "：物料 " + wmsMaterialCode
-                    + " 未配置产品类型（material-product-type），已跳过");
-            return false;
-        }
+        // 产品类型允许为空（2026-10-28 口径）：金蝶没有成品/半成品之分，工单只是生产任务，
+        // 真正的类型在**入库时按来源**判定（工序汇报=半成品、完工入库=成品）。
+        // 配了 material-product-type / kingdee_product_type 的仍沿用配置值。
         if (planQty.signum() <= 0) {
             vo.getMessages().add(workOrderNo + "：计划数量为 0，已跳过");
             return false;

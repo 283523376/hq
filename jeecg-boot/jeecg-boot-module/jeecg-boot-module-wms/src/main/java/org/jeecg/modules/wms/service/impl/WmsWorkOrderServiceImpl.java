@@ -74,8 +74,9 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         vo.setWorkOrderStatus(order.getWorkOrderStatus());
         vo.setInboundedQty(inbounded);
         vo.setRemainingQty(plan.subtract(inbounded));
-        vo.setIdentType(WmsConstants.PRODUCT_TYPE_FINISHED.equals(order.getProductType())
-                ? WmsConstants.IDENT_TYPE_QRCODE : WmsConstants.IDENT_TYPE_RFID);
+        // 只有显式的「半成品」才用 RFID；工单没带类型时按成品（完工入库）走二维码
+        vo.setIdentType(WmsConstants.PRODUCT_TYPE_SEMI.equals(order.getProductType())
+                ? WmsConstants.IDENT_TYPE_RFID : WmsConstants.IDENT_TYPE_QRCODE);
         return vo;
     }
 
@@ -257,9 +258,12 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         if (oConvertUtils.isEmpty(order.getMaterialId())) {
             throw new RuntimeException("物料编码不能为空");
         }
-        if (!WmsConstants.PRODUCT_TYPE_SEMI.equals(order.getProductType())
+        // 产品类型允许为空：金蝶没有成品/半成品之分，工单只是生产任务，
+        // 真正的类型由「入库来源」决定（工序汇报=半成品、完工入库=成品，2026-10-28 用户口径）
+        if (oConvertUtils.isNotEmpty(order.getProductType())
+                && !WmsConstants.PRODUCT_TYPE_SEMI.equals(order.getProductType())
                 && !WmsConstants.PRODUCT_TYPE_FINISHED.equals(order.getProductType())) {
-            throw new RuntimeException("产品类型必须是半成品或成品");
+            throw new RuntimeException("产品类型只能为空、半成品或成品");
         }
         if (order.getPlanQty() == null || order.getPlanQty().compareTo(BigDecimal.ZERO) <= 0) {
             throw new RuntimeException("计划数量必须大于 0");

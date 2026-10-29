@@ -96,6 +96,27 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
         assertNull(WmsKingdeeWorkOrderSyncServiceImpl.gateStatus("Z"));
     }
 
+    /**
+     * 模型 B（2026-10-28）：没有产品类型映射也要照常导入——金蝶里没有成品/半成品之分，
+     * 产品类型由入库来源决定（工序汇报=半成品、完工入库=成品），工单不该因缺该字段被跳过。
+     */
+    @Test
+    void sync_withoutProductTypeMapping_stillImports() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of(List.of("MO-NOTYPE", "C", "2",
+                        "UNMAPPED.001", "未映射物料", "0", new BigDecimal("100"),
+                        "2026-10-01"))));
+        when(materialMapper.selectOne(any())).thenReturn(pbc001());
+        when(workOrderService.getByWorkOrderNo("MO-NOTYPE")).thenReturn(null);
+
+        WmsKingdeeWorkOrderSyncResultVO vo = service.syncFromKingdee("MO-NOTYPE", null, null, 50);
+
+        assertEquals(1, vo.getImported(), String.join("；", vo.getMessages()));
+        ArgumentCaptor<WmsWorkOrderPushDTO> captor = ArgumentCaptor.forClass(WmsWorkOrderPushDTO.class);
+        verify(workOrderService).push(captor.capture());
+        assertNull(captor.getValue().getProductType());
+    }
+
     @Test
     void sync_singleMaterial_importsWorkOrder_asReleasedWithErpSource() {
         when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
