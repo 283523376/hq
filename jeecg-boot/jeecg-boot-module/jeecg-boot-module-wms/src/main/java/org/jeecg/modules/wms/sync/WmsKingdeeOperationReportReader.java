@@ -33,6 +33,11 @@ public class WmsKingdeeOperationReportReader {
             // 工序序列是 FSeqNumber（FSeq 在金蝶元数据里不存在，2026-10-28 实测）
             "FQuaQty", "FSeqNumber", "FOperNumber", "FStockId.FNumber", "FStockId.FName");
 
+    /**
+     * 稳定排序：FModifyDate 定增量顺序，其余三列保证同一时间戳下的全序，翻页不会重复或漏行。
+     */
+    static final String ORDER_STRING = "FModifyDate ASC,FBillNo ASC,FSeqNumber ASC,FOperNumber ASC";
+
     private static final int PAGE_SIZE = 500;
     private static final int MAX_PAGES = 200;
 
@@ -52,6 +57,17 @@ public class WmsKingdeeOperationReportReader {
      * @param endDate   结束日期（含），yyyy-MM-dd
      * @param maxRows   最多拉取行数（防一次拉爆）
      */
+    /**
+     * 把 {@code yyyy-MM-dd} 补成 datetime。
+     *
+     * <p>{@code FModifyDate} 是 datetime 字段：只给日期时，`<= '2026-10-29'` 等价于当天 00:00:00，
+     * 整天都会被漏掉。统一补时间最稳。
+     */
+    static String expandBound(String value, String timeIfMissing) {
+        String v = value.trim();
+        return v.length() <= 10 ? v + " " + timeIfMissing : v;
+    }
+
     public List<WmsOperationReportRowVO> fetch(String startDate, String endDate, int maxRows) {
         if (!properties.isEnabled()) {
             throw new IllegalStateException("金蝶同步总开关 wms.sync.erp.kingdee.enabled=false");
@@ -61,18 +77,20 @@ public class WmsKingdeeOperationReportReader {
         if (org != null && !org.trim().isEmpty()) {
             filter.append(" AND FPrdOrgId.FNumber='").append(org.trim().replace("'", "''")).append("'");
         }
+        // 按 FModifyDate（最后修改时间）过滤，不是 FDate（业务日期）：
+        // 用业务日期会让「迟审/补录」的单据在窗口滚过后永久丢失（2026-10-29 口径）。
         if (startDate != null && !startDate.trim().isEmpty()) {
-            filter.append(" AND FDate>='").append(startDate.trim()).append("'");
+            filter.append(" AND FModifyDate>='").append(expandBound(startDate, "00:00:00")).append("'");
         }
         if (endDate != null && !endDate.trim().isEmpty()) {
-            filter.append(" AND FDate<='").append(endDate.trim()).append("'");
+            filter.append(" AND FModifyDate<='").append(expandBound(endDate, "23:59:59")).append("'");
         }
 
         List<WmsOperationReportRowVO> all = new ArrayList<>();
         for (int page = 0; page < MAX_PAGES && all.size() < maxRows; page++) {
             int size = Math.min(PAGE_SIZE, maxRows - all.size());
             WmsKingdeeResult result = formClient.executeBillQuery(
-                    FORM_ID, FIELD_KEYS, filter.toString(), size, page * PAGE_SIZE);
+                    FORM_ID, FIELD_KEYS, filter.toString(), size, page * PAGE_SIZE, ORDER_STRING);
             if (!result.isSuccess()) {
                 throw new RuntimeException("金蝶工序汇报查询失败：" + result.getMessage());
             }

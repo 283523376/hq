@@ -543,8 +543,13 @@ wms:
           # 不做游标表：金蝶允许补录/迟交，改用「滚动窗口 + 幂等 upsert」，每轮回看 lookback-days 天
           operation-report:
             enabled: true
-            lookback-days: 3
-            max-rows: 2000
+            # 增量口径（2026-10-29）：按金蝶 FModifyDate 过滤，水位线=上次成功同步时间
+            # 起点 = 水位线 − backfill-days，最多回溯 max-window-days；无水位线时回看 initial-days
+            backfill-days: 1
+            max-window-days: 30
+            initial-days: 7
+            # 一天几千条：单轮上限要能覆盖初始窗口的量级
+            max-rows: 20000
         # BOS_BillType.FNumber（测试环境：SCRKD01_SYS 汇报入库）
         bill-type: "SCRKD01_SYS"
         owner-type: "BD_OwnerOrg"

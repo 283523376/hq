@@ -98,12 +98,25 @@ public class WmsKingdeeFormClient {
      */
     public WmsKingdeeResult executeBillQuery(String formId, String fieldKeys, String filter, int top,
                                              int startRow) {
+        return executeBillQuery(formId, fieldKeys, filter, top, startRow, "");
+    }
+
+    /**
+     * 带排序的查询。
+     *
+     * <p><b>翻页必须给稳定排序</b>：金蝶在无 {@code OrderString} 时不保证返回顺序，
+     * 分页会出现「上一页的行在下一页又出现、另一些行永远取不到」。
+     *
+     * @param orderString 排序表达式，如 {@code FModifyDate ASC,FBillNo ASC}；空串=不排序
+     */
+    public WmsKingdeeResult executeBillQuery(String formId, String fieldKeys, String filter, int top,
+                                             int startRow, String orderString) {
         int limit = top <= 0 ? 100 : top;
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("FormId", formId);
         data.put("FieldKeys", fieldKeys);
         data.put("FilterString", filter == null ? "" : filter);
-        data.put("OrderString", "");
+        data.put("OrderString", orderString == null ? "" : orderString);
         // 必须为 0：>0 时金蝶会先把结果集截断到该行数，StartRow 再跳过就必然为空
         data.put("TopRowCount", 0);
         data.put("StartRow", Math.max(startRow, 0));
