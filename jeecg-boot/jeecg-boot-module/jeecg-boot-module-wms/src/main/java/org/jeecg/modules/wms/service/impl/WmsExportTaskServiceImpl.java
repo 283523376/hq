@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -115,7 +116,28 @@ public class WmsExportTaskServiceImpl implements IWmsExportTaskService {
             throw new RuntimeException("任务已完成，请直接下载");
         }
 
-        // 清掉上一次的产出，避免重试后的任务还挂着旧文件信息
+        // 清掉上一次的产出，避免重试后的任务还挂着旧文件信息。
+        //
+        // **必须用显式 .set(...) 的 LambdaUpdateWrapper，不能用 updateById**：
+        // MyBatis-Plus 默认更新策略是 NOT_NULL，实体里 set 成 null 的字段会被整段跳过，
+        // 旧的 error_msg / finish_time / expire_time 会原样留在库里。后果不只是列表脏：
+        // 残留的旧 expire_time 会让清理 Job 按 expire_time < now 把**正在跑的任务**当过期记录删掉。
+        Date now = new Date();
+        taskMapper.update(null, new LambdaUpdateWrapper<WmsExportTask>()
+                .eq(WmsExportTask::getId, taskId)
+                .set(WmsExportTask::getStatus, WmsConstants.EXPORT_STATUS_PENDING)
+                .set(WmsExportTask::getErrorMsg, null)
+                .set(WmsExportTask::getFileName, null)
+                .set(WmsExportTask::getFilePath, null)
+                .set(WmsExportTask::getFileSize, null)
+                .set(WmsExportTask::getRowCount, null)
+                .set(WmsExportTask::getSnapshotTime, null)
+                .set(WmsExportTask::getFinishTime, null)
+                .set(WmsExportTask::getExpireTime, null)
+                .set(WmsExportTask::getUpdateBy, task.getCreateBy())
+                .set(WmsExportTask::getUpdateTime, now));
+
+        // 内存态同步，供后续 submit/markFailed 使用
         task.setStatus(WmsConstants.EXPORT_STATUS_PENDING);
         task.setErrorMsg(null);
         task.setFileName(null);
@@ -126,8 +148,7 @@ public class WmsExportTaskServiceImpl implements IWmsExportTaskService {
         task.setFinishTime(null);
         task.setExpireTime(null);
         task.setUpdateBy(task.getCreateBy());
-        task.setUpdateTime(new Date());
-        taskMapper.updateById(task);
+        task.setUpdateTime(now);
 
         submit(task, operator);
         log.info("导出任务[{}]已重试，导出人={}", taskId, operator);

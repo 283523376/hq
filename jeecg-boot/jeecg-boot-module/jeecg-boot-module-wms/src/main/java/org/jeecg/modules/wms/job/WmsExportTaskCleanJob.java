@@ -12,6 +12,7 @@ import org.quartz.JobExecutionContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -66,6 +67,9 @@ public class WmsExportTaskCleanJob implements Job {
                 List<WmsExportTask> batch = taskMapper.selectList(new LambdaQueryWrapper<WmsExportTask>()
                         .isNotNull(WmsExportTask::getExpireTime)
                         .lt(WmsExportTask::getExpireTime, new Date())
+                        // 双保险：正在处理的任务即便挂着陈旧的 expire_time 也绝不能被清理
+                        .notIn(WmsExportTask::getStatus,
+                                Arrays.asList(WmsConstants.EXPORT_STATUS_PENDING, WmsConstants.EXPORT_STATUS_RUNNING))
                         .last("LIMIT " + WmsConstants.EXPORT_TASK_CLEAN_BATCH_SIZE));
                 if (batch == null || batch.isEmpty()) {
                     break;

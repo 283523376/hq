@@ -6,6 +6,12 @@ import org.jeecg.modules.wms.exporter.WmsExportFileStore;
 import org.jeecg.modules.wms.exporter.WmsExportTaskRunner;
 import org.jeecg.modules.wms.mapper.WmsExportTaskMapper;
 import org.jeecg.modules.wms.service.WmsExportProperties;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -25,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,6 +40,13 @@ import static org.mockito.Mockito.when;
  * 导出任务的下载 / 重试 / 删除（spec 2026-10-29 §5.4-§5.6）。
  */
 class WmsExportTaskOperateTest {
+
+    /** LambdaUpdateWrapper 解析列名要靠 TableInfo，纯单测环境里手动注册一次。 */
+    @BeforeAll
+    static void initTableInfo() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""),
+                WmsExportTask.class);
+    }
 
     @TempDir
     Path tempDir;
@@ -133,32 +147,35 @@ class WmsExportTaskOperateTest {
     void retryResetsToPendingAndResubmits() {
         WmsExportTask failed = task("zhangsan", WmsConstants.EXPORT_STATUS_FAILED);
         failed.setErrorMsg("上次炸了");
-        failed.setFileName("old.xlsx");
-        failed.setFilePath("old.xlsx");
-        failed.setFileSize(100L);
-        failed.setRowCount(5L);
-        failed.setFinishTime(new Date());
-        failed.setExpireTime(new Date());
         when(taskMapper.selectById("t1")).thenReturn(failed);
 
         service.retry("t1", "zhangsan");
 
-        ArgumentCaptor<WmsExportTask> captor = ArgumentCaptor.forClass(WmsExportTask.class);
-        verify(taskMapper).updateById(captor.capture());
-        WmsExportTask updated = captor.getValue();
-        assertEquals(WmsConstants.EXPORT_STATUS_PENDING, updated.getStatus());
-        assertNull(updated.getErrorMsg());
-        assertNull(updated.getFileName());
-        assertNull(updated.getFilePath());
-        assertNull(updated.getFileSize());
-        assertNull(updated.getRowCount());
-        assertNull(updated.getFinishTime());
-        assertNull(updated.getExpireTime());
-
+        // 状态重置走显式 set（见 retryResetPersistsNullsViaExplicitSet），这里只验重新入队
         ArgumentCaptor<Runnable> runnable = ArgumentCaptor.forClass(Runnable.class);
         verify(executor).execute(runnable.capture());
         runnable.getValue().run();
         verify(runner).execute("t1", "zhangsan");
+    }
+
+    @Test
+    void retryResetPersistsNullsViaExplicitSet() {
+        // MyBatis-Plus 的 updateById 默认跳过 null 字段：retry 必须走显式 .set(field, null) 的
+        // LambdaUpdateWrapper，否则旧 error_msg/expire_time 原样留在库里（评审 Important #1）。
+        WmsExportTask failed = task("zhangsan", WmsConstants.EXPORT_STATUS_FAILED);
+        failed.setErrorMsg("上次炸了");
+        when(taskMapper.selectById("t1")).thenReturn(failed);
+
+        service.retry("t1", "zhangsan");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Wrapper<WmsExportTask>> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(taskMapper).update(isNull(), captor.capture());
+        String sqlSet = ((AbstractWrapper<?, ?, ?>) captor.getValue()).getSqlSet();
+        for (String col : new String[]{"status", "error_msg", "file_name", "file_path",
+                "file_size", "row_count", "finish_time", "expire_time"}) {
+            assertTrue(sqlSet.contains(col), "SET 子句必须显式包含 " + col + "，实际: " + sqlSet);
+        }
     }
 
     @Test

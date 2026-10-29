@@ -36,8 +36,6 @@ public class WmsExportFileStore {
     private static final String LEDGER_FILE_PREFIX = "库存台账_";
     /** 生成中的临时后缀：改名前不会被下载到。 */
     private static final String PART_SUFFIX = ".part";
-    /** taskId 取前几位做文件名区分（任务 ID 是完整雪花串，太长）。 */
-    private static final int TASK_ID_SNIP_LENGTH = 8;
 
     private final Path root;
 
@@ -81,12 +79,16 @@ public class WmsExportFileStore {
         return root.resolve(taskId + PART_SUFFIX).toFile();
     }
 
-    /** 用户可见的文件名（同时作为相对路径存库）。 */
+    /**
+     * 用户可见的文件名（同时作为相对路径存库）。
+     *
+     * <p>**必须带完整 taskId**：雪花 ID 的高位是毫秒时间戳，取前 8 位在几十分钟内完全相同，
+     * 那样防碰撞就只剩秒级时间戳——两个用户在同一秒完成导出会得到同名文件，
+     * {@link #commit} 的 REPLACE_EXISTING 会让后者静默覆盖前者，先完成的那行从此指向别人的数据。
+     */
     public String buildFileName(String taskId, Date time) {
         String stamp = new SimpleDateFormat(FILE_NAME_TIME_PATTERN).format(time);
-        String snip = taskId.length() <= TASK_ID_SNIP_LENGTH
-                ? taskId : taskId.substring(0, TASK_ID_SNIP_LENGTH);
-        return LEDGER_FILE_PREFIX + stamp + "_" + snip + ".xlsx";
+        return LEDGER_FILE_PREFIX + stamp + "_" + taskId + ".xlsx";
     }
 
     /**
