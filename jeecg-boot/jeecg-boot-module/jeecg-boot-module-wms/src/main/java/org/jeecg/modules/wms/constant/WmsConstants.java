@@ -714,6 +714,43 @@ public final class WmsConstants {
     /** 每小时 :41（避开工单 :01、订单 :03、设备 :07、入库 :09/:13、出库 :17、调拨 :23、销售 :29）。 */
     public static final String OPERATION_REPORT_SYNC_JOB_CRON = "0 41 * * * ?";
 
+    // ==================== KC-004 库存台账 ====================
+
+    /** 台账分页上限：查询接口是给人看的，导出走异步任务。 */
+    public static final int INVENTORY_LEDGER_MAX_PAGE_SIZE = 200;
+    /** 台账分页默认条数。 */
+    public static final int INVENTORY_LEDGER_DEFAULT_PAGE_SIZE = 20;
+    /** 导出每批从库里取的行数。 */
+    public static final int INVENTORY_LEDGER_EXPORT_BATCH_SIZE = 5000;
+    /** xlsx 单 sheet 数据行上限（含表头共 1048576）。 */
+    public static final int INVENTORY_LEDGER_EXCEL_MAX_ROWS = 1048575;
+
+    // ==================== KC-004 导出任务 ====================
+
+    /** 任务类型：库存台账。 */
+    public static final String EXPORT_TASK_TYPE_INVENTORY_LEDGER = "INVENTORY_LEDGER";
+    /** 任务状态：排队。 */
+    public static final String EXPORT_STATUS_PENDING = "PENDING";
+    /** 任务状态：生成中。 */
+    public static final String EXPORT_STATUS_RUNNING = "RUNNING";
+    /** 任务状态：成功。 */
+    public static final String EXPORT_STATUS_SUCCESS = "SUCCESS";
+    /** 任务状态：失败。 */
+    public static final String EXPORT_STATUS_FAILED = "FAILED";
+    /** 导出文件保留天数（终态后用 finish_time + N 天算 expire_time）。 */
+    public static final int EXPORT_RETENTION_DAYS = 7;
+    /** 失败原因落库长度上限。 */
+    public static final int EXPORT_ERROR_MSG_MAX_LEN = 1000;
+    /** 导出任务清理任务 ID。 */
+    public static final String EXPORT_TASK_CLEAN_JOB_ID = "1920000000000000400";
+    /** 导出任务清理任务类名。 */
+    public static final String EXPORT_TASK_CLEAN_JOB_CLASS =
+            "org.jeecg.modules.wms.job.WmsExportTaskCleanJob";
+    /** 每天 03:00 清理过期导出任务。 */
+    public static final String EXPORT_TASK_CLEAN_JOB_CRON = "0 0 3 * * ?";
+    /** 清理批大小。 */
+    public static final int EXPORT_TASK_CLEAN_BATCH_SIZE = 200;
+
     /** 同步日志对象类型：库存预警扫描。 */
     public static final String SYNC_LOG_TYPE_INVENTORY_WARNING = "INVENTORY_WARNING";
     /** 同步日志方向：WMS 内部计算（非 ERP 交互）。 */
