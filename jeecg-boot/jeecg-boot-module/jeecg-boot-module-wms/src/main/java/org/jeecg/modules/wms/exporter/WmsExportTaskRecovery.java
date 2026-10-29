@@ -31,10 +31,13 @@ public class WmsExportTaskRecovery {
 
     private final WmsExportTaskMapper taskMapper;
     private final WmsExportProperties properties;
+    private final WmsExportFileStore fileStore;
 
-    public WmsExportTaskRecovery(WmsExportTaskMapper taskMapper, WmsExportProperties properties) {
+    public WmsExportTaskRecovery(WmsExportTaskMapper taskMapper, WmsExportProperties properties,
+                                 WmsExportFileStore fileStore) {
         this.taskMapper = taskMapper;
         this.properties = properties;
+        this.fileStore = fileStore;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -65,6 +68,9 @@ public class WmsExportTaskRecovery {
                 task.setUpdateBy(task.getCreateBy());
                 task.setUpdateTime(now);
                 taskMapper.updateById(task);
+                // 崩溃时写了一半的 .part 不在任何清理路径上（行里的 file_path 还是 null），
+                // 这里顺手删掉，否则几十 MB 的残留文件会一直躺在导出目录里。
+                fileStore.deleteQuietly(fileStore.partFile(task.getId()));
             }
             log.info("导出任务启动恢复：{} 条中断任务已置为失败", orphans.size());
             return orphans.size();

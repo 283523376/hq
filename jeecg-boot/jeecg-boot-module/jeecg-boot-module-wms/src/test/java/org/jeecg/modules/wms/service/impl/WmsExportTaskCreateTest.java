@@ -21,6 +21,7 @@ import org.springframework.core.task.TaskExecutor;
 
 import java.util.Date;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -152,6 +153,43 @@ class WmsExportTaskCreateTest {
         verify(executor).execute(runnable.capture());
         runnable.getValue().run();
         verify(runner).execute(taskId, "zhangsan");
+    }
+
+    @Test
+    void sameUserSubmitsAreSerialized() throws Exception {
+        // 「查有没有进行中任务」与「插入」之间不能有窗口：两个并发请求必须串行进临界区。
+        // 不做串行时这两个线程会同时进 selectCount（maxConcurrent=2），修复后为 1。
+        java.util.concurrent.atomic.AtomicInteger concurrent = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger maxConcurrent = new java.util.concurrent.atomic.AtomicInteger();
+        when(taskMapper.selectCount(any())).thenAnswer(inv -> {
+            int c = concurrent.incrementAndGet();
+            maxConcurrent.accumulateAndGet(c, Math::max);
+            try {
+                Thread.sleep(120);
+            } finally {
+                concurrent.decrementAndGet();
+            }
+            return 0L;
+        });
+
+        Thread t1 = new Thread(() -> service.createLedgerExport(new WmsInventoryLedgerQueryDTO(), "zhangsan"));
+        Thread t2 = new Thread(() -> service.createLedgerExport(new WmsInventoryLedgerQueryDTO(), "zhangsan"));
+        t1.start();
+        t2.start();
+        t1.join();
+        t2.join();
+
+        assertEquals(1, maxConcurrent.get(), "同一账号的并发预检必须串行，否则两个请求可以各建一条任务");
+    }
+
+    @Test
+    void taskPageSizeIsCapped() {
+        when(taskMapper.selectPage(any(), any())).thenReturn(new Page<>());
+        service.pageMine("zhangsan", 1, 9999);
+
+        ArgumentCaptor<Page<WmsExportTask>> captor = ArgumentCaptor.forClass(Page.class);
+        verify(taskMapper).selectPage(captor.capture(), any());
+        assertEquals(100L, captor.getValue().getSize(), "任务列表 pageSize 要有上限");
     }
 
     @Test

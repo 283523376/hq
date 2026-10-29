@@ -78,8 +78,13 @@ public class WmsExportTaskCleanJob implements Job {
                     fileStore.deleteQuietly(fileStore.resolve(task.getFilePath()));
                 }
                 List<String> ids = batch.stream().map(WmsExportTask::getId).collect(Collectors.toList());
-                taskMapper.deleteBatchIds(ids);
-                total += batch.size();
+                int deleted = taskMapper.deleteBatchIds(ids);
+                if (deleted <= 0) {
+                    // 满批却一行没删掉：下一轮还会捞到同样的记录，直接退出，别在这里转圈
+                    log.warn("导出任务清理删除了 0 行，提前结束本轮（本批 {} 条）", batch.size());
+                    break;
+                }
+                total += deleted;
                 if (batch.size() < WmsConstants.EXPORT_TASK_CLEAN_BATCH_SIZE) {
                     break;
                 }

@@ -171,6 +171,25 @@ class WmsExportTaskRunnerTest {
     }
 
     @Test
+    void unknownSnapshotVersionStillParsesCondition() throws Exception {
+        // 版本号不是装饰：将来快照结构变了，要能识别出旧任务并按兼容方式读。
+        // 当前只有 v=1，遇到未知版本应记录告警但仍按现有结构解析，而不是整条任务失败。
+        WmsExportTask task = pendingTask("{\"v\":99,\"q\":{\"materialKeyword\":\"M007\"}}");
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        doAnswer(inv -> {
+            Files.writeString(((File) inv.getArgument(1)).toPath(), "x");
+            return new WmsLedgerExportResult(1L, new Date());
+        }).when(exportService).generate(any(), any());
+
+        runner.execute("t1", "lisi");
+
+        ArgumentCaptor<WmsInventoryLedgerQueryDTO> captor = ArgumentCaptor.forClass(WmsInventoryLedgerQueryDTO.class);
+        verify(exportService).generate(captor.capture(), any());
+        assertEquals("M007", captor.getValue().getMaterialKeyword());
+        assertEquals(WmsConstants.EXPORT_STATUS_SUCCESS, task.getStatus());
+    }
+
+    @Test
     void brokenQueryParamsStillRunsWithEmptyConditions() throws Exception {
         WmsExportTask task = pendingTask("not-a-json");
         when(taskMapper.selectById("t1")).thenReturn(task);

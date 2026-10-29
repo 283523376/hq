@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -87,6 +88,21 @@ class WmsExportTaskCleanJobTest {
         job.clean();
 
         verify(taskMapper).deleteBatchIds(any());
+    }
+
+    @Test
+    void stopsWhenDeleteAffectsNoRows() {
+        // 满批返回但一行没删掉（比如删除被异常挡住），不能无限循环
+        WmsExportTask[] full = new WmsExportTask[WmsConstants.EXPORT_TASK_CLEAN_BATCH_SIZE];
+        for (int i = 0; i < full.length; i++) {
+            full[i] = task("bulk" + i, null);
+        }
+        when(taskMapper.selectList(any())).thenReturn(Arrays.asList(full));
+        when(taskMapper.deleteBatchIds(any())).thenReturn(0);
+
+        job.clean();
+
+        verify(taskMapper, times(1)).selectList(any());
     }
 
     @Test

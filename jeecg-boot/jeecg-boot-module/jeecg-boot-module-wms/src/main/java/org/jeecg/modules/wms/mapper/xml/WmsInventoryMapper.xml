@@ -131,7 +131,14 @@
                i.locked_qty,
                (i.quantity - i.locked_qty) AS available_qty,
                i.first_inbound_time,
-               DATEDIFF(NOW(), i.first_inbound_time) AS stock_age_days
+               <choose>
+                   <when test="q.asOfDate != null">
+                       DATEDIFF(#{q.asOfDate}, i.first_inbound_time) AS stock_age_days
+                   </when>
+                   <otherwise>
+                       DATEDIFF(NOW(), i.first_inbound_time) AS stock_age_days
+                   </otherwise>
+               </choose>
     </sql>
 
     <sql id="ledgerWhere">

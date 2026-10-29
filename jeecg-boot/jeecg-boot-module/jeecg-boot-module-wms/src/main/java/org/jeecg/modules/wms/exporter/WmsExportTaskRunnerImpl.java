@@ -30,6 +30,9 @@ import java.util.Date;
 @Service
 public class WmsExportTaskRunnerImpl implements WmsExportTaskRunner {
 
+    /** 查询条件快照的格式版本，与 {@code WmsExportTaskServiceImpl} 写入时保持一致。 */
+    private static final int QUERY_PARAMS_VERSION = 1;
+
     private final WmsExportTaskMapper taskMapper;
     private final WmsLedgerExportService exportService;
     private final WmsExportFileStore fileStore;
@@ -75,12 +78,19 @@ public class WmsExportTaskRunnerImpl implements WmsExportTaskRunner {
      * <p>快照损坏时不阻断任务——退化成「无条件全量导出」比直接失败更有用，
      * 但要过一遍归一化，保证和老任务的条件口径一致。
      */
-    private WmsInventoryLedgerQueryDTO parseQuery(String queryParams) {
+    WmsInventoryLedgerQueryDTO parseQuery(String queryParams) {
         WmsInventoryLedgerQueryDTO query = null;
         if (queryParams != null && !queryParams.trim().isEmpty()) {
             try {
                 JSONObject root = JSON.parseObject(queryParams);
                 if (root != null) {
+                    Integer version = root.getInteger("v");
+                    if (version == null || version != QUERY_PARAMS_VERSION) {
+                        // 版本号不是装饰：将来快照结构变了，靠它识别旧任务并按兼容方式读。
+                        // 当前只有 v=1，未知版本先按现有结构尽力解析，不整条任务失败。
+                        log.warn("导出条件快照版本为 {}（当前支持 {}），按现有结构解析",
+                                version, QUERY_PARAMS_VERSION);
+                    }
                     query = root.getObject("q", WmsInventoryLedgerQueryDTO.class);
                 }
             } catch (Exception e) {

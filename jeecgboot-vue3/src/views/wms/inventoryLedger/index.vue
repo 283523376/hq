@@ -35,7 +35,7 @@
             <a-button type="primary" preIcon="ant-design:search-outlined" v-auth="'wms:inventory:ledger'" :loading="loading" @click="handleQuery">
               查询
             </a-button>
-            <a-button preIcon="ant-design:reload-outlined" @click="handleReset">重置</a-button>
+            <a-button preIcon="ant-design:reload-outlined" v-auth="'wms:inventory:ledger'" @click="handleReset">重置</a-button>
             <a-button preIcon="ant-design:download-outlined" v-auth="'wms:inventory:export'" :loading="exporting" @click="handleExport">
               导出 Excel
             </a-button>
@@ -210,6 +210,7 @@
   const taskTotal = ref(0);
   const taskPageNo = ref(1);
   const taskPageSize = ref(10);
+  const taskBusy = ref(false);
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   const taskPagination = computed(() => ({
@@ -220,24 +221,49 @@
     showTotal: (t: number) => `共 ${t} 条`,
   }));
 
-  async function fetchTasks() {
-    taskLoading.value = true;
+  /**
+   * 拉任务列表。
+   *
+   * @param poll true = 轮询触发：固定拉第 1 页（新任务永远排在最前），
+   *             用户翻到别的页时只更新总数与忙碌标记，不打断他正在看的那一页
+   */
+  async function fetchTasks(poll = false) {
+    if (!poll) {
+      taskLoading.value = true;
+    }
     try {
-      const res = await queryTaskPage({ pageNo: taskPageNo.value, pageSize: taskPageSize.value });
-      taskRecords.value = res.records || [];
+      const page = poll ? 1 : taskPageNo.value;
+      const res = await queryTaskPage({ pageNo: page, pageSize: taskPageSize.value });
       taskTotal.value = Number(res.total || 0);
-      syncPolling();
+      if (!poll || taskPageNo.value === 1) {
+        taskRecords.value = res.records || [];
+        syncPolling();
+      } else {
+        const busy = (res.records || []).some((r: any) => r.status === 'PENDING' || r.status === 'RUNNING');
+        taskBusy.value = busy;
+        if (!busy) {
+          stopPolling();
+        }
+      }
     } finally {
-      taskLoading.value = false;
+      if (!poll) {
+        taskLoading.value = false;
+      }
     }
   }
 
   /** 有排队/生成中的任务才轮询；全部终态时主动停 */
   function syncPolling() {
-    const busy = taskRecords.value.some((r) => r.status === 'PENDING' || r.status === 'RUNNING');
-    if (busy && pollTimer === null) {
-      pollTimer = setInterval(() => fetchTasks(), 5000);
-    } else if (!busy && pollTimer !== null) {
+    taskBusy.value = taskRecords.value.some((r) => r.status === 'PENDING' || r.status === 'RUNNING');
+    if (taskBusy.value && pollTimer === null) {
+      pollTimer = setInterval(() => fetchTasks(true), 5000);
+    } else if (!taskBusy.value) {
+      stopPolling();
+    }
+  }
+
+  function stopPolling() {
+    if (pollTimer !== null) {
       clearInterval(pollTimer);
       pollTimer = null;
     }
@@ -277,9 +303,13 @@
   }
 
   async function handleRetry(record: any) {
-    await retryTask(record.id);
-    createMessage.success('已重新提交');
-    fetchTasks();
+    try {
+      await retryTask(record.id);
+      createMessage.success('已重新提交');
+      fetchTasks();
+    } catch (e: any) {
+      // defHttp 已统一弹错误提示；兜住避免未处理的 rejection
+    }
   }
 
   function handleDeleteTask(record: any) {
@@ -287,9 +317,13 @@
       title: '删除导出任务',
       content: `确定删除「${record.fileName || '该任务'}」？生成的文件也会一并删除。`,
       onOk: async () => {
-        await deleteTask(record.id);
-        createMessage.success('已删除');
-        fetchTasks();
+        try {
+          await deleteTask(record.id);
+          createMessage.success('已删除');
+          fetchTasks();
+        } catch (e: any) {
+          // defHttp 已统一弹错误提示；兜住避免未处理的 rejection
+        }
       },
     });
   }
@@ -320,9 +354,6 @@
   });
 
   onUnmounted(() => {
-    if (pollTimer !== null) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
+    stopPolling();
   });
 </script>

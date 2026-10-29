@@ -6,6 +6,7 @@ import org.jeecg.modules.wms.mapper.WmsExportTaskMapper;
 import org.jeecg.modules.wms.service.WmsExportProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Arrays;
@@ -13,6 +14,7 @@ import java.util.Collections;
 import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,13 +28,18 @@ import static org.mockito.Mockito.when;
  */
 class WmsExportTaskRecoveryTest {
 
+    @TempDir
+    java.nio.file.Path tempDir;
+
     private WmsExportTaskMapper taskMapper;
+    private WmsExportFileStore fileStore;
     private WmsExportTaskRecovery recovery;
 
     @BeforeEach
     void setUp() {
         taskMapper = mock(WmsExportTaskMapper.class);
-        recovery = new WmsExportTaskRecovery(taskMapper, new WmsExportProperties());
+        fileStore = new WmsExportFileStore(tempDir);
+        recovery = new WmsExportTaskRecovery(taskMapper, new WmsExportProperties(), fileStore);
     }
 
     private WmsExportTask task(String id, String status) {
@@ -91,6 +98,18 @@ class WmsExportTaskRecoveryTest {
 
         assertEquals(0, recovered);
         verify(taskMapper, never()).updateById(any(WmsExportTask.class));
+    }
+
+    @Test
+    void removesOrphanPartFile() throws Exception {
+        // 进程崩溃留下的 <taskId>.part 不在任何清理路径上：任务行 file_path 为 null，清理 Job 摸不到它
+        java.io.File part = fileStore.partFile("t1");
+        java.nio.file.Files.writeString(part.toPath(), "half-written");
+        when(taskMapper.selectList(any())).thenReturn(Arrays.asList(task("t1", WmsConstants.EXPORT_STATUS_RUNNING)));
+
+        recovery.recover();
+
+        assertFalse(java.nio.file.Files.exists(part.toPath()), "恢复时必须顺手删掉孤儿 .part");
     }
 
     @Test

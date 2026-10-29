@@ -52,6 +52,8 @@ public class WmsLedgerExportService {
     @Transactional(readOnly = true)
     public WmsLedgerExportResult generate(WmsInventoryLedgerQueryDTO query, File target) throws IOException {
         Date snapshotTime = new Date();
+        // 把库龄的基准日钉在快照时刻，避免长导出跨午夜时同一份文件里前后批次差一天
+        query.setAsOfDate(snapshotTime);
         WmsLedgerExportPageSource source = new WmsLedgerExportPageSource(inventoryMapper, query,
                 WmsConstants.INVENTORY_LEDGER_EXPORT_BATCH_SIZE,
                 WmsConstants.INVENTORY_LEDGER_EXCEL_MAX_ROWS);

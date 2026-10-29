@@ -45,4 +45,13 @@ public class WmsInventoryLedgerQueryDTO implements Serializable {
 
     @Schema(description = "每页条数，默认 20，上限 200")
     private Integer pageSize = 20;
+
+    /**
+     * 库龄的计算基准日（导出专用）。
+     *
+     * <p>分页查询留空 → SQL 用 NOW()。导出必须传快照时间：几十万行要跑几分钟甚至跨午夜，
+     * 用 NOW() 会让同一份文件里前后批次的库龄差一天。
+     */
+    @Schema(description = "库龄基准日（导出内部使用，留空取当前时间）")
+    private java.util.Date asOfDate;
 }

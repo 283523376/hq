@@ -750,11 +750,10 @@ public final class WmsConstants {
     public static final int EXPORT_ERROR_MSG_MAX_LEN = 1000;
     /** 导出任务清理任务 ID。 */
     public static final String EXPORT_TASK_CLEAN_JOB_ID = "1920000000000000400";
-    /** 导出任务清理任务类名。 */
-    public static final String EXPORT_TASK_CLEAN_JOB_CLASS =
-            "org.jeecg.modules.wms.job.WmsExportTaskCleanJob";
     /** 每天 03:00 清理过期导出任务。 */
     public static final String EXPORT_TASK_CLEAN_JOB_CRON = "0 0 3 * * ?";
+    /** 导出任务列表每页上限（按人过滤量本来就小，这里只是防手滑传个大数）。 */
+    public static final int EXPORT_TASK_MAX_PAGE_SIZE = 100;
     /** 清理批大小。 */
     public static final int EXPORT_TASK_CLEAN_BATCH_SIZE = 200;
 

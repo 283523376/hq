@@ -44,6 +44,15 @@ public class WmsExportTaskServiceImpl implements IWmsExportTaskService {
     private final WmsExportProperties properties;
     private final WmsExportFileStore fileStore;
 
+    /**
+     * 按账号的临界区锁：把「查有没有进行中任务」和「插入新任务」这两步串起来。
+     *
+     * <p>不加锁时两个并发请求可能在同一个窗口里都查到 0 条，各建一条 PENDING（TOCTOU）。
+     * 单实例部署用进程内锁就够；将来上多实例，这层要换成数据库约束或分布式锁。
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, Object> operatorLocks =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     public WmsExportTaskServiceImpl(WmsExportTaskMapper taskMapper,
                                     WmsExportTaskRunner taskRunner,
                                     @Qualifier(WmsExportExecutorConfig.EXPORT_EXECUTOR) TaskExecutor exportExecutor,
@@ -58,6 +67,13 @@ public class WmsExportTaskServiceImpl implements IWmsExportTaskService {
 
     @Override
     public String createLedgerExport(WmsInventoryLedgerQueryDTO query, String operator) {
+        Object lock = operatorLocks.computeIfAbsent(operator, k -> new Object());
+        synchronized (lock) {
+            return doCreateLedgerExport(query, operator);
+        }
+    }
+
+    private String doCreateLedgerExport(WmsInventoryLedgerQueryDTO query, String operator) {
         long running = taskMapper.selectCount(new LambdaQueryWrapper<WmsExportTask>()
                 .eq(WmsExportTask::getCreateBy, operator)
                 .in(WmsExportTask::getStatus,
@@ -86,7 +102,8 @@ public class WmsExportTaskServiceImpl implements IWmsExportTaskService {
 
     @Override
     public IPage<WmsExportTask> pageMine(String operator, int pageNo, int pageSize) {
-        return taskMapper.selectPage(new Page<>(pageNo, pageSize),
+        int size = Math.min(Math.max(pageSize, 1), WmsConstants.EXPORT_TASK_MAX_PAGE_SIZE);
+        return taskMapper.selectPage(new Page<>(pageNo == 0 ? 1 : pageNo, size),
                 new LambdaQueryWrapper<WmsExportTask>()
                         .eq(WmsExportTask::getCreateBy, operator)
                         .orderByDesc(WmsExportTask::getCreateTime));
