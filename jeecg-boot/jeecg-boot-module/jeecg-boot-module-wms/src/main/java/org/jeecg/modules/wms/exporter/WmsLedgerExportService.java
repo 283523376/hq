@@ -58,9 +58,22 @@ public class WmsLedgerExportService {
 
         String title = TITLE_PREFIX
                 + new SimpleDateFormat(SNAPSHOT_TIME_PATTERN).format(snapshotTime) + "）";
-        ExportParams params = new ExportParams(title, SECOND_TITLE, SHEET_NAME, ExcelType.XSSF);
+        ExportParams params = buildExportParams(title);
 
         excelWriter.write(params, WmsInventoryLedgerVO.class, source, null, target);
         return new WmsLedgerExportResult(source.getExportedCount(), snapshotTime);
+    }
+
+    /**
+     * 单测可见的 ExportParams 组装。
+     *
+     * <p>**必须显式 setMaxNum**：AutoPoi 默认取 {@code ExcelExportUtil.USE_SXSSF_LIMIT = 100000}，
+     * 超过就滚动到没有表头的新 sheet（Sheet1/Sheet2...）继续写——数据不丢但财务没法用，
+     * 也永远轮不到我们自己的「超过上限」文案。抬到物理上限后，行数守卫才是唯一约束。
+     */
+    static ExportParams buildExportParams(String title) {
+        ExportParams params = new ExportParams(title, SECOND_TITLE, SHEET_NAME, ExcelType.XSSF);
+        params.setMaxNum(WmsConstants.INVENTORY_LEDGER_SHEET_PHYSICAL_MAX);
+        return params;
     }
 }

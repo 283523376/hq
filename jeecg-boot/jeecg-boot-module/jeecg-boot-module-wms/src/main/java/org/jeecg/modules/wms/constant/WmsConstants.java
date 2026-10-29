@@ -722,8 +722,15 @@ public final class WmsConstants {
     public static final int INVENTORY_LEDGER_DEFAULT_PAGE_SIZE = 20;
     /** 导出每批从库里取的行数。 */
     public static final int INVENTORY_LEDGER_EXPORT_BATCH_SIZE = 5000;
-    /** xlsx 单 sheet 数据行上限（含表头共 1048576）。 */
-    public static final int INVENTORY_LEDGER_EXCEL_MAX_ROWS = 1048575;
+    /**
+     * xlsx 单 sheet 数据行上限。
+     *
+     * <p>xlsx 物理上限 1048576 行，台账文件还要放 2 行标题 + 1 行表头，
+     * 所以数据行守卫是 1048573——守卫在前，AutoPoi 的滚动分页就不会先触发。
+     */
+    public static final int INVENTORY_LEDGER_EXCEL_MAX_ROWS = 1048573;
+    /** 单 sheet 物理行上限（xlsx 规范），传给 ExportParams.setMaxNum 禁用滚动分页。 */
+    public static final int INVENTORY_LEDGER_SHEET_PHYSICAL_MAX = 1048576;
 
     // ==================== KC-004 导出任务 ====================
 
