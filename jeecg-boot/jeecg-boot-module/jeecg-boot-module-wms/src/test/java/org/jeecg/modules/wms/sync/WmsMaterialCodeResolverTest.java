@@ -78,4 +78,26 @@ class WmsMaterialCodeResolverTest {
         assertEquals("YAML001", resolver.reverseKingdeeCode("KD.YAML"));
         assertNull(resolver.reverseKingdeeCode("KD.NOTHING"));
     }
+
+    // ---------------- 反向解析：YAML 映射优先于「自映射」记录（2026-10-29 物料双身份） ----------------
+
+    @Test
+    void reverse_yamlWinsOverSelfMappedDbRow() {
+        // 数据库里存在一条 self-mapped 记录（material_code == kingdee_code），同时 YAML 把它映射到 FG001。
+        // 库存挂在 FG001 上，自映射记录是空壳 —— 必须优先 YAML，否则 PPBOM 待办解析到没有库存的那条。
+        dbMaterial("KD.YAML", "KD.YAML", null);
+        assertEquals("YAML001", resolver.reverseKingdeeCode("KD.YAML"));
+    }
+
+    @Test
+    void reverse_fallsBackToDbWhenNoYamlEntry() {
+        dbMaterial("SELF001", "SELF001", null);
+        assertEquals("SELF001", resolver.reverseKingdeeCode("SELF001"));
+    }
+
+    @Test
+    void reverse_unknownReturnsNull() {
+        when(materialMapper.selectOne(any())).thenReturn(null);
+        assertNull(resolver.reverseKingdeeCode("NOT.EXIST"));
+    }
 }

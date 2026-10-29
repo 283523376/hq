@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @Description: 物料主数据同步（金蝶 BD_MATERIAL → wms_material，恒等映射）。
@@ -104,6 +105,28 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
     }
 
     /**
+     * 双身份监控（2026-10-29）：金蝶编码已被 YAML {@code material-map} 映射到另一个 WMS 物料时，
+     * 说明同步即将再造一条「自映射空壳」记录。此时只是告警、不阻断同步——阻断会让物料主数据同步整体失败，
+     * 代价远大于脏数据本身。
+     *
+     * <p>发现这条 WARN 就说明需要在 YAML 映射与「物料编码统一为金蝶编码」之间做取舍（见物料双身份方案 B2）。
+     */
+    private void warnIfYamlMappedDuplicate(String kingdeeNumber) {
+        try {
+            for (Map.Entry<String, String> entry : properties.getMaterialMap().entrySet()) {
+                if (kingdeeNumber.equals(entry.getValue())) {
+                    log.warn("物料双身份：金蝶物料[{}]已由 YAML 映射到 WMS 物料[{}]，同步却仍在按原样码建记录，"
+                                    + "解析时会优先走 YAML（见 WmsMaterialCodeResolver），但库里将出现两条记录",
+                            kingdeeNumber, entry.getKey());
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("双身份监控检查失败（不影响同步）：{}", e.getMessage());
+        }
+    }
+
+    /**
      * 单行 upsert：按 material_code（=金蝶 FNumber）查，查到更新非空字段，查到新建。
      *
      * @return true=新建，false=更新
@@ -122,6 +145,7 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
                 .eq(WmsMaterial::getMaterialCode, number)
                 .last("LIMIT 1"));
         if (existing == null) {
+            warnIfYamlMappedDuplicate(number);
             WmsMaterial material = new WmsMaterial();
             material.setMaterialCode(number);
             material.setMaterialName(name);
