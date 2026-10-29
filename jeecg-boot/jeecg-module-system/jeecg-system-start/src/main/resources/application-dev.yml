@@ -606,15 +606,16 @@ wms:
         defect:
           bill-type: "QTRKD01_SYS"
           # dept-number: "10.10.14.11"
-        # WMS 物料编码 → 金蝶物料编码（测试环境样例映射，生产按主数据映射表维护）
-        material-map:
-          PBC001: "WA.2206.2201.02000430.A003"
-          FG001: "WA.2205.2200.03000550.B003"
-        # WMS 物料编码 → WMS 产品类型（半成品/成品）。必须按物料配置：
-        # 金蝶 FProductType 是「主产品/联产品/副产品」，不能用来区分半成品/成品。
-        material-product-type:
-          PBC001: "半成品"
-          FG001: "成品"
+        # material-map / material-product-type 已于 2026-10-30 清空（B2′ 解绑）：
+        # 原来把 WMS 自建的测试物料 FG001（成品电路板/PCS）硬映射到金蝶真实物料
+        # WA.2205.2200.03000550.B003（铜带/zhi），名称、规格、单位全都对不上，
+        # 导致「物料双身份」与 PPBOM 待办解析到错误物料。
+        # 现在一律使用金蝶同步过来的真实物料编码（material_code = kingdee_code）。
+        # 如将来确有需要映射，在此重新登记；WmsMaterialCodeResolver 会优先读这里。
+        # material-map:
+        #   <WMS编码>: "<金蝶编码>"
+        # material-product-type:
+        #   <WMS编码>: "<半成品|成品>"
         # 金蝶 FDocumentStatus → WMS 工单状态
         status-map:
           "A": "待生产"
