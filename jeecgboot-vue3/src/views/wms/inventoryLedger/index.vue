@@ -47,13 +47,13 @@
     <!-- 库存明细 -->
     <a-card title="库存明细" :bordered="false" style="margin-bottom: 12px">
       <a-table
-        :columns="ledgerColumns"
+        :columns="scaledLedgerColumns"
         :data-source="records"
         :loading="loading"
         :pagination="ledgerPagination"
         row-key="id"
         size="small"
-        :scroll="{ x: 1800 }"
+        :scroll="{ x: ledgerScrollX }"
         :locale="{ emptyText: queried ? '未找到匹配的库存记录' : '请设置查询条件后点击查询' }"
         @change="handleTableChange"
       />
@@ -68,13 +68,13 @@
         <span style="color: #8c8c8c; font-size: 12px">文件保留 7 天，到期自动清理；仅本人可见</span>
       </template>
       <a-table
-        :columns="taskColumns"
+        :columns="scaledTaskColumns"
         :data-source="taskRecords"
         :loading="taskLoading"
         :pagination="taskPagination"
         row-key="id"
         size="small"
-        :scroll="{ x: 1300 }"
+        :scroll="{ x: taskScrollX }"
         :locale="{ emptyText: '暂无导出任务' }"
         @change="handleTaskTableChange"
       >
@@ -120,6 +120,7 @@
   import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { useMethods } from '/@/hooks/system/useMethods';
+  import { scaleScrollX, scaleTableColumns } from '/@/hooks/web/useFontScale';
   import { Modal } from 'ant-design-vue';
   import {
     createExportTask,
@@ -133,6 +134,12 @@
 
   const { createMessage } = useMessage();
   const { handleExportXlsx } = useMethods();
+
+  // 裸 a-table 不走 BasicTable 的列宽缩放，这里手动接上同一语义（150% 字号下列宽等比放大）
+  const scaledLedgerColumns = computed(() => scaleTableColumns(ledgerColumns));
+  const scaledTaskColumns = computed(() => scaleTableColumns(taskColumns));
+  const ledgerScrollX = computed(() => scaleScrollX(1800));
+  const taskScrollX = computed(() => scaleScrollX(1300));
 
   // ---------- 库存明细 ----------
   const query = reactive({

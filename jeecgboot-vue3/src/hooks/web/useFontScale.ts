@@ -76,6 +76,32 @@ export function clampScale(value: number, min: number, max: number): number {
 }
 
 /**
+ * 表格列宽随文字缩放等比放大（只在放大时放大，缩小字号时保持原列宽）。
+ *
+ * BasicTable 在 useColumns 里内置了同样的 scaleColumnWidth；裸 `a-table` 不经过那条链路，
+ * 列宽是写死的 px，150% 字号下表头折行、日期/数字压列——就是「文字缩放体检」漏掉裸表格页的根因。
+ * 页面用 `computed(() => scaleTableColumns(cols))` 接入，与 BasicTable 语义保持一致。
+ */
+export function scaleTableColumns<T extends { width?: number; children?: unknown[] }>(columns: T[]): T[] {
+  const scale = textScaleRef.value / 100;
+  if (scale <= 1) {
+    return columns;
+  }
+  const walk = (col: any): any => ({
+    ...col,
+    width: typeof col.width === 'number' ? Math.round(col.width * scale) : col.width,
+    children: Array.isArray(col.children) ? col.children.map(walk) : col.children,
+  });
+  return columns.map(walk);
+}
+
+/** 表格横向滚动宽度按同一比例放大（传未缩放的基准值），与 scaleTableColumns 配套 */
+export function scaleScrollX(base: number): number {
+  const scale = textScaleRef.value / 100;
+  return scale > 1 ? Math.round(base * scale) : base;
+}
+
+/**
  * 把百分比写入目标元素 style.zoom。
  *
  * 100% 时清掉属性而不是写 1，保证未缩放时 DOM 与默认状态完全一致。
