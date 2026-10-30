@@ -133,10 +133,11 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
         return vo;
     }
 
-    /** 逐行算缺口（未出库 − 在途）；仓库映射未命中的行跳过并记原因。 */
+    /** 逐行算缺口（未出库 − 在途 − ERP 已关联）；仓库映射未命中的行跳过并记原因。 */
     private List<WmsOutboundDetailDTO> buildGapDetails(String billNo, List<List<Object>> rows,
                                                        WmsDemandResultVO vo) {
         Map<String, BigDecimal> inFlight = inFlightQtyByMaterial(billNo);
+        Map<String, BigDecimal> erpLinked = erpLinkedQtyByMaterial(billNo);
         List<WmsOutboundDetailDTO> details = new ArrayList<>();
         for (List<Object> row : rows) {
             String kingdeeMaterial = str(row, 4);
@@ -156,9 +157,14 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
             if (oConvertUtils.isEmpty(wmsMaterialCode)) {
                 wmsMaterialCode = kingdeeMaterial;
             }
-            BigDecimal already = inFlight.getOrDefault(wmsMaterialCode, BigDecimal.ZERO);
-            BigDecimal gap = remain.subtract(already);
+            BigDecimal alreadyWms = inFlight.getOrDefault(wmsMaterialCode, BigDecimal.ZERO);
+            BigDecimal alreadyErp = erpLinked.getOrDefault(kingdeeMaterial, BigDecimal.ZERO);
+            BigDecimal gap = remain.subtract(alreadyWms).subtract(alreadyErp);
             if (gap.signum() <= 0) {
+                if (alreadyErp.signum() > 0 && alreadyWms.signum() <= 0) {
+                    skip(vo, billNo + "：ERP 已有关联出库单（物料 " + kingdeeMaterial + " 已占用 "
+                            + strip(alreadyErp) + "），本通知单无需再生成待办");
+                }
                 continue;
             }
             WmsOutboundDetailDTO detail = new WmsOutboundDetailDTO();
@@ -170,6 +176,47 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
             details.add(detail);
         }
         return details;
+    }
+
+    /**
+     * 该发货通知单在**金蝶侧**已关联的销售出库量（按金蝶物料编码汇总）。
+     *
+     * <p>为什么必须算进来：通知单的 {@code FRemainOutQty} 只在出库单**审核**时核销，
+     * 草稿/已提交未审期间不减（2026-10-30 真账套实测）。只扣 WMS 自己的在途单，
+     * 会把「金蝶已开、WMS 还没开」的量算成缺口 → 每轮生成都重复开单。
+     *
+     * <p>只统计 **A/B（未审核）**：C 已审核时 remain 已经核销过，再扣一次会少生成。
+     *
+     * <p>查询失败返回空集合、不阻断生成（ERP 抖动不该让整批待办都生成不了）；
+     * 真正的兜底在回写侧——开单前会查同通知单是否已有未审核出库单并拦住。
+     */
+    private Map<String, BigDecimal> erpLinkedQtyByMaterial(String noticeNo) {
+        WmsKingdeeResult result = formClient.executeBillQuery("SAL_OUTSTOCK",
+                "FSrcBillNo,FMaterialID.FNumber,FRealQty,FDocumentStatus",
+                "FSrcBillNo='" + noticeNo.trim().replace("'", "''")
+                        + "' and FDocumentStatus in ('A','B')", 2000);
+        if (!result.isSuccess()) {
+            log.warn("发货通知单[{}]关联出库单查询失败，本次不扣减 ERP 已关联量：{}",
+                    noticeNo, result.getMessage());
+            return Map.of();
+        }
+        Map<String, BigDecimal> byMaterial = new LinkedHashMap<>();
+        for (List<Object> row : result.getRows()) {
+            if (row == null || row.size() < 4) {
+                continue;
+            }
+            String material = str(row, 1).trim();
+            BigDecimal qty = decimal(row, 2);
+            if (material.isEmpty() || qty == null || qty.signum() <= 0) {
+                continue;
+            }
+            byMaterial.merge(material, qty, BigDecimal::add);
+        }
+        return byMaterial;
+    }
+
+    private String strip(BigDecimal value) {
+        return value == null ? "0" : value.stripTrailingZeros().toPlainString();
     }
 
     /** 该发货通知单在途销售出库单（未完成/未关闭）按物料汇总的已申请量。 */
