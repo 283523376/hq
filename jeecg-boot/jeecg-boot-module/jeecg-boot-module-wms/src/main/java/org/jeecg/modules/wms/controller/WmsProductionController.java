@@ -10,6 +10,7 @@ import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsProductionCloseDTO;
 import org.jeecg.modules.wms.dto.WmsProductionManualCompleteDTO;
+import org.jeecg.modules.wms.dto.WmsProductionPromoteDTO;
 import org.jeecg.modules.wms.dto.WmsProductionSubmitDTO;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
@@ -145,6 +146,21 @@ public class WmsProductionController {
             return attempt.isSuccess()
                     ? Result.OK("转人工完成并同步成功", attempt)
                     : Result.error("转人工完成，但同步失败：" + attempt.getErrorMessage());
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @RequiresPermissions("wms:production:submit")
+    @Operation(summary = "生产入库-推进工序汇报草稿（方案 B：WMS 记账，ERP 由车间汇报入库）")
+    @PostMapping(value = "/{id}/promote")
+    public Result<WmsProductionInbound> promote(@PathVariable("id") String id,
+                                                @RequestBody(required = false) WmsProductionPromoteDTO dto) {
+        try {
+            service.promote(id, dto == null ? null : dto.getCarrierCode());
+            // 事务已提交，再异步下发设备任务（避免设备超时拖死请求）
+            taskService.dispatchInboundAsync(id);
+            return Result.OK("已推进，等待上架", service.getById(id));
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }

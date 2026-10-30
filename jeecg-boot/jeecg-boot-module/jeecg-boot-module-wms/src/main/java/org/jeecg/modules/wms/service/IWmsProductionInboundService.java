@@ -58,6 +58,17 @@ public interface IWmsProductionInboundService extends JeecgService<WmsProduction
     void close(String id, String reason);
 
     /**
+     * 工序汇报草稿推进入库（方案 B）：草稿 → 待上架，占用立库库位并下发设备任务。
+     *
+     * <p>不参与 ERP 回写：ERP 侧的生产入库单由**车间在 ERP 做工序汇报**时生成，
+     * WMS 只记账本仓库存，之后按 FSrcBillNo 对账回填 ERP 单号。
+     *
+     * @param id          生产入库记录 ID（必须是工序汇报草稿）
+     * @param carrierCode 载具码（必填，≤64）
+     */
+    void promote(String id, String carrierCode);
+
+    /**
      * 「同步中」僵死阈值，供补偿任务复用同一口径。
      */
     Date syncStaleBefore();

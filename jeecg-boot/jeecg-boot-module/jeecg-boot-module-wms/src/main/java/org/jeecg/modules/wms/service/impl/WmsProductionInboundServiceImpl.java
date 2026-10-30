@@ -287,6 +287,54 @@ public class WmsProductionInboundServiceImpl
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void promote(String id, String carrierCode) {
+        WmsProductionInbound record = inboundMapper.selectById(id);
+        if (record == null) {
+            throw new RuntimeException("生产入库记录不存在");
+        }
+        String carrier = carrierCode == null ? "" : carrierCode.trim();
+        if (carrier.isEmpty()) {
+            throw new RuntimeException("载具码不能为空");
+        }
+        if (carrier.length() > 64) {
+            throw new RuntimeException("载具码长度不能超过 64");
+        }
+        if (!WmsConstants.PROD_STATUS_DRAFT.equals(record.getStatus())) {
+            throw new RuntimeException("当前状态不允许推进（仅工序汇报草稿可推进），当前状态："
+                    + record.getStatus());
+        }
+        if (oConvertUtils.isEmpty(record.getErpEntryKey())) {
+            throw new RuntimeException("该入库单不是工序汇报草稿（缺少 ERP 分录键），不可推进");
+        }
+        if (inboundMapper.selectActiveByCarrier(carrier) != null) {
+            throw new RuntimeException("载具正在使用中");
+        }
+        // 半成品走立库；库位不足时 allocateStereoLocation 内部已告警并抛出
+        String locationId = allocateStereoLocation();
+        WmsProductionInbound patch = new WmsProductionInbound()
+                .setStatus(WmsConstants.PROD_STATUS_PENDING_PUTAWAY)
+                .setTaskStatus(WmsConstants.TASK_STATUS_NOT_DISPATCHED)
+                .setWcsTaskNo(WmsConstants.TASK_NO_PREFIX_WCS
+                        + com.baomidou.mybatisplus.core.toolkit.IdWorker.getIdStr())
+                .setLocationId(locationId)
+                .setCarrierCode(carrier)
+                .setIdentType(WmsConstants.IDENT_TYPE_RFID)
+                // 方案 B：ERP 侧由车间汇报入库，WMS 永不进入回写队列（否则会撞流程门槛或双份开单）
+                .setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED);
+        // setUpdateTime 定义在父类 JeecgEntity 上，链式会退化类型，单独调用
+        patch.setUpdateTime(new Date());
+        int affected = inboundMapper.update(patch, Wrappers.<WmsProductionInbound>update()
+                .eq("id", id)
+                .eq("status", WmsConstants.PROD_STATUS_DRAFT));
+        if (affected == 0) {
+            // 事务回滚会把刚占用的立库库位一起释放
+            throw new RuntimeException("单据已被推进，请刷新后重试");
+        }
+        log.info("工序汇报草稿推进入库：单号={}，载具={}，库位={}", record.getInboundNo(), carrier, locationId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void manualComplete(String id, WmsProductionManualCompleteDTO dto) {
         WmsProductionInbound record = getById(id);
         if (record == null) {
