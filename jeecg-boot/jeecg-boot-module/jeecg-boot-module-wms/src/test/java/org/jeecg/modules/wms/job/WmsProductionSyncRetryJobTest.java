@@ -94,4 +94,34 @@ class WmsProductionSyncRetryJobTest {
         verify(inboundService, never()).selectSyncCandidates(any(), anyInt());
         verify(syncService, never()).syncInbound(any(), eq(false));
     }
+
+    @Test
+    void job_reconcilesReportSourcedInbounds() {
+        // 方案 B：工序汇报来源的单据等车间在金蝶汇报入库，每轮尝试对账回填 ERP 单号
+        when(inboundService.selectUndispatchedBefore(any(), anyInt())).thenReturn(List.of());
+        when(inboundService.selectSyncCandidates(any(), anyInt())).thenReturn(List.of());
+        WmsProductionInbound reported = record();
+        reported.setErpEntryKey("GXHB659871#0#10");
+        reported.setErpBillNo("GXHB659871");
+        when(inboundService.selectReportSourcedPendingReconcile(anyInt())).thenReturn(List.of(reported));
+        when(syncService.reconcileReportSourced(reported))
+                .thenReturn(new WmsOrderSyncAttempt(true, null, 0));
+
+        job.scanAndResyncForTest();
+
+        verify(syncService).reconcileReportSourced(reported);
+    }
+
+    @Test
+    void job_skipsReconcileWhenAutoSyncOff() {
+        org.jeecg.modules.wms.service.IWmsSystemConfigService configService =
+                mock(org.jeecg.modules.wms.service.IWmsSystemConfigService.class);
+        when(configService.getString(any(), any())).thenReturn("false");
+        WmsProductionSyncRetryJob offlineJob =
+                new WmsProductionSyncRetryJob(inboundService, syncService, taskService, configService);
+
+        offlineJob.scanAndResyncForTest();
+
+        verify(inboundService, never()).selectReportSourcedPendingReconcile(anyInt());
+    }
 }

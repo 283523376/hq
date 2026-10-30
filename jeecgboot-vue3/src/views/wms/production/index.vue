@@ -156,7 +156,7 @@
 
 <script lang="ts" name="wms-production" setup>
   import { computed, h, onMounted, onUnmounted, reactive, ref } from 'vue';
-  import { Modal } from 'ant-design-vue';
+  import { Input, Modal } from 'ant-design-vue';
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useMessage } from '/@/hooks/web/useMessage';
@@ -168,6 +168,7 @@
     getProductionInbound,
     listProductionInbound,
     manualCompleteProductionInbound,
+    promoteProductionInbound,
     resyncProductionInbound,
     scanWorkOrder,
     submitProductionInbound,
@@ -355,6 +356,14 @@
 
   function getTableAction(record: any) {
     const actions: any[] = [{ label: '详情', onClick: () => openDetail(record) }];
+    if (record.status === '草稿') {
+      // 工序汇报草稿（方案 B）：推进后才占立库位、下发设备任务并计入本仓库存
+      actions.push({
+        label: '推进',
+        auth: 'wms:production:submit',
+        onClick: () => handlePromote(record),
+      });
+    }
     if (['待上架', '异常待人工'].includes(record.status) && ['失败', '未下发'].includes(record.taskStatus)) {
       actions.push({
         label: '重新下发',
@@ -386,6 +395,31 @@
       });
     }
     return actions;
+  }
+
+  async function handlePromote(record: any) {
+    let carrierCode = '';
+    Modal.confirm({
+      title: '推进工序汇报草稿',
+      content: () =>
+        h('div', { style: 'padding-top:8px' }, [
+          h('div', { style: 'margin-bottom:8px;color:#8c8c8c' }, '推进后占用立库库位并下发设备任务；ERP 侧由车间汇报入库，不重复开单。'),
+          h(Input, {
+            placeholder: '载具码（必填，≤64 字）',
+            maxlength: 64,
+            'onUpdate:value': (v: string) => (carrierCode = v),
+          }),
+        ]),
+      onOk: async () => {
+        if (!carrierCode || !carrierCode.trim()) {
+          createMessage.warning('载具码不能为空');
+          throw new Error('载具码不能为空');
+        }
+        await promoteProductionInbound(record.id, carrierCode.trim());
+        createMessage.success('已推进，等待上架');
+        reload();
+      },
+    });
   }
 
   async function handleDispatch(record: any) {

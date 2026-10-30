@@ -53,9 +53,18 @@ public class WmsProductionSyncRetryJob implements Job {
     WmsProductionSyncRetryJob(IWmsProductionInboundService inboundService,
                               IWmsProductionSyncService productionSyncService,
                               IWmsProductionTaskService taskService) {
+        this(inboundService, productionSyncService, taskService, null);
+    }
+
+    /** 仅供单测注入依赖（含自动同步开关）。 */
+    WmsProductionSyncRetryJob(IWmsProductionInboundService inboundService,
+                              IWmsProductionSyncService productionSyncService,
+                              IWmsProductionTaskService taskService,
+                              IWmsSystemConfigService systemConfigService) {
         this.inboundService = inboundService;
         this.productionSyncService = productionSyncService;
         this.taskService = taskService;
+        this.systemConfigService = systemConfigService;
     }
 
     @Override
@@ -71,6 +80,37 @@ public class WmsProductionSyncRetryJob implements Job {
 
         redispatchUndispatched();
         resyncCandidates();
+        reconcileReportSourced();
+    }
+
+    /**
+     * 方案 B 对账：工序汇报来源的入库单等车间在金蝶「汇报入库」，
+     * 命中则回填 ERP 生产入库单号。未命中属正常等待，不计失败、不告警。
+     */
+    private void reconcileReportSourced() {
+        List<WmsProductionInbound> list;
+        try {
+            list = inboundService.selectReportSourcedPendingReconcile(WmsConstants.SYNC_SCAN_BATCH);
+        } catch (Exception e) {
+            log.error("工序汇报入库对账取候选失败：{}", e.getMessage(), e);
+            return;
+        }
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        int ok = 0;
+        for (WmsProductionInbound record : list) {
+            try {
+                WmsOrderSyncAttempt attempt = productionSyncService.reconcileReportSourced(record);
+                if (attempt.isSuccess()) {
+                    inboundService.persistSyncResult(record.getId(), attempt);
+                    ok++;
+                }
+            } catch (Exception e) {
+                log.error("工序汇报入库对账[{}]异常：{}", record.getInboundNo(), e.getMessage(), e);
+            }
+        }
+        log.info("工序汇报入库对账本轮结束：候选={}，对账成功={}", list.size(), ok);
     }
 
     /** 未下发补偿：提交成功但事务提交后进程中断/下发前异常。 */

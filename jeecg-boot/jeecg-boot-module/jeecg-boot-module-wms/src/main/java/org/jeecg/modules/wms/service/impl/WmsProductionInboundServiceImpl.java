@@ -286,6 +286,11 @@ public class WmsProductionInboundServiceImpl
     }
 
     @Override
+    public List<WmsProductionInbound> selectReportSourcedPendingReconcile(int limit) {
+        return inboundMapper.selectReportSourcedPendingReconcile(limit);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void promote(String id, String carrierCode) {
         WmsProductionInbound record = inboundMapper.selectById(id);

@@ -69,6 +69,13 @@ public interface IWmsProductionInboundService extends JeecgService<WmsProduction
     void promote(String id, String carrierCode);
 
     /**
+     * 待对账的工序汇报入库单（已入库、erp_bill_no 仍是 GXHB 单号）。
+     *
+     * @param limit 单轮上限
+     */
+    List<WmsProductionInbound> selectReportSourcedPendingReconcile(int limit);
+
+    /**
      * 「同步中」僵死阈值，供补偿任务复用同一口径。
      */
     Date syncStaleBefore();

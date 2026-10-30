@@ -55,6 +55,18 @@
          LIMIT #{limit}
     </select>
 
+    <select id="selectReportSourcedPendingReconcile" resultType="org.jeecg.modules.wms.entity.WmsProductionInbound">
+        SELECT *
+          FROM wms_production_inbound
+         WHERE deleted_at = 0
+           AND status = '已入库'
+           AND erp_entry_key IS NOT NULL
+           AND erp_entry_key &lt;&gt; ''
+           AND erp_bill_no LIKE 'GXHB%'
+         ORDER BY id
+         LIMIT #{limit}
+    </select>
+
     <update id="claimForSync">
         UPDATE wms_production_inbound
            SET sync_status    = '同步中',

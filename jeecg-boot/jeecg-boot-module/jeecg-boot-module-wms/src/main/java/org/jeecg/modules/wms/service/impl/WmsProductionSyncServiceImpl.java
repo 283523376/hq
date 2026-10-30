@@ -75,6 +75,18 @@ public class WmsProductionSyncServiceImpl implements IWmsProductionSyncService {
     }
 
     @Override
+    public WmsOrderSyncAttempt reconcileReportSourced(WmsProductionInbound record) {
+        if (record == null) {
+            return new WmsOrderSyncAttempt(false, "生产入库记录不存在", 0);
+        }
+        WmsOrderSyncResult result = gateway.sync(record);
+        if (result.isSuccess()) {
+            log.info("工序汇报入库[{}]对账成功，ERP 单号已回填", record.getInboundNo());
+        }
+        return new WmsOrderSyncAttempt(result.isSuccess(), result.getErrorMessage(), 0);
+    }
+
+    @Override
     public void alertRepeatedFailure(WmsProductionInbound record, String error) {
         alert(record, error);
     }

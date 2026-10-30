@@ -37,3 +37,7 @@ export const resyncProductionInbound = (id: string) =>
 /** 从金蝶工序汇报落半成品入库草稿（阶段 C：只落草稿，不分配库位/不下发 WCS） */
 export const syncOperationReport = (params: { startDate?: string; endDate?: string; maxRows?: number }) =>
   defHttp.post({ url: `${PRODUCTION}/sync-operation-report`, params }, { joinParamsToUrl: true });
+
+/** 推进工序汇报草稿（方案 B：WMS 记账，ERP 由车间汇报入库） */
+export const promoteProductionInbound = (id: string, carrierCode: string) =>
+  defHttp.post({ url: `${PRODUCTION}/${id}/promote`, params: { carrierCode } });

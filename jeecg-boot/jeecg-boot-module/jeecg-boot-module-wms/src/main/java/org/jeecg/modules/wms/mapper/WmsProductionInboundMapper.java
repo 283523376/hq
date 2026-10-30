@@ -16,6 +16,9 @@ import java.util.List;
  */
 public interface WmsProductionInboundMapper extends BaseMapper<WmsProductionInbound> {
 
+    /** 待对账的工序汇报入库单：已入库且 erp_bill_no 仍是 GXHB 单号（尚未回填 ERP 生产入库单号）。 */
+    List<WmsProductionInbound> selectReportSourcedPendingReconcile(@Param("limit") int limit);
+
     /**
      * 查该载具当前未完结的记录（待上架/执行中/异常待人工）。
      */
