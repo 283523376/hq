@@ -61,18 +61,17 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             return WmsOrderSyncResult.okMock();
         }
         BigDecimal goodQty = inbound.getGoodQty() == null ? BigDecimal.ZERO : inbound.getGoodQty();
+        // 方案 B 分支必须最先判：工序汇报来源哪怕良品为 0 也不能去开「其他入库单」，
+        // 否则 ERP 侧车间汇报 + WMS 其它入库 = 双份入账（2026-10-30 评审指出顺序风险）
+        if (oConvertUtils.isNotEmpty(inbound.getErpEntryKey())) {
+            return reconcileReportSourced(inbound);
+        }
         if (goodQty.signum() <= 0) {
             // 纯不良品：PRD_INSTOCK 没有不良数量字段，自动开其他入库单记账（spec 2026-10-28）
             if (defectWriter == null) {
                 return WmsOrderSyncResult.fail("纯不良品回写器未注入，无法自动开单，请人工处理");
             }
             return defectWriter.write(inbound);
-        }
-        // 方案 B（2026-10-30 决策）：工序汇报来源的入库单由 ERP 车间汇报生成，
-        // WMS 只记账本仓库存。这里绝不能走开单路径——否则同一批货在金蝶记两次。
-        // 分支必须**先于**下面的 erp_bill_no 幂等查询：该字段此刻存的是 GXHB 单号。
-        if (oConvertUtils.isNotEmpty(inbound.getErpEntryKey())) {
-            return reconcileReportSourced(inbound);
         }
         String billNo = inbound.getInboundNo();
         try {
@@ -313,7 +312,9 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
      * 命中则把真实 SCRK 单号回存到 {@code erp_bill_no}，未命中说明车间还没汇报。
      */
     private WmsOrderSyncResult reconcileReportSourced(WmsProductionInbound inbound) {
-        String gxhbNo = inbound.getErpBillNo();
+        // 汇报单号从 erp_entry_key 的 # 前段取：erp_bill_no 回填成 ERP 单号后仍在用，
+        // 再拿它去查 FSrcBillNo 会永久未命中，文案还会把 SCRK 说成 GXHB
+        String gxhbNo = reportBillNoOf(inbound);
         if (oConvertUtils.isEmpty(gxhbNo)) {
             return WmsOrderSyncResult.fail("工序汇报来源缺少 GXHB 单号，无法对账（入库单 "
                     + inbound.getInboundNo() + "）");
@@ -586,6 +587,18 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
 
     private String str(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    /** 从 erp_entry_key（形如 "GXHB659871#0#10"）取汇报单号；没有则退回 erp_bill_no。 */
+    private String reportBillNoOf(WmsProductionInbound inbound) {
+        String entryKey = inbound.getErpEntryKey();
+        if (oConvertUtils.isNotEmpty(entryKey) && entryKey.contains("#")) {
+            String head = entryKey.substring(0, entryKey.indexOf('#')).trim();
+            if (oConvertUtils.isNotEmpty(head)) {
+                return head;
+            }
+        }
+        return inbound.getErpBillNo();
     }
 
     /** 文本转数量：金蝶回传可能是数字或字符串，解析失败按 0（数量匹配只是择优，不是硬校验）。 */

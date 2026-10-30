@@ -316,6 +316,8 @@ public class WmsProductionInboundServiceImpl
         }
         // 半成品走立库；库位不足时 allocateStereoLocation 内部已告警并抛出
         String locationId = allocateStereoLocation();
+        // 与 submit 一致：盘点冻结的库位不能上架，否则盘出的差异会被并发出入库搅乱
+        WmsStocktakeFreezeGuard.assertNotFrozen(locationId, locationMapper);
         WmsProductionInbound patch = new WmsProductionInbound()
                 .setStatus(WmsConstants.PROD_STATUS_PENDING_PUTAWAY)
                 .setTaskStatus(WmsConstants.TASK_STATUS_NOT_DISPATCHED)
@@ -331,9 +333,18 @@ public class WmsProductionInboundServiceImpl
         // setUpdateTime / setOperator 定义在父类 JeecgEntity 上，链式会退化类型，单独调用
         patch.setUpdateTime(new Date());
         patch.setOperator(WmsUtils.currentUsername());
-        int affected = inboundMapper.update(patch, Wrappers.<WmsProductionInbound>update()
-                .eq("id", id)
-                .eq("status", WmsConstants.PROD_STATUS_DRAFT));
+        int affected;
+        try {
+            affected = inboundMapper.update(patch, Wrappers.<WmsProductionInbound>update()
+                    .eq("id", id)
+                    .eq("status", WmsConstants.PROD_STATUS_DRAFT));
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发撞活跃载具唯一索引：翻成用户能懂的文案，别甩 MySQL 原始报错
+            if (e.getMessage() != null && e.getMessage().contains("uk_wms_prod_inbound_active_carrier")) {
+                throw new RuntimeException("载具正在使用中");
+            }
+            throw e;
+        }
         if (affected == 0) {
             // 事务回滚会把刚占用的立库库位一起释放
             throw new RuntimeException("单据已被推进，请刷新后重试");

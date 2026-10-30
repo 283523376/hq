@@ -167,4 +167,38 @@ class WmsProductionPromoteTest {
         assertEquals(WmsConstants.SYNC_STATUS_NOT_REQUIRED, syncValue,
                 "工序汇报来源转人工完成后同样不能进回写队列（方案 B）");
     }
+
+    @Test
+    void promote_rejectsFrozenLocation() {
+        // submit 在分配库位后有盘点冻结守卫，推进也必须一致：
+        // 否则盘点期间推进会把货塞进冻结库位，盘出来的差异直接被搅乱
+        when(inboundMapper.selectById("id1")).thenReturn(draft());
+        stubFreeLocation("loc1");
+        WmsLocation frozen = new WmsLocation();
+        frozen.setId("loc1");
+        frozen.setLocationCode("LB-01");
+        frozen.setStocktakeFrozen(WmsConstants.STOCKTAKE_FROZEN);
+        when(locationMapper.selectById("loc1")).thenReturn(frozen);
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.promote("id1", "BOX-B-01"));
+
+        assertTrue(e.getMessage().contains("盘点冻结"), "实际：" + e.getMessage());
+        verify(inboundMapper, never()).update(any(), any(Wrapper.class));
+    }
+
+    @Test
+    void promote_carrierRaceTranslatedToReadableMessage() {
+        // 并发撞活跃载具唯一索引时，不该把 MySQL 原始报错甩给用户
+        when(inboundMapper.selectById("id1")).thenReturn(draft());
+        stubFreeLocation("loc1");
+        when(inboundMapper.update(any(), any(Wrapper.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException(
+                        "Duplicate entry 'BOX-B-01' for key 'uk_wms_prod_inbound_active_carrier'"));
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.promote("id1", "BOX-B-01"));
+
+        assertTrue(e.getMessage().contains("载具正在使用中"), "实际：" + e.getMessage());
+    }
 }

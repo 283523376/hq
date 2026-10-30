@@ -482,4 +482,34 @@ class WmsKingdeeInboundWriterImplTest {
         assertEquals("SCRK-B", captor.getValue().getErpBillNo(),
                 "应回填数量与本单据一致的那张入库单");
     }
+
+    @Test
+    void reconcile_usesEntryKeyAfterBillNoAlreadyBackfilled() {
+        // erp_bill_no 已被回填成 SCRK 单号：若还拿它去查 FSrcBillNo，会永久未命中且文案误导
+        WmsProductionInbound record = reportSourced();
+        record.setErpBillNo("SCRK101261000001");
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(),
+                contains("FSrcBillNo='GXHB659871'"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("SCRK101261000099", "B", 10.0)), null, null));
+
+        assertTrue(writer.write(record).isSuccess());
+
+        ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
+        verify(inboundMapper).updateById(captor.capture());
+        assertEquals("SCRK101261000099", captor.getValue().getErpBillNo());
+    }
+
+    @Test
+    void write_reportSourcedWithZeroGoodQty_neverOpensDefectBill() {
+        // 纯不良分支排在方案 B 分支之前：数量被改成 0 时会去开「其他入库单」，正是双份入库
+        WmsProductionInbound record = reportSourced();
+        record.setGoodQty(BigDecimal.ZERO);
+        record.setBadQty(new BigDecimal("10"));
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+
+        writer.write(record);
+
+        verify(defectWriter, never()).write(any(WmsProductionInbound.class));
+    }
 }

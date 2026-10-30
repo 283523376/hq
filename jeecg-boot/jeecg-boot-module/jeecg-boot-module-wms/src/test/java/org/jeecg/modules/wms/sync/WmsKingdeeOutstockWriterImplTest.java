@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -153,7 +154,9 @@ class WmsKingdeeOutstockWriterImplTest {
     }
 
     private void stubNoticeQuery(List<List<Object>> rows) {
-        when(formClient.executeBillQuery(eq("SAL_DELIVERYNOTICE"), anyString(), anyString(), anyInt()))
+        // 实现按「startRow + 稳定排序」翻页取分录
+        when(formClient.executeBillQuery(eq("SAL_DELIVERYNOTICE"), anyString(), anyString(), anyInt(),
+                anyInt(), anyString()))
                 .thenReturn(WmsKingdeeResult.ok("[]", rows, null, null));
     }
 
@@ -258,5 +261,36 @@ class WmsKingdeeOutstockWriterImplTest {
         assertFalse(result.isSuccess(), "累计超出通知单剩余量时必须失败");
         assertTrue(result.getErrorMessage().contains("剩余"), "实际：" + result.getErrorMessage());
         verify(formClient, never()).save(eq("SAL_OUTSTOCK"), any());
+    }
+
+    @Test
+    void write_invalidNoticeEntryId_failsReadable() {
+        // 分录内码非数字：旧实现静默解析成 0，发出去 FSrcEntryId=0，金蝶报错不可读
+        stubNoticeQuery(List.of(List.of(136477, "not-a-number", "WA.FG", 2000.0)));
+
+        WmsOrderSyncResult result = writer.write(linkedOrder(), List.of(detail()));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("分录"), "实际：" + result.getErrorMessage());
+        verify(formClient, never()).save(eq("SAL_OUTSTOCK"), any());
+    }
+
+    @Test
+    void write_pagesThroughNoticeEntries() {
+        // 通知单分录超过一页（2000）时必须翻页，否则后面的分录被静默丢弃
+        List<List<Object>> firstPage = new java.util.ArrayList<>();
+        for (int i = 0; i < 2000; i++) {
+            firstPage.add(List.of(136477, 200000 + i, "OTHER." + i, 1.0));
+        }
+        when(formClient.executeBillQuery(eq("SAL_DELIVERYNOTICE"), anyString(), anyString(), anyInt(),
+                anyInt(), anyString()))
+                .thenReturn(WmsKingdeeResult.ok("[]", firstPage, null, null))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of(136477, 151480, "WA.FG", 2000.0)), null, null));
+
+        assertTrue(writer.write(linkedOrder(), List.of(detail())).isSuccess(),
+                "第一页没有目标物料，必须继续翻页找到它");
+
+        verify(formClient, atLeast(2)).executeBillQuery(eq("SAL_DELIVERYNOTICE"), anyString(), anyString(),
+                anyInt(), anyInt(), anyString());
     }
 }

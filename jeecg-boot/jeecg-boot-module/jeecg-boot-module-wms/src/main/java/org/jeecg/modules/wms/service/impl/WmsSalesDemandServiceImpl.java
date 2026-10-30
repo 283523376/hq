@@ -24,8 +24,10 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * @Description: 销售出库待办自动生成（金蝶发货通知单 → WMS 出库单）。
@@ -139,7 +141,10 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
         // 在途量与 ERP 已关联量都是**物料级**汇总：同物料多行时必须逐行递减消耗，
         // 否则每一行都按全额扣一次，缺口被扣穿（真实缺口 70 会算成 40）
         Map<String, BigDecimal> inFlightLeft = new LinkedHashMap<>(inFlightQtyByMaterial(billNo));
-        Map<String, BigDecimal> erpLinkedLeft = new LinkedHashMap<>(erpLinkedQtyByMaterial(billNo));
+        ErpLinkedSnapshot erp = erpLinkedOf(billNo);
+        Map<String, BigDecimal> erpLinkedLeft = new LinkedHashMap<>(erp.byMaterial);
+        // 有取消的关联单但数量读不出（手工单只填数量、实发为空）：当占用未知，宁可少生成也不重复开单
+        Set<String> erpLinkedUnknown = erp.unknownQtyMaterials;
         List<WmsOutboundDetailDTO> details = new ArrayList<>();
         for (List<Object> row : rows) {
             String kingdeeMaterial = str(row, 4);
@@ -158,6 +163,11 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
             String wmsMaterialCode = materialResolver.reverseKingdeeCode(kingdeeMaterial);
             if (oConvertUtils.isEmpty(wmsMaterialCode)) {
                 wmsMaterialCode = kingdeeMaterial;
+            }
+            if (erpLinkedUnknown.contains(kingdeeMaterial)) {
+                skip(vo, billNo + "：ERP 已有关联出库单但数量未知（物料 " + kingdeeMaterial
+                        + "），请先在金蝶补齐实发数量或删除该单");
+                continue;
             }
             BigDecimal alreadyWms = inFlightLeft.getOrDefault(wmsMaterialCode, BigDecimal.ZERO);
             BigDecimal alreadyErp = erpLinkedLeft.getOrDefault(kingdeeMaterial, BigDecimal.ZERO);
@@ -188,8 +198,14 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
         return details;
     }
 
+    /** 金蝶侧已关联出库量的快照：按物料汇总的数量 + 有单但数量读不出来的物料。 */
+    private static final class ErpLinkedSnapshot {
+        private final Map<String, BigDecimal> byMaterial = new LinkedHashMap<>();
+        private final Set<String> unknownQtyMaterials = new LinkedHashSet<>();
+    }
+
     /**
-     * 该发货通知单在**金蝶侧**已关联的销售出库量（按金蝶物料编码汇总）。
+     * 查该发货通知单在**金蝶侧**已关联的销售出库量（未审核 A/B/D 等，已审核 C 不掺和）。
      *
      * <p>为什么必须算进来：通知单的 {@code FRemainOutQty} 只在出库单**审核**时核销，
      * 草稿/已提交未审期间不减（2026-10-30 真账套实测）。只扣 WMS 自己的在途单，
@@ -198,35 +214,60 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
      * <p>统计**非已审核**（≠C）：C 已审核时 remain 已经核销过，再扣一次会少生成；
      * 提交被业务闸门拦下时金蝶会停在 A/B/D 等中间态，这些都要算占用才不重复开单。
      *
-     * <p>查询失败返回空集合、不阻断生成（ERP 抖动不该让整批待办都生成不了）；
+     * <p>查询失败返回空快照、不阻断生成（ERP 抖动不该让整批待办都生成不了）；
      * 真正的兜底在回写侧——开单前会查同通知单是否已有未审核出库单并拦住。
      */
-    private Map<String, BigDecimal> erpLinkedQtyByMaterial(String noticeNo) {
-        WmsKingdeeResult result = formClient.executeBillQuery("SAL_OUTSTOCK",
-                "FSrcBillNo,FMaterialID.FNumber,FRealQty,FDocumentStatus",
-                "FSrcBillNo='" + noticeNo.trim().replace("'", "''")
-                        + "' and FDocumentStatus <> 'C'", 2000);
-        if (!result.isSuccess()) {
-            log.warn("发货通知单[{}]关联出库单查询失败，本次不扣减 ERP 已关联量：{}",
-                    noticeNo, result.getMessage());
-            return Map.of();
-        }
-        Map<String, BigDecimal> byMaterial = new LinkedHashMap<>();
-        for (List<Object> row : result.getRows()) {
-            if (row == null || row.size() < 4) {
-                continue;
+    private ErpLinkedSnapshot erpLinkedOf(String noticeNo) {
+        ErpLinkedSnapshot snapshot = new ErpLinkedSnapshot();
+        String filter = "FSrcBillNo='" + noticeNo.trim().replace("'", "''")
+                + "' and FDocumentStatus <> 'C'";
+        try {
+            for (List<Object> row : queryAll("SAL_OUTSTOCK",
+                    "FSrcBillNo,FMaterialID.FNumber,FRealQty,FDocumentStatus", filter)) {
+                if (row == null || row.size() < 3) {
+                    continue;
+                }
+                String material = str(row, 1).trim();
+                if (material.isEmpty()) {
+                    continue;
+                }
+                BigDecimal qty = decimal(row, 2);
+                if (qty == null || qty.signum() <= 0) {
+                    // 手工单只填数量、实发为空：当占用未知，宁可少生成也不重复开单
+                    snapshot.unknownQtyMaterials.add(material);
+                } else {
+                    snapshot.byMaterial.merge(material, qty, BigDecimal::add);
+                }
             }
-            String material = str(row, 1).trim();
-            BigDecimal qty = decimal(row, 2);
-            if (material.isEmpty() || qty == null || qty.signum() <= 0) {
-                continue;
-            }
-            byMaterial.merge(material, qty, BigDecimal::add);
+        } catch (Exception e) {
+            log.warn("发货通知单[{}]关联出库单查询失败，本次不扣减 ERP 已关联量：{}", noticeNo, e.getMessage());
         }
-        return byMaterial;
+        return snapshot;
     }
 
-    /** 从物料级占用池里扣掉本行消耗的量，最少扣到 0（不能让占用变负数影响后续行）。 */
+    /** 按页拉全量，避免超过单页上限的部分被静默截断。 */
+    private List<List<Object>> queryAll(String formId, String fields, String filter) {
+        List<List<Object>> all = new ArrayList<>();
+        int pageSize = 2000;
+        int start = 0;
+        while (start < 20000) {
+            WmsKingdeeResult result = formClient.executeBillQuery(formId, fields, filter, pageSize, start,
+                    "FBillNo ASC");
+            if (result == null || !result.isSuccess()) {
+                throw new IllegalStateException(result == null ? "查询无响应" : result.getMessage());
+            }
+            List<List<Object>> rows = result.getRows();
+            all.addAll(rows);
+            if (rows.size() < pageSize) {
+                break;
+            }
+            start += pageSize;
+        }
+        return all;
+    }
+
+
+    /** 从物料级占用池里扣掉本行消耗的量，最少扣到 0（不能让占用负数影响后续行）。 */
     private void consume(Map<String, BigDecimal> pool, String key, BigDecimal used) {
         if (used == null || used.signum() <= 0) {
             return;

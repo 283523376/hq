@@ -31,6 +31,10 @@ import java.util.Map;
 public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
 
     private static final String FORM_ID = "SAL_OUTSTOCK";
+    /** 通知单分录单页条数（翻页避免超一页的分录被静默丢弃）。 */
+    private static final int NOTICE_ENTRY_PAGE_SIZE = 2000;
+    /** 分录翻页上限，防御异常数据把请求拖死。 */
+    private static final int NOTICE_ENTRY_MAX_ROWS = 20000;
 
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
@@ -225,24 +229,41 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
 
     /** 查通知单分录并按金蝶物料编码索引（同物料可能有多条分录：不同批次/仓位）。查询失败返回 null。 */
     private Map<String, List<NoticeEntry>> loadNoticeEntries(String noticeNo) {
-        WmsKingdeeResult result = formClient.executeBillQuery(WmsConstants.KINGDEE_FORM_DELIVERY_NOTICE,
-                "FID,FEntity_FEntryID,FMaterialID.FNumber,FRemainOutQty",
-                "FBillNo='" + noticeNo.trim().replace("'", "''") + "'", 2000);
-        if (!result.isSuccess()) {
-            log.warn("发货通知单[{}]查询失败：{}", noticeNo, result.getMessage());
-            return null;
-        }
         Map<String, List<NoticeEntry>> byMaterial = new LinkedHashMap<>();
-        for (List<Object> row : result.getRows()) {
-            if (row == null || row.size() < 4) {
-                continue;
+        String filter = "FBillNo='" + noticeNo.trim().replace("'", "''") + "'";
+        // 翻页：超过一页时后续分录会被静默丢掉，出库量就分不到那些分录上
+        int start = 0;
+        while (start <= NOTICE_ENTRY_MAX_ROWS) {
+            WmsKingdeeResult result = formClient.executeBillQuery(WmsConstants.KINGDEE_FORM_DELIVERY_NOTICE,
+                    "FID,FEntity_FEntryID,FMaterialID.FNumber,FRemainOutQty", filter,
+                    NOTICE_ENTRY_PAGE_SIZE, start, "FEntity_FEntryID ASC");
+            if (result == null || !result.isSuccess()) {
+                log.warn("发货通知单[{}]查询失败：{}", noticeNo,
+                        result == null ? "查询无响应" : result.getMessage());
+                return null;
             }
-            String materialCode = str(row.get(2));
-            if (oConvertUtils.isEmpty(materialCode)) {
-                continue;
+            List<List<Object>> rows = result.getRows();
+            for (List<Object> row : rows) {
+                if (row == null || row.size() < 4) {
+                    continue;
+                }
+                String materialCode = str(row.get(2));
+                if (oConvertUtils.isEmpty(materialCode)) {
+                    continue;
+                }
+                Integer entryId = toIntOrNull(row.get(1));
+                if (entryId == null) {
+                    // 内码异常时绝不能发 0 出去（金蝶报错不可读），直接可读失败
+                    throw new IllegalStateException("发货通知单[" + noticeNo + "]分录内码无法解析："
+                            + row.get(1) + "（物料 " + materialCode + "）");
+                }
+                byMaterial.computeIfAbsent(materialCode, k -> new ArrayList<>())
+                        .add(new NoticeEntry(toLong(row.get(0)), entryId, toDecimal(row.get(3))));
             }
-            byMaterial.computeIfAbsent(materialCode, k -> new ArrayList<>())
-                    .add(new NoticeEntry(toLong(row.get(0)), toInt(row.get(1)), toDecimal(row.get(3))));
+            if (rows.size() < NOTICE_ENTRY_PAGE_SIZE) {
+                break;
+            }
+            start += NOTICE_ENTRY_PAGE_SIZE;
         }
         return byMaterial;
     }
@@ -269,7 +290,8 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
                 continue;
             }
             String existing = str(row.get(0));
-            if (oConvertUtils.isNotEmpty(existing) && !existing.equals(order.getErpBillNo())) {
+            // 走到这里说明 erp_bill_no 必为空（非空时 write() 已走 followUp 返回），不必再排除自身单号
+            if (oConvertUtils.isNotEmpty(existing)) {
                 return WmsOrderSyncResult.fail("发货通知单[" + noticeNo + "]已存在未审核的出库单 "
                         + existing + "，请先在金蝶处理（审核或删除）后再重试。"
                         + "分批发货请先审核上一张出库单，再继续下一批");
@@ -354,6 +376,22 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
             return Long.parseLong(String.valueOf(value).trim());
         } catch (NumberFormatException e) {
             return 0L;
+        }
+    }
+
+    /** 解析成功返回内码，失败返回 null（调用方转成可读错误，不静默发 0）。 */
+    private Integer toIntOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(text).intValueExact();
+        } catch (NumberFormatException | ArithmeticException e) {
+            return null;
         }
     }
 

@@ -2,9 +2,8 @@ package org.jeecg.modules.wms.mapper;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,11 +20,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class WmsProductionInboundMapperXmlTest {
 
+    /** 从 classpath 读 mapper XML：不依赖测试的工作目录（否则换个目录启动就红）。 */
+    private String mapperXml() throws Exception {
+        try (InputStream in = getClass().getResourceAsStream(
+                "/org/jeecg/modules/wms/mapper/xml/WmsProductionInboundMapper.xml")) {
+            assertTrue(in != null, "找不到 Mapper XML");
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
     @Test
     void claimFinished_keepsReportSourcedOutOfSyncQueue() throws Exception {
-        String xml = Files.readString(
-                Path.of("src/main/java/org/jeecg/modules/wms/mapper/xml/WmsProductionInboundMapper.xml"),
-                StandardCharsets.UTF_8);
+        String xml = mapperXml();
         int start = xml.indexOf("<update id=\"claimFinished\">");
         assertTrue(start > 0, "claimFinished 语句应存在");
         String statement = xml.substring(start, xml.indexOf("</update>", start));
@@ -38,9 +44,7 @@ class WmsProductionInboundMapperXmlTest {
 
     @Test
     void reconcileCandidates_doesNotHardcodeBillPrefix() throws Exception {
-        String xml = Files.readString(
-                Path.of("src/main/java/org/jeecg/modules/wms/mapper/xml/WmsProductionInboundMapper.xml"),
-                StandardCharsets.UTF_8);
+        String xml = mapperXml();
         int start = xml.indexOf("id=\"selectReportSourcedPendingReconcile\"");
         assertTrue(start > 0, "对账候选查询应存在");
         String statement = xml.substring(start, xml.indexOf("</select>", start));

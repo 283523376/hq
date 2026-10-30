@@ -394,6 +394,15 @@
         onClick: () => handleResync(record),
       });
     }
+    // 工序汇报来源（方案 B）永远「无需同步」，定时对账也挂在自动同步闸门后面：
+    // 关掉自动同步后必须留一个手工对账入口，否则这些单再也回填不了 ERP 单号
+    if (record.erpEntryKey && record.syncStatus === '无需同步' && record.status === '已入库') {
+      actions.push({
+        label: '对账 ERP',
+        auth: 'wms:production:sync',
+        onClick: () => handleResync(record),
+      });
+    }
     return actions;
   }
 

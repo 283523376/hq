@@ -62,7 +62,9 @@ class WmsSalesDemandServiceImplTest {
                 materialResolver, outboundMapper, outboundDetailMapper, outboundService);
         when(outboundMapper.selectList(any())).thenReturn(List.of());
         // 生成侧会回查金蝶已关联的出库量；默认无关联单
-        when(formClient.executeBillQuery(eq("SAL_OUTSTOCK"), anyString(), anyString(), anyInt()))
+        // 关联量查询走「startRow + 稳定排序」的翻页重载
+        when(formClient.executeBillQuery(eq("SAL_OUTSTOCK"), anyString(), anyString(), anyInt(),
+                anyInt(), anyString()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
     }
 
@@ -174,7 +176,8 @@ class WmsSalesDemandServiceImplTest {
         stubRows(row("FHTZD1", "Y.S.002.0085", "50", "S.05"));
         when(stockMappingResolver.resolveWmsWarehouse("S.05")).thenReturn("MJ");
         when(materialResolver.reverseKingdeeCode("Y.S.002.0085")).thenReturn("Y.S.002.0085");
-        when(formClient.executeBillQuery(eq("SAL_OUTSTOCK"), anyString(), anyString(), anyInt()))
+        when(formClient.executeBillQuery(eq("SAL_OUTSTOCK"), anyString(), anyString(), anyInt(),
+                anyInt(), anyString()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("FHTZD1", "Y.S.002.0085", 30.0, "A")), null, null));
         WmsOutboundOrder created = new WmsOutboundOrder();
         created.setOutboundNo("XS3");
@@ -196,7 +199,8 @@ class WmsSalesDemandServiceImplTest {
                 row("FHTZD1", "Y.S.002.0085", "50", "S.05"));
         when(stockMappingResolver.resolveWmsWarehouse("S.05")).thenReturn("MJ");
         when(materialResolver.reverseKingdeeCode("Y.S.002.0085")).thenReturn("Y.S.002.0085");
-        when(formClient.executeBillQuery(eq("SAL_OUTSTOCK"), anyString(), anyString(), anyInt()))
+        when(formClient.executeBillQuery(eq("SAL_OUTSTOCK"), anyString(), anyString(), anyInt(),
+                anyInt(), anyString()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("FHTZD1", "Y.S.002.0085", 30.0, "A")), null, null));
         WmsOutboundOrder created = new WmsOutboundOrder();
         created.setOutboundNo("XS4");
@@ -211,5 +215,23 @@ class WmsSalesDemandServiceImplTest {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         assertEquals(0, new BigDecimal("70").compareTo(total),
                 "两行合计 remain 100 - ERP 已关联 30 = 70，不能扣两次");
+    }
+
+    @Test
+    void generate_conservativeSkipWhenErpLinkedQtyIsZero() {
+        // 手工在金蝶建的草稿可能只填了数量、实发为空 → FRealQty=0。
+        // 当成「未占用」会生成一张必然同步失败的待办，所以按「占用未知」保守跳过
+        stubRows(row("FHTZD1", "Y.S.002.0085", "50", "S.05"));
+        when(stockMappingResolver.resolveWmsWarehouse("S.05")).thenReturn("MJ");
+        when(materialResolver.reverseKingdeeCode("Y.S.002.0085")).thenReturn("Y.S.002.0085");
+        when(formClient.executeBillQuery(eq("SAL_OUTSTOCK"), anyString(), anyString(), anyInt(),
+                anyInt(), anyString()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("FHTZD1", "Y.S.002.0085", 0.0, "A")), null, null));
+
+        WmsDemandResultVO vo = service.generatePendingSalesOutbounds();
+
+        assertEquals(0, vo.getCreated(), "ERP 已有关联单但数量未知时不能生成待办");
+        assertTrue(vo.getSkippedReasons().stream().anyMatch(r -> r.contains("数量未知")),
+                "跳过原因要说明占用数量未知，实际：" + vo.getSkippedReasons());
     }
 }
