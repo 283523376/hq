@@ -133,6 +133,21 @@ def collect_db(mysql_exe: str, db: str) -> dict:
                        "WHERE deleted_at=0 GROUP BY outbound_type")
     ]
 
+    # 菜单树：演示路径全靠它，菜单是 DB 配置，随时可能被改
+    menu_rows = query(mysql_exe, db,
+                      "SELECT IFNULL(pp.name,''), p.name, p.url "
+                      "FROM sys_permission p LEFT JOIN sys_permission pp ON pp.id = p.parent_id "
+                      "WHERE p.del_flag=0 AND p.menu_type IN (0,1) "
+                      "AND (p.url LIKE '/wms%' OR p.url LIKE 'wms%') "
+                      "ORDER BY IFNULL(pp.sort_no, p.sort_no), p.sort_no")
+    tree: dict[str, list[str]] = {}
+    for parent, name, url in menu_rows:
+        if parent == "" or parent == "NULL":
+            tree.setdefault(name, [])          # 根节点占位
+        else:
+            tree.setdefault(parent, []).append(name)
+    data["menuTree"] = {k: v for k, v in tree.items() if v}
+
     # 物料示例：取一个有规格的自制物料
     data["material"] = [
         {"code": r[0], "name": r[1]} for r in query(
@@ -212,6 +227,11 @@ def render(data: dict, api_note: str) -> str:
         lines.append("⚠ 调拨/盘点无单据：对应页面只做空态展示。")
     if c["出库单"] > 0:
         lines.append(f"ℹ 出库单 {c['出库单']} 张（多为自动生成的领料待办）：站 7 可演示类型筛选，别点任何写操作按钮。")
+    lines.append("")
+
+    lines.append("【菜单树】演示路径全靠它，实际层级以此为准：")
+    for parent, children in data.get("menuTree", {}).items():
+        lines.append(f"  {parent}： " + " / ".join(children))
     lines.append("")
 
     lines.append("【站 1 生产工单】搜「工单号」：")
