@@ -17,8 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -120,5 +122,77 @@ class WmsKingdeeOutstockWriterImplTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.getErrorMessage().contains("未配置销售出库发货部门"));
+    }
+
+    // ---------- 关联开单（发货通知单来源，Link-Save） ----------
+
+    private WmsOutboundOrder linkedOrder() {
+        WmsOutboundOrder linked = order();
+        linked.setSourceBillNo("FHTZD036453");
+        return linked;
+    }
+
+    private void stubNoticeQuery(List<List<Object>> rows) {
+        when(formClient.executeBillQuery(eq("SAL_DELIVERYNOTICE"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", rows, null, null));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void write_linkedEntries_whenSourceBillNoPresent() {
+        stubNoticeQuery(List.of(List.of(136477, 151480, "WA.FG", 2000.0)));
+        WmsOutboundDetail linkedDetail = detail();
+        linkedDetail.setActualQty(new BigDecimal("500"));
+
+        assertTrue(writer.write(linkedOrder(), List.of(linkedDetail)).isSuccess());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(formClient).save(eq("SAL_OUTSTOCK"), captor.capture());
+        Map<String, Object> model = captor.getValue();
+        assertFalse(model.containsKey("FBillNo"));
+
+        List<Map<String, Object>> entries = (List<Map<String, Object>>) model.get("FEntity");
+        Map<String, Object> entry = entries.get(0);
+        assertEquals("SAL_DELIVERYNOTICE", entry.get("FSrcBillType"));
+        assertEquals("FHTZD036453", entry.get("FSrcBillNo"));
+        assertEquals(136477L, entry.get("FSrcInterId"));
+        assertEquals(151480, entry.get("FSrcEntryId"));
+        assertEquals(0, ((BigDecimal) entry.get("FQty")).compareTo(new BigDecimal("500")));
+        assertEquals(0, ((BigDecimal) entry.get("FRealQty")).compareTo(new BigDecimal("500")));
+        assertEquals("KCZT01_SYS", ((Map<?, ?>) entry.get("FStockStatusID")).get("FNumber"));
+        List<Map<String, Object>> links = (List<Map<String, Object>>) entry.get("FEntity_Link");
+        assertEquals(1, links.size());
+        assertEquals("DeliveryNotice-OutStock", links.get(0).get("FEntity_Link_FRuleId"));
+        assertEquals("T_SAL_DELIVERYNOTICEENTRY", links.get(0).get("FEntity_Link_FSTableName"));
+        assertEquals("136477", links.get(0).get("FEntity_Link_FSBillId"));
+        assertEquals("151480", links.get(0).get("FEntity_Link_FSId"));
+        verify(formClient).submit("SAL_OUTSTOCK", List.of("XSCK001"));
+    }
+
+    @Test
+    void write_materialMissingOnNotice_failsReadable() {
+        stubNoticeQuery(List.of(List.of(136477, 151480, "OTHER.MATERIAL", 2000.0)));
+
+        WmsOrderSyncResult result = writer.write(linkedOrder(), List.of(detail()));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("FHTZD036453"));
+        assertTrue(result.getErrorMessage().contains("WA.FG"));
+        verify(formClient, never()).save(eq("SAL_OUTSTOCK"), any());
+    }
+
+    @Test
+    void write_existingUnapprovedDraft_failsReadable() {
+        stubNoticeQuery(List.of(List.of(136477, 151480, "WA.FG", 2000.0)));
+        when(formClient.executeBillQuery(eq("SAL_OUTSTOCK"), anyString(),
+                contains("FSrcBillNo='FHTZD036453'"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("XSCK777", "A")), null, null));
+
+        WmsOrderSyncResult result = writer.write(linkedOrder(), List.of(detail()));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("XSCK777"));
+        assertTrue(result.getErrorMessage().contains("已存在未审核"));
+        verify(formClient, never()).save(eq("SAL_OUTSTOCK"), any());
     }
 }

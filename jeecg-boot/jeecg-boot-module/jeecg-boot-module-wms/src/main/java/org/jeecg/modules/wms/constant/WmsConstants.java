@@ -473,6 +473,17 @@ public final class WmsConstants {
     /** 出库类型：样品出库（对接研发仓，回写形态待 E5 确认）。 */
     public static final String OUTBOUND_TYPE_SAMPLE = "样品出库";
 
+    /** 销售出库 ↔ 发货通知单 的关联规则编码（金蝶转换规则 RuleId，2026-10-30 真账套实测）。 */
+    public static final String LINK_RULE_DELIVERY_OUTSTOCK = "DeliveryNotice-OutStock";
+    /** 发货通知单分录表名（Link 子结构的 STableName）。 */
+    public static final String LINK_TABLE_NOTICE_ENTRY = "T_SAL_DELIVERYNOTICEENTRY";
+    /** 金蝶默认库存状态：可用（销售出库分录 FStockStatusID 必填）。 */
+    public static final String STOCK_STATUS_AVAILABLE = "KCZT01_SYS";
+    /** 金蝶表单：发货通知单。 */
+    public static final String KINGDEE_FORM_DELIVERY_NOTICE = "SAL_DELIVERYNOTICE";
+    /** 金蝶单据状态：创建（草稿）。 */
+    public static final String KINGDEE_DOC_STATUS_CREATED = "A";
+
     /** 领料出库单号前缀。 */
     public static final String OUTBOUND_NO_PREFIX_PICK = "LL";
     /** 销售出库单号前缀。 */

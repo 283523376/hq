@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.sync;
 
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
@@ -111,6 +112,27 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
             subHead.put("FSettleCurrID", dict(properties.getSettleCurrency()));
             model.put("SubHeadEntity", subHead);
 
+            // 关联开单前置（发货通知单来源）：查通知单分录 + 草稿查重。
+            // 金蝶 Push 通道在下推时要填必填字段而 WebAPI 无注入口，只能走 Save-with-Link
+            // （与成品入库直开 PRD_INSTOCK↔PRD_MO 同一套路，2026-10-30 真账套实测）。
+            String noticeNo = order.getSourceBillNo();
+            boolean linked = oConvertUtils.isNotEmpty(noticeNo);
+            Map<String, NoticeEntry> noticeEntries = null;
+            if (linked) {
+                WmsOrderSyncResult precheck = prepareLinked(order, noticeNo);
+                if (precheck != null) {
+                    return precheck;
+                }
+                noticeEntries = loadNoticeEntries(noticeNo);
+                if (noticeEntries == null) {
+                    return WmsOrderSyncResult.fail("发货通知单[" + noticeNo + "]分录查询失败，无法关联开单");
+                }
+                WmsOrderSyncResult draftCheck = rejectExistingDraft(order, noticeNo);
+                if (draftCheck != null) {
+                    return draftCheck;
+                }
+            }
+
             List<Map<String, Object>> entries = new ArrayList<>();
             for (WmsOutboundDetail detail : details) {
                 String kingdeeCode = materialResolver.resolveKingdeeCode(detail.getMaterialCode());
@@ -123,6 +145,7 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
                 if (oConvertUtils.isEmpty(unitNumber)) {
                     return WmsOrderSyncResult.fail("金蝶未找到单位编码（FUnitId=" + unitId + "）");
                 }
+                BigDecimal qty = nvl(detail.getActualQty());
                 Map<String, Object> entry = new LinkedHashMap<>();
                 entry.put("FMaterialID", dict(kingdeeCode));
                 entry.put("FUnitID", dict(unitNumber));
@@ -135,7 +158,29 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
                 if (oConvertUtils.isNotEmpty(detail.getBatchNo())) {
                     entry.put("FLot", dict(detail.getBatchNo()));
                 }
-                entry.put("FRealQty", nvl(detail.getActualQty()));
+                if (linked) {
+                    NoticeEntry hit = noticeEntries.get(kingdeeCode);
+                    if (hit == null) {
+                        return WmsOrderSyncResult.fail("发货通知单[" + noticeNo + "]中没有物料[" + kingdeeCode
+                                + "]的可出库分录，请核对该通知单是否已出库或物料是否一致");
+                    }
+                    if (qty.compareTo(hit.remainOutQty) > 0) {
+                        return WmsOrderSyncResult.fail("发货通知单[" + noticeNo + "]物料[" + kingdeeCode
+                                + "]剩余可出库 " + strip(hit.remainOutQty) + " 少于本次出库 " + strip(qty)
+                                + "（可能已被其它出库单占用，请刷新后重试）");
+                    }
+                    // 来源字段必须在业务字段之前（金蝶保存顺序要求）
+                    entry.put("FSrcBillType", WmsConstants.KINGDEE_FORM_DELIVERY_NOTICE);
+                    entry.put("FSrcInterId", hit.billId);
+                    entry.put("FSrcBillNo", noticeNo.trim());
+                    entry.put("FSrcEntryId", hit.entryId);
+                    entry.put("FStockStatusID", dict(WmsConstants.STOCK_STATUS_AVAILABLE));
+                    entry.put("FQty", qty);
+                    entry.put("FRealQty", qty);
+                    entry.put("FEntity_Link", List.of(linkOf(hit)));
+                } else {
+                    entry.put("FRealQty", qty);
+                }
                 entries.add(entry);
             }
             model.put("FEntity", entries);
@@ -157,6 +202,131 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
         } catch (Exception e) {
             log.warn("销售出库[{}]回写金蝶异常：{}", billNo, e.getMessage());
             return WmsOrderSyncResult.fail("回写金蝶异常：" + e.getMessage());
+        }
+    }
+
+    /** 通知单分录（按金蝶物料编码索引）：关联开单要带上来源单据与分录内码。 */
+    private static final class NoticeEntry {
+        private final long billId;
+        private final int entryId;
+        private final BigDecimal remainOutQty;
+
+        NoticeEntry(long billId, int entryId, BigDecimal remainOutQty) {
+            this.billId = billId;
+            this.entryId = entryId;
+            this.remainOutQty = remainOutQty;
+        }
+    }
+
+    /**
+     * 关联开单前置校验：必须配了发货部门/仓管员/仓库且客户能解析，否则金蝶保存时才发现，
+     * 白跑一次查询。返回 null 表示通过。
+     */
+    private WmsOrderSyncResult prepareLinked(WmsOutboundOrder order, String noticeNo) {
+        if (oConvertUtils.isEmpty(properties.getDeliveryDeptId())
+                || oConvertUtils.isEmpty(properties.getStockerId())) {
+            return WmsOrderSyncResult.fail("关联开单缺少发货部门/仓管员配置（delivery-dept-id / stocker-id）");
+        }
+        if (lookup.customerId(order.getCustomerCode(), properties.getSaleOrgNumber()) == null) {
+            return WmsOrderSyncResult.fail("金蝶未找到客户编码：" + order.getCustomerCode());
+        }
+        if (oConvertUtils.isEmpty(noticeNo.trim())) {
+            return WmsOrderSyncResult.fail("发货通知单号为空，无法关联开单");
+        }
+        return null;
+    }
+
+    /** 查通知单分录并按金蝶物料编码索引；查询失败返回 null（调用方给可读错误）。 */
+    private Map<String, NoticeEntry> loadNoticeEntries(String noticeNo) {
+        WmsKingdeeResult result = formClient.executeBillQuery(WmsConstants.KINGDEE_FORM_DELIVERY_NOTICE,
+                "FID,FEntity_FEntryID,FMaterialID.FNumber,FRemainOutQty",
+                "FBillNo='" + noticeNo.trim().replace("'", "''") + "'", 2000);
+        if (!result.isSuccess()) {
+            log.warn("发货通知单[{}]查询失败：{}", noticeNo, result.getMessage());
+            return null;
+        }
+        Map<String, NoticeEntry> byMaterial = new LinkedHashMap<>();
+        for (List<Object> row : result.getRows()) {
+            if (row == null || row.size() < 4) {
+                continue;
+            }
+            String materialCode = str(row.get(2));
+            if (oConvertUtils.isEmpty(materialCode)) {
+                continue;
+            }
+            byMaterial.putIfAbsent(materialCode,
+                    new NoticeEntry(toLong(row.get(0)), toInt(row.get(1)), toDecimal(row.get(3))));
+        }
+        return byMaterial;
+    }
+
+    /**
+     * 草稿查重：同一通知单已有未审核（A/B）的销售出库单时不再开单。
+     *
+     * <p>草稿期间通知单剩余可出库量**不减**（审核才核销，2026-10-30 实测），
+     * 不查这一下就会重复开单。返回 null 表示无冲突。
+     */
+    private WmsOrderSyncResult rejectExistingDraft(WmsOutboundOrder order, String noticeNo) {
+        WmsKingdeeResult drafts = formClient.executeBillQuery(FORM_ID, "FBillNo,FDocumentStatus",
+                "FSrcBillNo='" + noticeNo.trim().replace("'", "''")
+                        + "' and FDocumentStatus in ('A','B')", 50);
+        if (!drafts.isSuccess()) {
+            // 查不到不等于没有：宁可拦住也不重复开单
+            return WmsOrderSyncResult.fail("发货通知单[" + noticeNo + "]的关联出库单查询失败，"
+                    + "为避免重复开单本次不开单：" + drafts.getMessage());
+        }
+        for (List<Object> row : drafts.getRows()) {
+            if (row == null || row.isEmpty()) {
+                continue;
+            }
+            String existing = str(row.get(0));
+            if (oConvertUtils.isNotEmpty(existing) && !existing.equals(order.getErpBillNo())) {
+                return WmsOrderSyncResult.fail("发货通知单[" + noticeNo + "]已存在未审核的出库单 "
+                        + existing + "，请先在金蝶处理（审核或删除）后再重试");
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> linkOf(NoticeEntry entry) {
+        Map<String, Object> link = new LinkedHashMap<>();
+        link.put("FEntity_Link_FRuleId", WmsConstants.LINK_RULE_DELIVERY_OUTSTOCK);
+        link.put("FEntity_Link_FSTableName", WmsConstants.LINK_TABLE_NOTICE_ENTRY);
+        link.put("FEntity_Link_FSBillId", String.valueOf(entry.billId));
+        link.put("FEntity_Link_FSId", String.valueOf(entry.entryId));
+        return link;
+    }
+
+    private long toLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
+    }
+
+    private int toInt(Object value) {
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return (int) Double.parseDouble(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private BigDecimal toDecimal(Object value) {
+        if (value == null || oConvertUtils.isEmpty(String.valueOf(value))) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
         }
     }
 
@@ -197,6 +367,10 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
 
     private Map<String, Object> dict(String number) {
         return Map.of("FNumber", number);
+    }
+
+    private String strip(BigDecimal value) {
+        return value == null ? "0" : value.stripTrailingZeros().toPlainString();
     }
 
     private BigDecimal nvl(BigDecimal value) {
