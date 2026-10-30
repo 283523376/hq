@@ -7,6 +7,8 @@ export const OUTBOUND_TYPE_OPTIONS = ['生产领料', '销售出库', '外协出
 
 /** 出库单状态选项 */
 export const OUTBOUND_STATUS_OPTIONS = [
+  // 草稿（外协出库只读草稿）漏了会筛不出来（2026-10-30 修）
+  '草稿',
   '待分配',
   '已分配',
   '执行中',

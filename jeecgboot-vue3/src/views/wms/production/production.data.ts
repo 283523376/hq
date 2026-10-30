@@ -3,7 +3,8 @@ import { h } from 'vue';
 import { BasicColumn, FormSchema } from '/@/components/Table';
 
 /** 生产入库状态选项 */
-export const PRODUCTION_STATUS_OPTIONS = ['待上架', '执行中', '已入库', '异常待人工', '已关闭'].map((v) => ({
+// 草稿（工序汇报草稿）是真实状态且数量最多，漏了会导致筛不出来（2026-10-30 修）
+export const PRODUCTION_STATUS_OPTIONS = ['草稿', '待上架', '执行中', '已入库', '异常待人工', '已关闭'].map((v) => ({
   label: v,
   value: v,
 }));
