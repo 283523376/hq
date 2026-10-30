@@ -68,6 +68,12 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             }
             return defectWriter.write(inbound);
         }
+        // 方案 B（2026-10-30 决策）：工序汇报来源的入库单由 ERP 车间汇报生成，
+        // WMS 只记账本仓库存。这里绝不能走开单路径——否则同一批货在金蝶记两次。
+        // 分支必须**先于**下面的 erp_bill_no 幂等查询：该字段此刻存的是 GXHB 单号。
+        if (oConvertUtils.isNotEmpty(inbound.getErpEntryKey())) {
+            return reconcileReportSourced(inbound);
+        }
         String billNo = inbound.getInboundNo();
         try {
             // 1) 幂等：本地已回存金蝶单号 → 按它跟进状态
@@ -296,6 +302,43 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
         } catch (Exception e) {
             log.warn("生产入库[{}]回写金蝶异常：{}", billNo, e.getMessage());
             return WmsOrderSyncResult.fail("回写金蝶异常：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 工序汇报来源的入库单：只对账，不开单。
+     *
+     * <p>ERP 侧的生产入库单是车间在金蝶「工序汇报」时生成的（{@code FSrcBillNo=GXHB…}），
+     * WMS 推进只负责本仓记账。这里按 GXHB 单号回查 ERP 是否已入库：
+     * 命中则把真实 SCRK 单号回存到 {@code erp_bill_no}，未命中说明车间还没汇报。
+     */
+    private WmsOrderSyncResult reconcileReportSourced(WmsProductionInbound inbound) {
+        String gxhbNo = inbound.getErpBillNo();
+        if (oConvertUtils.isEmpty(gxhbNo)) {
+            return WmsOrderSyncResult.fail("工序汇报来源缺少 GXHB 单号，无法对账（入库单 "
+                    + inbound.getInboundNo() + "）");
+        }
+        try {
+            WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, "FBillNo,FDocumentStatus",
+                    "FSrcBillNo='" + gxhbNo.replace("'", "''") + "'", 10);
+            if (!result.isSuccess()) {
+                return WmsOrderSyncResult.fail("ERP 生产入库单对账查询失败：" + result.getMessage());
+            }
+            for (List<Object> row : result.getRows()) {
+                String billNo = str(row.get(0));
+                String status = str(row.size() > 1 ? row.get(1) : null);
+                if (oConvertUtils.isNotEmpty(billNo) && ("B".equals(status) || "C".equals(status))) {
+                    persistErpBillNo(inbound.getId(), billNo);
+                    log.info("工序汇报入库对账成功：WMS单号={}，GXHB={}，ERP单号={}",
+                            inbound.getInboundNo(), gxhbNo, billNo);
+                    return WmsOrderSyncResult.ok();
+                }
+            }
+            return WmsOrderSyncResult.fail("ERP 尚未汇报入库（等待车间在金蝶完成工序汇报），GXHB 单号："
+                    + gxhbNo);
+        } catch (Exception e) {
+            log.warn("工序汇报入库[{}]对账异常：{}", inbound.getInboundNo(), e.getMessage());
+            return WmsOrderSyncResult.fail("对账异常：" + e.getMessage());
         }
     }
 

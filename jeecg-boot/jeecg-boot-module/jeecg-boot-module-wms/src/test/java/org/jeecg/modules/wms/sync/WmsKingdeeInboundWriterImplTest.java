@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -408,5 +409,58 @@ class WmsKingdeeInboundWriterImplTest {
         assertTrue(result.getErrorMessage().contains("下推"));
         verify(formClient, never()).save(anyString(), any(), eq(false));
         verify(formClient, never()).submit(anyString(), any());
+    }
+
+    // ---------- 方案 B：工序汇报来源不回写开单，按 FSrcBillNo 对账 ----------
+
+    private WmsProductionInbound reportSourced() {
+        WmsProductionInbound record = inbound("10", "0");
+        record.setId("rid1");
+        record.setErpEntryKey("GXHB659871#0#10");
+        record.setErpBillNo("GXHB659871");
+        return record;
+    }
+
+    @Test
+    void write_reportSourced_neverPushesInstock() {
+        // 工序汇报来源：ERP 侧由车间汇报入库生成 PRD_INSTOCK，
+        // WMS 再开一张就是双份入库，必须完全不碰 save/push。
+        // 这里把「旧直开路径」的桩全部铺好：若实现没有汇报来源分支，就会真的去 save。
+        stubHappyPath();
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(), contains("FSrcBillNo='GXHB659871'"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("SCRK101261000099", "B")), null, null));
+
+        WmsOrderSyncResult result = writer.write(reportSourced());
+
+        // 对账命中即视为成功，且全程不得开单
+        assertTrue(result.isSuccess(), "对账应命中 ERP 已汇报的入库单");
+        verify(formClient, never()).save(anyString(), any());
+        verify(formClient, never()).push(anyString(), any());
+    }
+
+    @Test
+    void reconcile_foundBackfillsScrkNo() {
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(), contains("FSrcBillNo='GXHB659871'"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("SCRK101261000099", "B")), null, null));
+
+        WmsOrderSyncResult result = writer.write(reportSourced());
+
+        assertTrue(result.isSuccess());
+        ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
+        verify(inboundMapper).updateById(captor.capture());
+        assertEquals("SCRK101261000099", captor.getValue().getErpBillNo(),
+                "应回填 ERP 真实生产入库单号，替换掉 GXHB 单号");
+    }
+
+    @Test
+    void reconcile_notFound_keepsGxhbNoAndNoAlert() {
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(), contains("FSrcBillNo='GXHB659871'"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+
+        WmsOrderSyncResult result = writer.write(reportSourced());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("ERP 尚未汇报入库"), "实际：" + result.getErrorMessage());
+        verify(inboundMapper, never()).updateById(any(WmsProductionInbound.class));
     }
 }
