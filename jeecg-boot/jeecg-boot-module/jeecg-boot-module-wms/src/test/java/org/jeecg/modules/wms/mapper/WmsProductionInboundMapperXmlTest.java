@@ -1,0 +1,38 @@
+package org.jeecg.modules.wms.mapper;
+
+import org.junit.jupiter.api.Test;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * @Description: 回执完成 SQL 的同步口径守卫。
+ *
+ * <p>方案 B：工序汇报来源（erp_entry_key 非空）的入库单由 ERP 车间汇报生成生产入库单，
+ * WMS 只记账本仓库存、永不进入回写队列。设备回执把状态改成「已入库」时，
+ * 若把 sync_status 一律刷成「待同步」，就会把这些单据塞进同步队列，
+ * 每轮撞「ERP 尚未汇报入库」，还会把推进时设的「无需同步」冲掉。
+ *
+ * @Author: 永鑫WMS
+ * @Date: 2026-10-30
+ */
+class WmsProductionInboundMapperXmlTest {
+
+    @Test
+    void claimFinished_keepsReportSourcedOutOfSyncQueue() throws Exception {
+        String xml = Files.readString(
+                Path.of("src/main/java/org/jeecg/modules/wms/mapper/xml/WmsProductionInboundMapper.xml"),
+                StandardCharsets.UTF_8);
+        int start = xml.indexOf("<update id=\"claimFinished\">");
+        assertTrue(start > 0, "claimFinished 语句应存在");
+        String statement = xml.substring(start, xml.indexOf("</update>", start));
+
+        assertTrue(statement.contains("erp_entry_key"),
+                "回执完成必须区分工序汇报来源：这类单据的 sync_status 不能刷成「待同步」");
+        assertTrue(statement.contains("无需同步"),
+                "工序汇报来源回执后应保持「无需同步」，永不进入回写队列");
+    }
+}
