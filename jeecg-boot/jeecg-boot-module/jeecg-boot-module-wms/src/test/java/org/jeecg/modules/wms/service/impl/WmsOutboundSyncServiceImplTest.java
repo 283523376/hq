@@ -50,7 +50,9 @@ class WmsOutboundSyncServiceImplTest {
         orderMapper = mock(WmsOutboundOrderMapper.class);
         detailMapper = mock(WmsOutboundDetailMapper.class);
         sysBaseAPI = mock(ISysBaseAPI.class);
-        service = new WmsOutboundSyncServiceImpl(gateway, orderMapper, detailMapper, sysBaseAPI);
+        service = new WmsOutboundSyncServiceImpl(gateway, orderMapper, detailMapper,
+                mock(org.jeecg.modules.wms.mapper.WmsOutboundAllocationMapper.class),
+                mock(org.jeecg.modules.wms.mapper.WmsInventoryMapper.class), sysBaseAPI);
         service.setBackoffMsForTest(new long[] {0L, 0L, 0L});
 
         WmsOutboundOrder order = new WmsOutboundOrder().setOutboundNo("OUT1").setOutboundType("生产领料");

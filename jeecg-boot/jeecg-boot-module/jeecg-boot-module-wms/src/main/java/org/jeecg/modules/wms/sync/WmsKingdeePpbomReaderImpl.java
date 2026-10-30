@@ -87,7 +87,7 @@ public class WmsKingdeePpbomReaderImpl implements IWmsKingdeePpbomReader {
         vo.setMaterialCode(wmsCode == null ? kingdeeCode : wmsCode);
         vo.setMaterialName(str(row.size() > 1 ? row.get(1) : null));
         vo.setRequiredQty(required);
-        vo.setBatchNo(emptyToNull(str(row.size() > 6 ? row.get(6) : null)));
+        vo.setBatchNo(lotToNull(str(row.size() > 6 ? row.get(6) : null)));
         vo.setUnit(str(row.size() > 7 ? row.get(7) : null));
         vo.setSourceEntryId(str(row.size() > 8 ? row.get(8) : null));
         vo.setMatched(wmsCode != null);
@@ -118,7 +118,15 @@ public class WmsKingdeePpbomReaderImpl implements IWmsKingdeePpbomReader {
         return value == null ? "" : String.valueOf(value);
     }
 
-    private String emptyToNull(String value) {
-        return oConvertUtils.isEmpty(value) ? null : value;
+    /**
+     * 批号归一：金蝶用料清单未指定批号时 FLot 返回的是字符串 "0"（不是 NULL）。
+     *
+     * <p>必须转成 null 表达「不限批号」——否则领料明细会带批次 "0"，分配时
+     * {@code selectAvailable} 按 {@code batch_no = '0'} 过滤，任何真实批次都匹配不上，
+     * 表现为「库存明明有货却报库存不足」。与工单同步的批号口径保持一致。
+     */
+    private String lotToNull(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        return (trimmed.isEmpty() || "0".equals(trimmed)) ? null : trimmed;
     }
 }

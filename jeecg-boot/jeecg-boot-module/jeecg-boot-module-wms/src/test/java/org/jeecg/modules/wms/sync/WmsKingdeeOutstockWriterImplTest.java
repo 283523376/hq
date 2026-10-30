@@ -45,8 +45,8 @@ class WmsKingdeeOutstockWriterImplTest {
         properties.setOutStockBillType("XSCKD01_SYS");
         properties.setSaleOrgNumber("101");
         properties.setSettleCurrency("PRE001");
-        properties.setDeliveryDeptId("201012");
-        properties.setStockerId("1001");
+        properties.setDeliveryDeptId("10.10.11.11");
+        properties.setStockerId("0136");
         properties.setOwnerType("BD_OwnerOrg");
         properties.setKeeperType("BD_KeeperOrg");
         properties.setMaterialMap(Map.of("FG001", "WA.FG"));
@@ -94,9 +94,14 @@ class WmsKingdeeOutstockWriterImplTest {
         // 单号以金蝶为准：不再传 FBillNo
         assertFalse(model.containsKey("FBillNo"));
         assertEquals("XSCKD01_SYS", ((Map<?, ?>) model.get("FBillTypeID")).get("FNumber"));
-        assertEquals(777L, ((Map<?, ?>) model.get("FCustomerID")).get("Id"));
-        assertEquals("201012", ((Map<?, ?>) model.get("FDeliveryDeptID")).get("FNumber"));
-        assertEquals("1001", ((Map<?, ?>) model.get("FStockerID")).get("FNumber"));
+        // 基础资料按编码引用：真账套实测 Id 形式不绑定（2026-10-30）
+        assertEquals("01.001", ((Map<?, ?>) model.get("FCustomerID")).get("FNumber"));
+        assertEquals("10.10.11.11", ((Map<?, ?>) model.get("FDeliveryDeptID")).get("FNumber"));
+        assertEquals("0136", ((Map<?, ?>) model.get("FStockerID")).get("FNumber"));
+        // 财务信息是单值子实体：传数组金蝶报「不能转换为字典类型」（2026-10-30 真账套实测）
+        Object subHead = model.get("SubHeadEntity");
+        assertTrue(subHead instanceof Map, "SubHeadEntity 必须是字典，不能是数组");
+        assertEquals("PRE001", ((Map<?, ?>) ((Map<?, ?>) subHead).get("FSettleCurrID")).get("FNumber"));
 
         List<Map<String, Object>> entries = (List<Map<String, Object>>) model.get("FEntity");
         Map<String, Object> entry = entries.get(0);

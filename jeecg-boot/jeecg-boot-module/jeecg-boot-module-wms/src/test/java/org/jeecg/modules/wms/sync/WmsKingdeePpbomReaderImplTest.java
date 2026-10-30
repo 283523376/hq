@@ -10,6 +10,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -81,6 +82,23 @@ class WmsKingdeePpbomReaderImplTest {
                 .thenReturn(WmsKingdeeResult.fail("元数据错误"));
 
         assertTrue(reader.read("FG001173").isEmpty());
+    }
+
+    @Test
+    void read_zeroLot_isTreatedAsUnspecified() {
+        // 金蝶未指定批号时 FLot 返回字符串 "0"：必须落成 null（不限批号），
+        // 否则领料明细带批次 "0"，分配按 batch_no='0' 过滤 → 永远「库存不足」
+        when(formClient.executeBillQuery(eq("PRD_PPBOM"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(
+                        List.of("WA.123", "未加工集成电路板", 10, 10, 0, "02.011", "0", "zhi", 261500),
+                        List.of("WA.123", "未加工集成电路板", 20, 20, 0, "02.011", "L2", "zhi", 261501)
+                ), null, null));
+
+        List<WmsOutboundRequirementVO> list = reader.read("FG001173");
+
+        assertEquals(2, list.size());
+        assertNull(list.get(0).getBatchNo());
+        assertEquals("L2", list.get(1).getBatchNo());
     }
 
     @Test

@@ -6,8 +6,12 @@ import org.jeecg.common.api.dto.message.MessageDTO;
 import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.entity.WmsInventory;
+import org.jeecg.modules.wms.entity.WmsOutboundAllocation;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
+import org.jeecg.modules.wms.mapper.WmsInventoryMapper;
+import org.jeecg.modules.wms.mapper.WmsOutboundAllocationMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.jeecg.modules.wms.service.IWmsOutboundSyncService;
@@ -17,8 +21,11 @@ import org.jeecg.modules.wms.sync.WmsOrderSyncResult;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @Description: 出库同步重试（照 RK-002 的同步编排）。
@@ -33,6 +40,8 @@ public class WmsOutboundSyncServiceImpl implements IWmsOutboundSyncService {
     private final IWmsOutboundSyncGateway gateway;
     private final WmsOutboundOrderMapper orderMapper;
     private final WmsOutboundDetailMapper detailMapper;
+    private final WmsOutboundAllocationMapper allocationMapper;
+    private final WmsInventoryMapper inventoryMapper;
     private final ISysBaseAPI sysBaseAPI;
 
     private long[] backoffMs = WmsConstants.SYNC_RETRY_BACKOFF_MS;
@@ -43,10 +52,14 @@ public class WmsOutboundSyncServiceImpl implements IWmsOutboundSyncService {
     public WmsOutboundSyncServiceImpl(IWmsOutboundSyncGateway gateway,
                                       WmsOutboundOrderMapper orderMapper,
                                       WmsOutboundDetailMapper detailMapper,
+                                      WmsOutboundAllocationMapper allocationMapper,
+                                      WmsInventoryMapper inventoryMapper,
                                       ISysBaseAPI sysBaseAPI) {
         this.gateway = gateway;
         this.orderMapper = orderMapper;
         this.detailMapper = detailMapper;
+        this.allocationMapper = allocationMapper;
+        this.inventoryMapper = inventoryMapper;
         this.sysBaseAPI = sysBaseAPI;
     }
 
@@ -63,6 +76,7 @@ public class WmsOutboundSyncServiceImpl implements IWmsOutboundSyncService {
         }
         List<WmsOutboundDetail> details = detailMapper.selectList(Wrappers.<WmsOutboundDetail>query()
                 .eq("outbound_id", outboundId).orderByAsc("line_no"));
+        details = expandByAllocation(outboundId, details);
         WmsOrderSyncResult last = null;
         for (int i = 0; i <= WmsConstants.SYNC_MAX_RETRY; i++) {
             last = gateway.sync(order, details);
@@ -81,6 +95,80 @@ public class WmsOutboundSyncServiceImpl implements IWmsOutboundSyncService {
             alert(WmsConstants.OUTBOUND_SYNC_ALERT_TITLE, order, error);
         }
         return new WmsOrderSyncAttempt(false, error, WmsConstants.SYNC_MAX_RETRY);
+    }
+
+    /**
+     * 出库明细 → ERP 行：按**分配行**展开，并补齐实际批号。
+     *
+     * <p>为什么必须展开：销售出库的明细来自发货通知单，批号常常为空（金蝶 FLot 未指定），
+     * 而金蝶物料启用批号管理时 Save 会报「批号为空，请录入批号」——批号只有实际扣减的库存行知道。
+     * 同一明细可能跨多个批次（FIFO），一行一个批号会写错数量，所以按分配行拆开。
+     *
+     * <p>没有分配行（历史单/未分配）时原样返回，行为不变。
+     */
+    private List<WmsOutboundDetail> expandByAllocation(String outboundId, List<WmsOutboundDetail> details) {
+        if (details == null || details.isEmpty()) {
+            return details;
+        }
+        List<WmsOutboundAllocation> allocations = allocationMapper.selectList(
+                Wrappers.<WmsOutboundAllocation>query().eq("outbound_id", outboundId).orderByAsc("id"));
+        if (allocations == null || allocations.isEmpty()) {
+            return details;
+        }
+        Map<String, WmsOutboundAllocation> byDetail = new LinkedHashMap<>();
+        for (WmsOutboundAllocation allocation : allocations) {
+            byDetail.putIfAbsent(allocation.getDetailId(), allocation);
+        }
+        List<WmsOutboundDetail> expanded = new ArrayList<>();
+        for (WmsOutboundDetail detail : details) {
+            boolean split = false;
+            for (WmsOutboundAllocation allocation : allocations) {
+                if (!detail.getId().equals(allocation.getDetailId())) {
+                    continue;
+                }
+                WmsOutboundDetail line = copyOf(detail);
+                line.setBatchNo(resolveAllocationBatch(detail.getBatchNo(), allocation));
+                if (allocation.getActualQty() != null && allocation.getActualQty().signum() > 0) {
+                    line.setActualQty(allocation.getActualQty());
+                }
+                expanded.add(line);
+                split = true;
+            }
+            if (!split) {
+                // 没有分配行的明细（历史数据）：批号仍为空时不做猜测，交由金蝶报错，避免写错批次
+                expanded.add(detail);
+            }
+        }
+        return expanded;
+    }
+
+    private WmsOutboundDetail copyOf(WmsOutboundDetail source) {
+        WmsOutboundDetail copy = new WmsOutboundDetail();
+        copy.setId(source.getId());
+        copy.setOutboundId(source.getOutboundId());
+        copy.setLineNo(source.getLineNo());
+        copy.setMaterialId(source.getMaterialId());
+        copy.setMaterialCode(source.getMaterialCode());
+        copy.setMaterialName(source.getMaterialName());
+        copy.setBatchNo(source.getBatchNo());
+        copy.setRequiredQty(source.getRequiredQty());
+        copy.setAllocatedQty(source.getAllocatedQty());
+        copy.setActualQty(source.getActualQty());
+        copy.setUnit(source.getUnit());
+        copy.setSourceEntryId(source.getSourceEntryId());
+        return copy;
+    }
+
+    /** 明细没带批号时，用实际扣减的库存行批号兜底（金蝶按批号出库）。 */
+    private String resolveAllocationBatch(String detailBatch, WmsOutboundAllocation allocation) {
+        if (oConvertUtils.isNotEmpty(detailBatch)) {
+            return detailBatch;
+        }
+        if (oConvertUtils.isEmpty(allocation.getInventoryId())) {
+            return detailBatch;
+        }
+        WmsInventory inventory = inventoryMapper.selectById(allocation.getInventoryId());
+        return inventory == null ? detailBatch : inventory.getBatchNo();
     }
 
     @Override

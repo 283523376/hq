@@ -644,9 +644,11 @@ wms:
         # 测试环境 BD_Saler 样例（李传东）；生产按实际业务员覆盖
         saler-id: "${KINGDEE_SALER_ID:2040411001_GW000005_1}"
         settle-currency: "${KINGDEE_SETTLE_CURRENCY:PRE001}"
-        # 测试环境 BD_Department / BD_Empinfo 样例；生产按实际发货部门/仓管员覆盖
-        delivery-dept-id: "${KINGDEE_DELIVERY_DEPT_ID:201012}"
-        stocker-id: "${KINGDEE_STOCKER_ID:1040401001}"
+        # 测试环境 BD_Department / BD_Empinfo 编码；生产按实际发货部门/仓管员覆盖。
+        # 原值 201012（品质组）属组织 100、1040401001 不是仓管员，101 组织的销售出库 Save 会报
+        # 「发货部门/仓管员是必填项」——2026-10-30 真账套实测，取值改为 101 单上的实际值。
+        delivery-dept-id: "${KINGDEE_DELIVERY_DEPT_ID:10.10.11.11}"
+        stocker-id: "${KINGDEE_STOCKER_ID:0136}"
         # CK-004 库存调拨：标准直接调拨单 / 同组织调拨 / 普通方向
         transfer-bill-type: "${KINGDEE_TRANSFER_BILL_TYPE:ZJDB01_SYS}"
         transfer-biz-type: "${KINGDEE_TRANSFER_BIZ_TYPE:InnerOrgTransfer}"

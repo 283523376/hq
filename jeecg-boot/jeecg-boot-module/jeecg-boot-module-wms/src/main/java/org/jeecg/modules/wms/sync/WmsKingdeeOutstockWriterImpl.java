@@ -100,12 +100,16 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
             model.put("FSaleOrgId", dict(orgNumber));
             model.put("FStockOrgId", dict(orgNumber));
             model.put("FBillTypeID", dict(properties.getOutStockBillType()));
-            model.put("FCustomerID", idDict(customerId));
+            // 基础资料一律用编码引用：真账套实测 `{"Id":...}` 不绑定，金蝶报「字段“客户”是必填项」
+            model.put("FCustomerID", dict(order.getCustomerCode()));
             model.put("FDeliveryDeptID", dict(properties.getDeliveryDeptId()));
             model.put("FStockerID", dict(properties.getStockerId()));
-            model.put("SubHeadEntity", List.of(Map.of(
-                    "FSettleOrgID", dict(orgNumber),
-                    "FSettleCurrID", dict(properties.getSettleCurrency()))));
+            // SubHeadEntity（财务信息）是**单值**子实体：必须传字典，不能传数组。
+            // 传 List 时金蝶报「字段Key:SubHeadEntity…格式错误，不能转换为字典类型」（2026-10-30 真账套实测）
+            Map<String, Object> subHead = new LinkedHashMap<>();
+            subHead.put("FSettleOrgID", dict(orgNumber));
+            subHead.put("FSettleCurrID", dict(properties.getSettleCurrency()));
+            model.put("SubHeadEntity", subHead);
 
             List<Map<String, Object>> entries = new ArrayList<>();
             for (WmsOutboundDetail detail : details) {
@@ -193,10 +197,6 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
 
     private Map<String, Object> dict(String number) {
         return Map.of("FNumber", number);
-    }
-
-    private Map<String, Object> idDict(Object id) {
-        return Map.of("Id", id);
     }
 
     private BigDecimal nvl(BigDecimal value) {
