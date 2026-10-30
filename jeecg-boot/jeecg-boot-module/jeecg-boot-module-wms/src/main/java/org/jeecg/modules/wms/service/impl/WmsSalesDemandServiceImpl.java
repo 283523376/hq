@@ -185,7 +185,8 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
      * 草稿/已提交未审期间不减（2026-10-30 真账套实测）。只扣 WMS 自己的在途单，
      * 会把「金蝶已开、WMS 还没开」的量算成缺口 → 每轮生成都重复开单。
      *
-     * <p>只统计 **A/B（未审核）**：C 已审核时 remain 已经核销过，再扣一次会少生成。
+     * <p>统计**非已审核**（≠C）：C 已审核时 remain 已经核销过，再扣一次会少生成；
+     * 提交被业务闸门拦下时金蝶会停在 A/B/D 等中间态，这些都要算占用才不重复开单。
      *
      * <p>查询失败返回空集合、不阻断生成（ERP 抖动不该让整批待办都生成不了）；
      * 真正的兜底在回写侧——开单前会查同通知单是否已有未审核出库单并拦住。
@@ -194,7 +195,7 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
         WmsKingdeeResult result = formClient.executeBillQuery("SAL_OUTSTOCK",
                 "FSrcBillNo,FMaterialID.FNumber,FRealQty,FDocumentStatus",
                 "FSrcBillNo='" + noticeNo.trim().replace("'", "''")
-                        + "' and FDocumentStatus in ('A','B')", 2000);
+                        + "' and FDocumentStatus <> 'C'", 2000);
         if (!result.isSuccess()) {
             log.warn("发货通知单[{}]关联出库单查询失败，本次不扣减 ERP 已关联量：{}",
                     noticeNo, result.getMessage());

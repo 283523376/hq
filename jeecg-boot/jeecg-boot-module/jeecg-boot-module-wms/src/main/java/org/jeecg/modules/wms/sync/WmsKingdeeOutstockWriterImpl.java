@@ -193,12 +193,11 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
             if (oConvertUtils.isEmpty(erpBillNo)) {
                 return WmsOrderSyncResult.fail("金蝶销售出库保存后未返回单号（WMS单号 " + billNo + "）");
             }
-            WmsOrderSyncResult result = submit(erpBillNo);
-            if (result.isSuccess()) {
-                // 回存失败必须抛出：没有 erp_bill_no，重试会重复开单
-                persistErpBillNo(order.getId(), erpBillNo);
-            }
-            return result;
+            // 单号一保存成功就立刻回存，不等提交结果：提交失败（信用超标、必填未过等）
+            // 是可人工修复的业务闸门，单号丢了 WMS 就与 ERP 单据彻底失联——重试只会撞草稿查重，
+            // 永远补不上提交。回存失败抛出 → 本次失败，防重试重复开单。
+            persistErpBillNo(order.getId(), erpBillNo);
+            return submit(erpBillNo);
         } catch (Exception e) {
             log.warn("销售出库[{}]回写金蝶异常：{}", billNo, e.getMessage());
             return WmsOrderSyncResult.fail("回写金蝶异常：" + e.getMessage());
@@ -268,8 +267,10 @@ public class WmsKingdeeOutstockWriterImpl implements IWmsKingdeeOutstockWriter {
      */
     private WmsOrderSyncResult rejectExistingDraft(WmsOutboundOrder order, String noticeNo) {
         WmsKingdeeResult drafts = formClient.executeBillQuery(FORM_ID, "FBillNo,FDocumentStatus",
+                // 用「非已审核」而不是列状态：提交被业务闸门拦下时金蝶会停在 A/B/D 等中间态，
+                // 列状态漏一个就会重复开单（2026-10-30 实测 Submit 被信用控制拦后状态为 D）
                 "FSrcBillNo='" + noticeNo.trim().replace("'", "''")
-                        + "' and FDocumentStatus in ('A','B')", 50);
+                        + "' and FDocumentStatus <> 'C'", 50);
         if (!drafts.isSuccess()) {
             // 查不到不等于没有：宁可拦住也不重复开单
             return WmsOrderSyncResult.fail("发货通知单[" + noticeNo + "]的关联出库单查询失败，"

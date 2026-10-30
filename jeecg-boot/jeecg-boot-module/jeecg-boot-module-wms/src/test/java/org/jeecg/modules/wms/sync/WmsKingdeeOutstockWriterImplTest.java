@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -122,6 +123,25 @@ class WmsKingdeeOutstockWriterImplTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.getErrorMessage().contains("未配置销售出库发货部门"));
+    }
+
+
+    @Test
+    void write_submitFails_stillPersistsBillNo() {
+        // 金蝶保存成功、提交失败（如信用超标）时，单号必须立刻回存：
+        // 否则 WMS 丢了与 ERP 单据的关联，重试只会撞草稿查重，永远补不上提交。
+        when(formClient.submit(eq("SAL_OUTSTOCK"), eq(List.of("XSCK001"))))
+                .thenReturn(WmsKingdeeResult.fail("信用超标,需要进行密码特批处理"));
+
+        WmsOrderSyncResult result = writer.write(order(), List.of(detail()));
+
+        assertFalse(result.isSuccess());
+        ArgumentCaptor<WmsOutboundOrder> patchCaptor = ArgumentCaptor.forClass(WmsOutboundOrder.class);
+        verify(outboundMapper, atLeastOnce()).updateById(patchCaptor.capture());
+        assertTrue(patchCaptor.getAllValues().stream()
+                        .anyMatch(p -> "XSCK001".equals(p.getErpBillNo())),
+                "保存成功的单号必须回存，实际回存值：" + patchCaptor.getAllValues().stream()
+                        .map(WmsOutboundOrder::getErpBillNo).toList());
     }
 
     // ---------- 关联开单（发货通知单来源，Link-Save） ----------
