@@ -325,9 +325,12 @@ public class WmsProductionInboundServiceImpl
                 .setCarrierCode(carrier)
                 .setIdentType(WmsConstants.IDENT_TYPE_RFID)
                 // 方案 B：ERP 侧由车间汇报入库，WMS 永不进入回写队列（否则会撞流程门槛或双份开单）
-                .setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED);
-        // setUpdateTime 定义在父类 JeecgEntity 上，链式会退化类型，单独调用
+                .setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED)
+                // 推进即视为提交：未下发补偿按 submit_time 取候选，不写这里就永远补不回来
+                .setSubmitTime(new Date());
+        // setUpdateTime / setOperator 定义在父类 JeecgEntity 上，链式会退化类型，单独调用
         patch.setUpdateTime(new Date());
+        patch.setOperator(WmsUtils.currentUsername());
         int affected = inboundMapper.update(patch, Wrappers.<WmsProductionInbound>update()
                 .eq("id", id)
                 .eq("status", WmsConstants.PROD_STATUS_DRAFT));
@@ -361,7 +364,9 @@ public class WmsProductionInboundServiceImpl
                 .set("status", WmsConstants.PROD_STATUS_INBOUND)
                 .set("task_status", WmsConstants.TASK_STATUS_FINISHED)
                 .set("complete_time", new Date())
-                .set("sync_status", WmsConstants.SYNC_STATUS_PENDING)
+                // 方案 B：工序汇报来源由 ERP 车间汇报生成入库单，WMS 永不进回写队列
+                .set("sync_status", oConvertUtils.isNotEmpty(record.getErpEntryKey())
+                        ? WmsConstants.SYNC_STATUS_NOT_REQUIRED : WmsConstants.SYNC_STATUS_PENDING)
                 .set("manual_remark", remark)
                 .setSql("task_error = NULL")
                 .set("update_time", new Date())

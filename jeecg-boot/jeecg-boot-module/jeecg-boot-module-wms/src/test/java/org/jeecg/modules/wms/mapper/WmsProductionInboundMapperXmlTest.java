@@ -35,4 +35,21 @@ class WmsProductionInboundMapperXmlTest {
         assertTrue(statement.contains("无需同步"),
                 "工序汇报来源回执后应保持「无需同步」，永不进入回写队列");
     }
+
+    @Test
+    void reconcileCandidates_doesNotHardcodeBillPrefix() throws Exception {
+        String xml = Files.readString(
+                Path.of("src/main/java/org/jeecg/modules/wms/mapper/xml/WmsProductionInboundMapper.xml"),
+                StandardCharsets.UTF_8);
+        int start = xml.indexOf("id=\"selectReportSourcedPendingReconcile\"");
+        assertTrue(start > 0, "对账候选查询应存在");
+        String statement = xml.substring(start, xml.indexOf("</select>", start));
+
+        assertTrue(!statement.contains("LIKE 'GXHB%'"),
+                "对账键不能写死单号前缀：金蝶编码规则一改，新单就永远进不了候选（静默失败）");
+        assertTrue(statement.contains("SUBSTRING_INDEX"),
+                "用 erp_bill_no 是否仍等于 erp_entry_key 的单号段来判断「尚未回填」，回填后自动退出候选");
+        assertTrue(statement.contains("update_time DESC"),
+                "候选按最近更新排序：老单沉底但不阻断新单，避免批次被永久占满");
+    }
 }

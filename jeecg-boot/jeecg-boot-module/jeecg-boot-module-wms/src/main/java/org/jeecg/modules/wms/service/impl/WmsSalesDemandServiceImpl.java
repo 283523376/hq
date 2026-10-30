@@ -136,8 +136,10 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
     /** 逐行算缺口（未出库 − 在途 − ERP 已关联）；仓库映射未命中的行跳过并记原因。 */
     private List<WmsOutboundDetailDTO> buildGapDetails(String billNo, List<List<Object>> rows,
                                                        WmsDemandResultVO vo) {
-        Map<String, BigDecimal> inFlight = inFlightQtyByMaterial(billNo);
-        Map<String, BigDecimal> erpLinked = erpLinkedQtyByMaterial(billNo);
+        // 在途量与 ERP 已关联量都是**物料级**汇总：同物料多行时必须逐行递减消耗，
+        // 否则每一行都按全额扣一次，缺口被扣穿（真实缺口 70 会算成 40）
+        Map<String, BigDecimal> inFlightLeft = new LinkedHashMap<>(inFlightQtyByMaterial(billNo));
+        Map<String, BigDecimal> erpLinkedLeft = new LinkedHashMap<>(erpLinkedQtyByMaterial(billNo));
         List<WmsOutboundDetailDTO> details = new ArrayList<>();
         for (List<Object> row : rows) {
             String kingdeeMaterial = str(row, 4);
@@ -157,16 +159,24 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
             if (oConvertUtils.isEmpty(wmsMaterialCode)) {
                 wmsMaterialCode = kingdeeMaterial;
             }
-            BigDecimal alreadyWms = inFlight.getOrDefault(wmsMaterialCode, BigDecimal.ZERO);
-            BigDecimal alreadyErp = erpLinked.getOrDefault(kingdeeMaterial, BigDecimal.ZERO);
+            BigDecimal alreadyWms = inFlightLeft.getOrDefault(wmsMaterialCode, BigDecimal.ZERO);
+            BigDecimal alreadyErp = erpLinkedLeft.getOrDefault(kingdeeMaterial, BigDecimal.ZERO);
             BigDecimal gap = remain.subtract(alreadyWms).subtract(alreadyErp);
             if (gap.signum() <= 0) {
+                // 本行已被占满：占用量只消耗到本行的剩余量为上限，剩余部分留给后续行
+                consume(inFlightLeft, wmsMaterialCode, remain);
+                consume(erpLinkedLeft, kingdeeMaterial, remain);
                 if (alreadyErp.signum() > 0 && alreadyWms.signum() <= 0) {
                     skip(vo, billNo + "：ERP 已有关联出库单（物料 " + kingdeeMaterial + " 已占用 "
                             + strip(alreadyErp) + "），本通知单无需再生成待办");
                 }
                 continue;
             }
+            // 本行消耗掉的占用量：先扣在途、再扣 ERP 已关联
+            BigDecimal usedWms = alreadyWms.min(remain);
+            BigDecimal usedErp = alreadyErp.min(remain.subtract(usedWms));
+            consume(inFlightLeft, wmsMaterialCode, usedWms.add(gap));
+            consume(erpLinkedLeft, kingdeeMaterial, usedErp);
             WmsOutboundDetailDTO detail = new WmsOutboundDetailDTO();
             detail.setMaterialCode(wmsMaterialCode);
             detail.setBatchNo(oConvertUtils.isEmpty(lot) ? null : lot);
@@ -214,6 +224,15 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
             byMaterial.merge(material, qty, BigDecimal::add);
         }
         return byMaterial;
+    }
+
+    /** 从物料级占用池里扣掉本行消耗的量，最少扣到 0（不能让占用变负数影响后续行）。 */
+    private void consume(Map<String, BigDecimal> pool, String key, BigDecimal used) {
+        if (used == null || used.signum() <= 0) {
+            return;
+        }
+        BigDecimal left = pool.getOrDefault(key, BigDecimal.ZERO).subtract(used);
+        pool.put(key, left.signum() > 0 ? left : BigDecimal.ZERO);
     }
 
     private String strip(BigDecimal value) {

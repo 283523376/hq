@@ -58,6 +58,9 @@
          LIMIT #{limit}
     </select>
 
+    <!-- 工序汇报来源的待对账候选：erp_bill_no 仍是汇报单号（= erp_entry_key 的 # 前段）时才需要对账；
+         不写死单号前缀，金蝶编码规则变了也不会静默失效，回填成 ERP 单号后自动退出候选。
+         按 update_time 倒序：老单沉底但不永久占满批次，新入完库的单不会被饿死。 -->
     <select id="selectReportSourcedPendingReconcile" resultType="org.jeecg.modules.wms.entity.WmsProductionInbound">
         SELECT *
           FROM wms_production_inbound
@@ -65,8 +68,8 @@
            AND status = '已入库'
            AND erp_entry_key IS NOT NULL
            AND erp_entry_key &lt;&gt; ''
-           AND erp_bill_no LIKE 'GXHB%'
-         ORDER BY id
+           AND erp_bill_no = SUBSTRING_INDEX(erp_entry_key, CHAR(35), 1)
+         ORDER BY update_time DESC
          LIMIT #{limit}
     </select>
 

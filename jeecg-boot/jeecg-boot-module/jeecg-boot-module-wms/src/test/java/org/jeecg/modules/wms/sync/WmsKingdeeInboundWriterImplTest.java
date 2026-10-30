@@ -463,4 +463,23 @@ class WmsKingdeeInboundWriterImplTest {
         assertTrue(result.getErrorMessage().contains("ERP 尚未汇报入库"), "实际：" + result.getErrorMessage());
         verify(inboundMapper, never()).updateById(any(WmsProductionInbound.class));
     }
+
+    @Test
+    void reconcile_prefersBillMatchingQuantity_whenMultipleInboundBills() {
+        // 一张工序汇报可能按分录/批次生成多张入库单：WMS 这行是 10 件，
+        // 不应盲目取第一张（5 件）——数量对不上的回填会让追溯全部错位
+        WmsProductionInbound record = reportSourced();
+        record.setGoodQty(new BigDecimal("10"));
+        when(formClient.executeBillQuery(eq("PRD_INSTOCK"), anyString(), contains("FSrcBillNo='GXHB659871'"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(
+                        List.of("SCRK-A", "B", 5.0),
+                        List.of("SCRK-B", "C", 10.0)), null, null));
+
+        assertTrue(writer.write(record).isSuccess());
+
+        ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
+        verify(inboundMapper).updateById(captor.capture());
+        assertEquals("SCRK-B", captor.getValue().getErpBillNo(),
+                "应回填数量与本单据一致的那张入库单");
+    }
 }

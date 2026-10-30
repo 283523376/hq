@@ -131,4 +131,40 @@ class WmsProductionPromoteTest {
 
         assertTrue(e.getMessage().contains("已被推进"), "实际：" + e.getMessage());
     }
+
+    @Test
+    void promote_writesSubmitTimeAndOperator() {
+        when(inboundMapper.selectById("id1")).thenReturn(draft());
+        stubFreeLocation("loc1");
+        when(inboundMapper.update(any(), any(Wrapper.class))).thenReturn(1);
+
+        service.promote("id1", "BOX-B-01");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
+        verify(inboundMapper).update(captor.capture(), any(Wrapper.class));
+        // 未下发补偿按 submit_time < 阈值 取候选；推进不写这里，下发失败的单永远补不回来
+        assertNotNull(captor.getValue().getSubmitTime(), "推进必须写 submit_time，否则未下发补偿捞不到");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void manualComplete_keepsReportSourcedOutOfSyncQueue() {
+        WmsProductionInbound exception = draft();
+        exception.setStatus(WmsConstants.PROD_STATUS_EXCEPTION);
+        when(inboundMapper.selectById("id1")).thenReturn(exception);
+        when(inboundMapper.update(any(), any(Wrapper.class))).thenReturn(1);
+
+        service.manualComplete("id1", null);
+
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<WmsProductionInbound>>
+                captor = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper.class);
+        verify(inboundMapper).update(org.mockito.ArgumentMatchers.isNull(), captor.capture());
+        Object syncValue = captor.getValue().getParamNameValuePairs().entrySet().stream()
+                .filter(e -> WmsConstants.SYNC_STATUS_PENDING.equals(e.getValue())
+                        || WmsConstants.SYNC_STATUS_NOT_REQUIRED.equals(e.getValue()))
+                .map(java.util.Map.Entry::getValue).findFirst().orElse(null);
+        assertEquals(WmsConstants.SYNC_STATUS_NOT_REQUIRED, syncValue,
+                "工序汇报来源转人工完成后同样不能进回写队列（方案 B）");
+    }
 }

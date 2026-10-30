@@ -319,20 +319,37 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
                     + inbound.getInboundNo() + "）");
         }
         try {
-            WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, "FBillNo,FDocumentStatus",
-                    "FSrcBillNo='" + gxhbNo.replace("'", "''") + "'", 10);
+            WmsKingdeeResult result = formClient.executeBillQuery(FORM_ID, "FBillNo,FDocumentStatus,FRealQty",
+                    "FSrcBillNo='" + gxhbNo.replace("'", "''") + "'", 20);
             if (!result.isSuccess()) {
                 return WmsOrderSyncResult.fail("ERP 生产入库单对账查询失败：" + result.getMessage());
             }
+            // 一张工序汇报可能按分录/批次生成多张入库单：优先取数量与本单据一致的，
+            // 都不同才退回第一张——盲取第一张会让按单号的追溯全部错位。
+            String fallback = null;
             for (List<Object> row : result.getRows()) {
                 String billNo = str(row.get(0));
                 String status = str(row.size() > 1 ? row.get(1) : null);
-                if (oConvertUtils.isNotEmpty(billNo) && ("B".equals(status) || "C".equals(status))) {
+                if (oConvertUtils.isEmpty(billNo) || !("B".equals(status) || "C".equals(status))) {
+                    continue;
+                }
+                BigDecimal billQty = toDecimal(row.size() > 2 ? row.get(2) : null);
+                BigDecimal mine = inbound.getGoodQty() == null ? BigDecimal.ZERO : inbound.getGoodQty();
+                if (mine.signum() > 0 && billQty.compareTo(mine) == 0) {
                     persistErpBillNo(inbound.getId(), billNo);
-                    log.info("工序汇报入库对账成功：WMS单号={}，GXHB={}，ERP单号={}",
+                    log.info("工序汇报入库对账成功（数量匹配）：WMS单号={}，GXHB={}，ERP单号={}",
                             inbound.getInboundNo(), gxhbNo, billNo);
                     return WmsOrderSyncResult.ok();
                 }
+                if (fallback == null) {
+                    fallback = billNo;
+                }
+            }
+            if (fallback != null) {
+                persistErpBillNo(inbound.getId(), fallback);
+                log.warn("工序汇报入库对账：GXHB={} 有多张入库单且数量都不匹配，回填第一张 {}，请人工核对",
+                        gxhbNo, fallback);
+                return WmsOrderSyncResult.ok();
             }
             return WmsOrderSyncResult.fail("ERP 尚未汇报入库（等待车间在金蝶完成工序汇报），GXHB 单号："
                     + gxhbNo);
@@ -569,5 +586,17 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
 
     private String str(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    /** 文本转数量：金蝶回传可能是数字或字符串，解析失败按 0（数量匹配只是择优，不是硬校验）。 */
+    private BigDecimal toDecimal(Object value) {
+        if (value == null || oConvertUtils.isEmpty(String.valueOf(value))) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
     }
 }

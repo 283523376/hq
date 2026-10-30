@@ -116,12 +116,15 @@ class WmsProductionSyncRetryJobTest {
     void job_skipsReconcileWhenAutoSyncOff() {
         org.jeecg.modules.wms.service.IWmsSystemConfigService configService =
                 mock(org.jeecg.modules.wms.service.IWmsSystemConfigService.class);
-        when(configService.getString(any(), any())).thenReturn("false");
+        // 闸门读的是 getBool(key, 默认 true)，stub getString 不会生效（曾导致用例靠 mock 默认值假绿）
+        when(configService.getBool(any(), eq(true))).thenReturn(false);
         WmsProductionSyncRetryJob offlineJob =
                 new WmsProductionSyncRetryJob(inboundService, syncService, taskService, configService);
 
         offlineJob.scanAndResyncForTest();
 
+        // 证明确实走到了闸门判断（而不是靠 mock 默认值碰巧通过）
+        verify(configService).getBool(any(), eq(true));
         verify(inboundService, never()).selectReportSourcedPendingReconcile(anyInt());
     }
 }

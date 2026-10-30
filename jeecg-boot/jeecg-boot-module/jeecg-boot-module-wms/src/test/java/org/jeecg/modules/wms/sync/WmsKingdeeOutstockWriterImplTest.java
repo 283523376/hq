@@ -215,4 +215,48 @@ class WmsKingdeeOutstockWriterImplTest {
         assertTrue(result.getErrorMessage().contains("已存在未审核"));
         verify(formClient, never()).save(eq("SAL_OUTSTOCK"), any());
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void write_linkedSpansMultipleNoticeEntries_forSameMaterial() {
+        // 通知单同一物料分两行（不同批次/仓位）：100 + 1900。
+        // 出库 1000 必须拆成两条金蝶分录（100 绑第一条、900 绑第二条），
+        // 不能只拿第一条比余量（那会误报「剩余不足」），也不能两条都绑同一条（超额）。
+        stubNoticeQuery(List.of(
+                List.of(136477, 151480, "WA.FG", 100.0),
+                List.of(136477, 151481, "WA.FG", 1900.0)));
+        WmsOutboundDetail linkedDetail = detail();
+        linkedDetail.setActualQty(new BigDecimal("1000"));
+
+        assertTrue(writer.write(linkedOrder(), List.of(linkedDetail)).isSuccess());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(formClient).save(eq("SAL_OUTSTOCK"), captor.capture());
+        List<Map<String, Object>> entries =
+                (List<Map<String, Object>>) captor.getValue().get("FEntity");
+        assertEquals(2, entries.size(), "跨分录必须拆成两条，实际：" + entries.size());
+        assertEquals(151480, entries.get(0).get("FSrcEntryId"));
+        assertEquals(0, ((BigDecimal) entries.get(0).get("FRealQty")).compareTo(new BigDecimal("100")));
+        assertEquals(151481, entries.get(1).get("FSrcEntryId"));
+        assertEquals(0, ((BigDecimal) entries.get(1).get("FRealQty")).compareTo(new BigDecimal("900")));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void write_linkedAccumulatesAcrossDetails_onSameNoticeEntry() {
+        // 两条 WMS 明细各 50，通知单只有一条分录 remain 60：
+        // 第一条用掉 50，第二条只剩 10 → 必须报「剩余不足」，不能各自与 60 比较后都通过
+        stubNoticeQuery(List.of(List.of(136477, 151480, "WA.FG", 60.0)));
+        WmsOutboundDetail first = detail();
+        first.setActualQty(new BigDecimal("50"));
+        WmsOutboundDetail second = detail();
+        second.setId("d2");
+        second.setActualQty(new BigDecimal("50"));
+
+        WmsOrderSyncResult result = writer.write(linkedOrder(), List.of(first, second));
+
+        assertFalse(result.isSuccess(), "累计超出通知单剩余量时必须失败");
+        assertTrue(result.getErrorMessage().contains("剩余"), "实际：" + result.getErrorMessage());
+        verify(formClient, never()).save(eq("SAL_OUTSTOCK"), any());
+    }
 }
