@@ -16,7 +16,8 @@ public enum WmsConfigGroup {
     INVENTORY("inventory", "库存预警阈值"),
     SYNC("sync", "上位系统同步范围"),
     DEFECT("defect", "不良品存放规则"),
-    DEVICE("device", "设备告警阈值");
+    DEVICE("device", "设备告警阈值"),
+    AUDIT("audit", "审计留痕");
 
     private final String code;
     private final String name;
@@ -46,7 +47,7 @@ public enum WmsConfigGroup {
 
     /** 前端菜单顺序。 */
     public static List<WmsConfigGroup> orderedAsList() {
-        return Arrays.asList(INVENTORY, SYNC, DEFECT, DEVICE);
+        return Arrays.asList(INVENTORY, SYNC, DEFECT, DEVICE, AUDIT);
     }
 
     public static WmsConfigGroup[] ordered() {

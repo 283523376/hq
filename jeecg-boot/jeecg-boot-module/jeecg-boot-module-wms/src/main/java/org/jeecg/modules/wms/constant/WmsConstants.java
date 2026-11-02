@@ -473,6 +473,59 @@ public final class WmsConstants {
     /** 出库类型：样品出库（对接研发仓，回写形态待 E5 确认）。 */
     public static final String OUTBOUND_TYPE_SAMPLE = "样品出库";
 
+    // ---------------------------------------------------------------- 审计留痕域（XT-002）
+
+    /** 审计业务类型：生产工单。 */
+    public static final String AUDIT_BIZ_WORK_ORDER = "工单";
+    /** 审计业务类型：入库单。 */
+    public static final String AUDIT_BIZ_INBOUND = "入库单";
+    /** 审计业务类型：出库单（含领料/销售/样品/外协）。 */
+    public static final String AUDIT_BIZ_OUTBOUND = "出库单";
+    /** 审计业务类型：调拨单。 */
+    public static final String AUDIT_BIZ_TRANSFER = "调拨单";
+    /** 审计业务类型：盘点单。 */
+    public static final String AUDIT_BIZ_STOCKTAKE = "盘点单";
+    /** 审计业务类型：系统配置项。 */
+    public static final String AUDIT_BIZ_CONFIG = "系统配置";
+    /** 审计业务类型：主数据（物料/仓库/库位/分类/设备）。 */
+    public static final String AUDIT_BIZ_MASTER_DATA = "主数据";
+
+    /** 审计动作：新建。 */
+    public static final String AUDIT_ACTION_CREATE = "创建";
+    /** 审计动作：修改。 */
+    public static final String AUDIT_ACTION_UPDATE = "修改";
+    /** 审计动作：审核/确认。 */
+    public static final String AUDIT_ACTION_AUDIT = "审核";
+    /** 审计动作：作废（含 ERP 作废同步进来）。 */
+    public static final String AUDIT_ACTION_CANCEL = "作废";
+    /** 审计动作：ERP 同步在 WMS 落地。 */
+    public static final String AUDIT_ACTION_SYNC_IN = "同步落地";
+    /** 审计动作：WMS 回写 ERP。 */
+    public static final String AUDIT_ACTION_WRITE_BACK = "回写ERP";
+    /** 审计动作：设备/容器绑定。 */
+    public static final String AUDIT_ACTION_BIND = "绑定";
+    /** 审计动作：解除绑定。 */
+    public static final String AUDIT_ACTION_UNBIND = "解绑";
+
+    /** 审计通道：用户在界面上操作。 */
+    public static final String AUDIT_CHANNEL_UI = "界面操作";
+    /** 审计通道：定时任务/手工触发从 ERP 同步进来。 */
+    public static final String AUDIT_CHANNEL_ERP_SYNC = "ERP同步";
+    /** 审计通道：WMS 回写 ERP。 */
+    public static final String AUDIT_CHANNEL_ERP_WRITE = "回写ERP";
+    /** 审计通道：WMS/RMS 设备回调。 */
+    public static final String AUDIT_CHANNEL_DEVICE = "设备回调";
+    /** 审计通道：系统定时任务（清理、对账等）。 */
+    public static final String AUDIT_CHANNEL_JOB = "定时任务";
+
+    /** 审计结果：成功。 */
+    public static final String AUDIT_RESULT_SUCCESS = "成功";
+    /** 审计结果：失败。 */
+    public static final String AUDIT_RESULT_FAILED = "失败";
+
+    /** 无登录用户的通道（定时任务/回写）统一记这个操作人，不留空。 */
+    public static final String AUDIT_OPERATOR_SYSTEM = "system";
+
     /** 销售出库 ↔ 发货通知单 的关联规则编码（金蝶转换规则 RuleId，2026-10-30 真账套实测）。 */
     public static final String LINK_RULE_DELIVERY_OUTSTOCK = "DeliveryNotice-OutStock";
     /** 发货通知单分录表名（Link 子结构的 STableName）。 */

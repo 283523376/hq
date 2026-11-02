@@ -16,22 +16,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class WmsConfigKeyTest {
 
-    /** 四组必须各就各位：库存 3 项、同步 2 项、不良品 1 项、设备 2 项，共 8 项。
-     *  （不良品组原有「是否入线边柜」，随线边柜方案移出范围已于 2026-10-27 删除） */
+    /** 五组必须各就各位：库存 3 项、同步 2 项、不良品 1 项、设备 2 项、审计 1 项，共 9 项。
+     *  （不良品组原有「是否入线边柜」，随线边柜方案移出范围已于 2026-10-27 删除；
+     *   审计组随 XT-002 于 2026-11-02 新增，保留期必须前端可调） */
     @Test
-    void shouldExposeEightKeysInFourGroups() {
-        assertEquals(8, WmsConfigKey.ordered().length);
+    void shouldExposeNineKeysInFiveGroups() {
+        assertEquals(9, WmsConfigKey.ordered().length);
         assertEquals(3, WmsConfigKey.ofGroup(WmsConfigGroup.INVENTORY).size());
         assertEquals(2, WmsConfigKey.ofGroup(WmsConfigGroup.SYNC).size());
         assertEquals(1, WmsConfigKey.ofGroup(WmsConfigGroup.DEFECT).size());
         assertEquals(2, WmsConfigKey.ofGroup(WmsConfigGroup.DEVICE).size());
+        assertEquals(1, WmsConfigKey.ofGroup(WmsConfigGroup.AUDIT).size());
     }
 
     /** 键必须唯一——重复键会让「按 key 取值」出现两个答案。 */
     @Test
     void keysShouldBeUnique() {
         long distinct = Arrays.stream(WmsConfigKey.ordered()).map(WmsConfigKey::getKey).distinct().count();
-        assertEquals(8, distinct);
+        assertEquals(9, distinct);
     }
 
     /** 设备两项的默认值必须与既有常量一致，否则「DB 无配置」时行为会静默改变。 */
@@ -67,6 +69,7 @@ class WmsConfigKeyTest {
         List<WmsConfigGroup> groups = Arrays.asList(WmsConfigGroup.ordered());
         assertEquals(WmsConfigGroup.INVENTORY, groups.get(0));
         assertEquals(WmsConfigGroup.DEVICE, groups.get(3));
-        assertTrue(groups.size() == 4);
+        assertEquals(WmsConfigGroup.AUDIT, groups.get(4));
+        assertEquals(5, groups.size());
     }
 }

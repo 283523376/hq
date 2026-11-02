@@ -65,7 +65,8 @@ class WmsSystemConfigServiceImplTest {
 
         List<WmsConfigGroupVO> groups = service.definitions();
 
-        assertEquals(4, groups.size());
+        // 5 组：库存 / 同步 / 不良品 / 设备 / 审计（XT-002 新增，保留期前端可调）
+        assertEquals(5, groups.size());
         WmsConfigItemVO min = groups.get(0).getItems().stream()
                 .filter(i -> "inv.stock.min".equals(i.getKey())).findFirst().orElseThrow();
         assertEquals("42", min.getValue());

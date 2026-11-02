@@ -29,6 +29,9 @@ public enum WmsConfigKey {
     SYNC_AUTO("sync.auto", "自动同步", WmsConfigGroup.SYNC, WmsConfigType.BOOL, "true", null),
 
     // 「不良品是否入线边柜」已随方案 A（线边柜）移出范围，2026-10-27 移除该项
+    AUDIT_RETENTION_DAYS("audit.retention.days", "审计日志保留天数", WmsConfigGroup.AUDIT,
+            WmsConfigType.INT, "365", null),
+
     DEFECT_WAREHOUSE_CODE("defect.warehouse.code", "不良品默认仓", WmsConfigGroup.DEFECT, WmsConfigType.SELECT, "", null),
 
     DEVICE_OFFLINE_THRESHOLD_SECONDS("device.offline.threshold.seconds", "设备离线判定阈值（秒）",
