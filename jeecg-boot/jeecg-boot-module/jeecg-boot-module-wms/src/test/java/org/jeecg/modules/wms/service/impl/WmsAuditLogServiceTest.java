@@ -36,6 +36,18 @@ class WmsAuditLogServiceTest {
     private WmsAuditLogMapper mapper;
     private WmsAuditLogServiceImpl service;
 
+    /**
+     * LambdaQueryWrapper 取 SQL 片段要先有实体的 TableInfo——正常由 MyBatis 启动时注册，
+     * 纯单测里没有 Spring，手动初始化一次。
+     */
+    @org.junit.jupiter.api.BeforeAll
+    static void initTableInfo() {
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                WmsAuditLog.class);
+    }
+
     @BeforeEach
     void setUp() {
         mapper = mock(WmsAuditLogMapper.class);
@@ -143,5 +155,53 @@ class WmsAuditLogServiceTest {
         WmsAuditLog row = captureInserted();
         assertNotNull(row.getErrorMsg());
         assertEquals(500, row.getErrorMsg().length(), "error_msg 列宽 500");
+    }
+
+    /** 查询条件必须落到 SQL：按单号筛时只应命中该单号的记录。 */
+    @Test
+    void pageQuery_buildsFiltersFromConditions() {
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<WmsAuditLog> page =
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>();
+        when(mapper.selectPage(any(), any())).thenReturn(page);
+        org.jeecg.modules.wms.dto.WmsAuditQueryDTO query =
+                new org.jeecg.modules.wms.dto.WmsAuditQueryDTO();
+        query.setBizNo("MO1");
+        query.setChannel("ERP同步");
+        query.setResult("失败");
+
+        service.pageQuery(query);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WmsAuditLog>>
+                captor = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(mapper).selectPage(any(), captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertTrue(sql.contains("biz_no"), "实际：" + sql);
+        assertTrue(sql.contains("channel"), "实际：" + sql);
+        assertTrue(sql.contains("result"), "实际：" + sql);
+        // like 查询会把值包成 %MO1%
+        assertTrue(captor.getValue().getParamNameValuePairs().values().stream()
+                        .anyMatch(v -> String.valueOf(v).contains("MO1")),
+                "单号条件没有进入参数表：" + captor.getValue().getParamNameValuePairs());
+    }
+
+    /** 分页参数越界要夹住，避免 pageSize=100000 拖垮库。 */
+    @Test
+    void pageQuery_clampsPaging() {
+        when(mapper.selectPage(any(), any())).thenReturn(
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<WmsAuditLog>());
+        org.jeecg.modules.wms.dto.WmsAuditQueryDTO query =
+                new org.jeecg.modules.wms.dto.WmsAuditQueryDTO();
+        query.setPageNo(0);
+        query.setPageSize(100000);
+
+        service.pageQuery(query);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<com.baomidou.mybatisplus.extension.plugins.pagination.Page<WmsAuditLog>> captor =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.extension.plugins.pagination.Page.class);
+        verify(mapper).selectPage(captor.capture(), any());
+        assertEquals(1, captor.getValue().getCurrent());
+        assertEquals(200, captor.getValue().getSize());
     }
 }

@@ -2,11 +2,15 @@ package org.jeecg.modules.wms.service.impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsAuditEvent;
+import org.jeecg.modules.wms.dto.WmsAuditQueryDTO;
 import org.jeecg.modules.wms.entity.WmsAuditLog;
 import org.jeecg.modules.wms.mapper.WmsAuditLogMapper;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
@@ -91,6 +95,37 @@ public class WmsAuditLogServiceImpl implements IWmsAuditLogService {
                     event == null ? null : event.getBizType(),
                     event == null ? null : event.getBizNo(), e);
         }
+    }
+
+    @Override
+    public IPage<WmsAuditLog> pageQuery(WmsAuditQueryDTO query) {
+        WmsAuditQueryDTO q = query == null ? new WmsAuditQueryDTO() : query;
+        LambdaQueryWrapper<WmsAuditLog> wrapper = new LambdaQueryWrapper<>();
+        if (oConvertUtils.isNotEmpty(q.getBizType())) {
+            wrapper.eq(WmsAuditLog::getBizType, q.getBizType());
+        }
+        if (oConvertUtils.isNotEmpty(q.getBizNo())) {
+            wrapper.like(WmsAuditLog::getBizNo, q.getBizNo().trim());
+        }
+        if (oConvertUtils.isNotEmpty(q.getOperator())) {
+            wrapper.eq(WmsAuditLog::getOperator, q.getOperator().trim());
+        }
+        if (oConvertUtils.isNotEmpty(q.getChannel())) {
+            wrapper.eq(WmsAuditLog::getChannel, q.getChannel());
+        }
+        if (oConvertUtils.isNotEmpty(q.getResult())) {
+            wrapper.eq(WmsAuditLog::getResult, q.getResult());
+        }
+        if (q.getStartTime() != null) {
+            wrapper.ge(WmsAuditLog::getCreateTime, q.getStartTime());
+        }
+        if (q.getEndTime() != null) {
+            wrapper.le(WmsAuditLog::getCreateTime, q.getEndTime());
+        }
+        wrapper.orderByDesc(WmsAuditLog::getCreateTime);
+        int pageNo = q.getPageNo() == null || q.getPageNo() < 1 ? 1 : q.getPageNo();
+        int pageSize = q.getPageSize() == null || q.getPageSize() < 1 ? 10 : Math.min(q.getPageSize(), 200);
+        return auditLogMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);
     }
 
     @Override
