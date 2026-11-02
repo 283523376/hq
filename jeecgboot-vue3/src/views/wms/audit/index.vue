@@ -6,6 +6,9 @@
         <a-button preIcon="ant-design:download-outlined" v-auth="'wms:audit:export'" :loading="exporting" @click="handleExport">
           导出
         </a-button>
+        <a-button preIcon="ant-design:file-done-outlined" v-auth="'wms:audit:export'" @click="openTasks">
+          导出任务
+        </a-button>
         <span class="tip">按工单号查它会牵动哪些单据与库存</span>
       </template>
     </BasicTable>
@@ -88,6 +91,34 @@
       </template>
       <a-empty v-else-if="!impactLoading" description="输入工单号后点查询" />
     </a-drawer>
+
+    <a-drawer v-model:open="tasksOpen" title="审计导出任务" width="860" placement="right">
+      <a-table
+        size="small"
+        :pagination="taskPagination"
+        :columns="taskColumns"
+        :data-source="auditTasks"
+        :row-key="(r) => r.id"
+        :loading="tasksLoading"
+        @change="handleTaskPageChange"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'status'">
+            <a-tag :color="{ SUCCESS: 'green', FAILED: 'red' }[record.status] || 'default'">
+              {{ { PENDING: '排队中', RUNNING: '生成中', SUCCESS: '已完成', FAILED: '失败' }[record.status] || record.status }}
+            </a-tag>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <a-button v-if="record.status === 'SUCCESS'" type="link" size="small" @click="handleTaskDownload(record)">下载</a-button>
+            <a-button v-if="record.status === 'FAILED'" type="link" size="small" @click="handleTaskRetry(record)">重试</a-button>
+            <a-popconfirm v-if="record.status !== 'PENDING' && record.status !== 'RUNNING'" title="确定删除该任务及文件？" @confirm="handleTaskDelete(record)">
+              <a-button type="link" size="small" danger>删除</a-button>
+            </a-popconfirm>
+          </template>
+        </template>
+      </a-table>
+      <div v-if="taskError" style="color: #faad14; margin-top: 8px">{{ taskError }}</div>
+    </a-drawer>
   </div>
 </template>
 
@@ -99,7 +130,8 @@
   import { useDesign } from '/@/hooks/web/useDesign';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { columns, searchFormSchema } from './audit.data';
-  import { list, queryImpact, createAuditExport } from './audit.api';
+  import { list, queryImpact, createAuditExport, queryTaskPage, retryTask, deleteTask } from './audit.api';
+  import { useMethods } from '/@/hooks/system/useMethods';
 
   const { prefixCls } = useDesign('wms-audit');
   const { createMessage } = useMessage();
@@ -122,6 +154,7 @@
     },
   });
   const [registerTable, { getForm }] = tableContext;
+  const { handleExportXlsx } = useMethods();
 
   // ---------------------------------------------------------------- 导出
   const exporting = ref(false);
@@ -136,11 +169,87 @@
     exporting.value = true;
     try {
       await createAuditExport(filters);
-      createMessage.success('导出任务已提交，请到导出任务列表下载');
+      createMessage.success('导出任务已提交');
+      await openTasks();
     } catch (e: any) {
       createMessage.error(e?.message || '提交导出任务失败');
     } finally {
       exporting.value = false;
+    }
+  }
+
+  // ---------------------------------------------------------------- 导出任务
+  const tasksOpen = ref(false);
+  const tasksLoading = ref(false);
+  const taskError = ref('');
+  const auditTasks = ref<any[]>([]);
+  const taskPageNo = ref(1);
+  const taskTotal = ref(0);
+
+  const taskPagination = computed(() => ({
+    current: taskPageNo.value,
+    pageSize: 10,
+    total: taskTotal.value,
+    showSizeChanger: false,
+  }));
+
+  const taskColumns = [
+    { title: '文件名', dataIndex: 'fileName', width: 240, ellipsis: true },
+    { title: '状态', key: 'status', width: 90 },
+    { title: '行数', dataIndex: 'rowCount', width: 80 },
+    { title: '失败原因', dataIndex: 'errorMsg', width: 180, ellipsis: true },
+    { title: '完成时间', dataIndex: 'finishTime', width: 160 },
+    { title: '操作', key: 'action', width: 160 },
+  ];
+
+  async function openTasks() {
+    tasksOpen.value = true;
+    await fetchTasks();
+  }
+
+  /** 只显示审计导出任务；台账导出任务仍在台账页看（按 createBy 隔离，本就只见自己的）。 */
+  async function fetchTasks() {
+    tasksLoading.value = true;
+    taskError.value = '';
+    try {
+      const page = await queryTaskPage({ pageNo: taskPageNo.value, pageSize: 10 });
+      const records = page?.records || [];
+      auditTasks.value = records.filter((r: any) => r.taskType === 'AUDIT_LOG');
+      taskTotal.value = page?.total || 0;
+    } catch (e: any) {
+      taskError.value = e?.message || '加载导出任务失败';
+    } finally {
+      tasksLoading.value = false;
+    }
+  }
+
+  function handleTaskPageChange(pager: any) {
+    taskPageNo.value = pager.current;
+    fetchTasks();
+  }
+
+  function handleTaskDownload(record: any) {
+    const name = (record.fileName || '审计日志').replace(/\.xlsx$/i, '');
+    handleExportXlsx(name, '/wms/inventoryLedger/export/task/' + record.id + '/download');
+  }
+
+  async function handleTaskRetry(record: any) {
+    try {
+      await retryTask(record.id);
+      createMessage.success('已重新提交');
+      await fetchTasks();
+    } catch (e: any) {
+      // defHttp 已统一弹错误提示
+    }
+  }
+
+  async function handleTaskDelete(record: any) {
+    try {
+      await deleteTask(record.id);
+      createMessage.success('已删除');
+      await fetchTasks();
+    } catch (e: any) {
+      // defHttp 已统一弹错误提示
     }
   }
 

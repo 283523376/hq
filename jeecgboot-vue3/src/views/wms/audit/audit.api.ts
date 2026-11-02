@@ -25,3 +25,19 @@ export const queryImpact = (workOrderNo: string) =>
  * **不会产出空文件**。
  */
 export const createAuditExport = (params?) => defHttp.post({ url: Api.exportTask, params });
+
+// 导出任务与库存台账共用一套（后端端点同 URL，权限按 OR 判定：台账导出或审计导出任一即可）
+enum TaskApi {
+  taskPage = '/wms/inventoryLedger/export/task/page',
+  taskBase = '/wms/inventoryLedger/export/task',
+}
+
+/** 我的导出任务分页（按 createBy 隔离，只能看到自己的） */
+export const queryTaskPage = (params?) => defHttp.get({ url: TaskApi.taskPage, params });
+
+/** 重试失败任务 */
+export const retryTask = (id: string) => defHttp.post({ url: `${TaskApi.taskBase}/${id}/retry` });
+
+/** 删除任务（连文件一起删） */
+export const deleteTask = (id: string) =>
+  defHttp.delete({ url: `${TaskApi.taskBase}/${id}` }, { joinParamsToUrl: true });

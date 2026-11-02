@@ -128,4 +128,30 @@ class WmsAuditControllerTest {
             assertEquals("yyyy-MM-dd HH:mm:ss", fmt.pattern());
         }
     }
+
+    /**
+     * 评审 I1：导出任务的列表/下载/重试/删除长在库存台账控制器上。
+     * 只授审计权限的角色也必须能用——权限判定必须是「台账导出 OR 审计导出」。
+     */
+    @Test
+    void ledgerTaskEndpoints_acceptAuditExportPermission() throws Exception {
+        for (String method : new String[]{"taskPage", "download", "retry", "delete"}) {
+            java.lang.reflect.Method m = null;
+            for (java.lang.reflect.Method candidate : Class.forName(
+                    "org.jeecg.modules.wms.controller.WmsInventoryLedgerController").getDeclaredMethods()) {
+                if (candidate.getName().equals(method)) {
+                    m = candidate;
+                }
+            }
+            assertNotNull(m, "找不到端点方法：" + method);
+            org.apache.shiro.authz.annotation.RequiresPermissions perms =
+                    m.getAnnotation(org.apache.shiro.authz.annotation.RequiresPermissions.class);
+            assertNotNull(perms, method + " 缺少 @RequiresPermissions");
+            assertEquals(org.apache.shiro.authz.annotation.Logical.OR, perms.logical(),
+                    method + " 必须是 OR 判定");
+            java.util.Set<String> codes = java.util.Set.of(perms.value());
+            assertTrue(codes.contains("wms:inventory:export") && codes.contains("wms:audit:export"),
+                    method + " 应同时接受台账/审计导出权限码，实际：" + codes);
+        }
+    }
 }

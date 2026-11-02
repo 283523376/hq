@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.Logical;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.AutoLog;
@@ -80,7 +81,8 @@ public class WmsInventoryLedgerController {
 
     @Operation(summary = "我的导出任务-分页")
     @GetMapping(value = "/export/task/page")
-    @RequiresPermissions("wms:inventory:export")
+    // 评审 I1：审计日志导出复用这套任务，只授审计权限的角色也要能进来（归属校验在 service 按 createBy 兜底）
+    @RequiresPermissions(value = {"wms:inventory:export", "wms:audit:export"}, logical = Logical.OR)
     public Result<IPage<WmsExportTask>> taskPage(
             @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
             @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize) {
@@ -97,7 +99,7 @@ public class WmsInventoryLedgerController {
      */
     @Operation(summary = "导出任务-下载")
     @GetMapping(value = "/export/task/{id}/download")
-    @RequiresPermissions("wms:inventory:export")
+    @RequiresPermissions(value = {"wms:inventory:export", "wms:audit:export"}, logical = Logical.OR)
     public void download(@PathVariable("id") String id, HttpServletResponse response) {
         try {
             File file = exportTaskService.resolveDownload(id, WmsUtils.currentUsername());
@@ -110,7 +112,7 @@ public class WmsInventoryLedgerController {
 
     @Operation(summary = "导出任务-重试")
     @PostMapping(value = "/export/task/{id}/retry")
-    @RequiresPermissions("wms:inventory:export")
+    @RequiresPermissions(value = {"wms:inventory:export", "wms:audit:export"}, logical = Logical.OR)
     public Result<String> retry(@PathVariable("id") String id) {
         try {
             exportTaskService.retry(id, WmsUtils.currentUsername());
@@ -122,7 +124,7 @@ public class WmsInventoryLedgerController {
 
     @Operation(summary = "导出任务-删除")
     @DeleteMapping(value = "/export/task/{id}")
-    @RequiresPermissions("wms:inventory:export")
+    @RequiresPermissions(value = {"wms:inventory:export", "wms:audit:export"}, logical = Logical.OR)
     public Result<String> delete(@PathVariable("id") String id) {
         try {
             exportTaskService.deleteTask(id, WmsUtils.currentUsername());
