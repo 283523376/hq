@@ -5,6 +5,7 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsAuditEvent;
@@ -59,6 +60,13 @@ public class WmsAuditAspect {
 
         try {
             Object result = joinPoint.proceed();
+            // 控制器普遍把业务异常吞成 Result.error(...)：此时方法本身正常返回，
+            // 只有看返回值才知道这次操作其实失败了——否则审计会把失败记成成功。
+            if (result instanceof Result && !((Result<?>) result).isSuccess()) {
+                writeQuietly(wmsAudit, bizNo, operator, ip, WmsConstants.AUDIT_RESULT_FAILED,
+                        ((Result<?>) result).getMessage(), System.currentTimeMillis() - start);
+                return result;
+            }
             writeQuietly(wmsAudit, bizNo, operator, ip, WmsConstants.AUDIT_RESULT_SUCCESS, null,
                     System.currentTimeMillis() - start);
             return result;

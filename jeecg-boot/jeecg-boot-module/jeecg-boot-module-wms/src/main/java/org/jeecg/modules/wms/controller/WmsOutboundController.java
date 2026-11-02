@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.base.controller.JeecgController;
+import org.jeecg.modules.wms.audit.WmsAudit;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsOutboundCloseDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundConfirmDTO;
@@ -172,6 +173,7 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
         }
     }
 
+    @WmsAudit(bizType = "出库单", action = "修改", bizNoSpEL = "#id")
     @Operation(summary = "出库-分配库位/料箱")
     @PostMapping(value = "/{id}/allocate")
     @RequiresPermissions("wms:outbound:allocate")
@@ -184,6 +186,7 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
         }
     }
 
+    @WmsAudit(bizType = "出库单", action = "修改", bizNoSpEL = "#id")
     @Operation(summary = "出库-下发设备任务")
     @PostMapping(value = "/{id}/dispatch")
     @RequiresPermissions("wms:outbound:dispatch")
@@ -196,6 +199,7 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
         }
     }
 
+    @WmsAudit(bizType = "出库单", action = "审核", bizNoSpEL = "#id")
     @Operation(summary = "出库-复核（CK-002）")
     @PostMapping(value = "/{id}/review")
     @RequiresPermissions("wms:outbound:review")
@@ -209,6 +213,7 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
         }
     }
 
+    @WmsAudit(bizType = "出库单", action = "审核", bizNoSpEL = "#id")
     @Operation(summary = "出库-取料确认（CK-001）")
     @PostMapping(value = "/{id}/confirm-pick")
     @RequiresPermissions("wms:outbound:confirm")
@@ -222,6 +227,7 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
         }
     }
 
+    @WmsAudit(bizType = "出库单", action = "审核", bizNoSpEL = "#id")
     @Operation(summary = "出库-确认出库（CK-002）")
     @PostMapping(value = "/{id}/confirm")
     @RequiresPermissions("wms:outbound:confirm")
@@ -235,6 +241,7 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
         }
     }
 
+    @WmsAudit(bizType = "出库单", action = "回写ERP", bizNoSpEL = "#id")
     @Operation(summary = "出库-手工重新同步出库单")
     @PostMapping(value = "/{id}/sync")
     @RequiresPermissions("wms:outbound:sync")

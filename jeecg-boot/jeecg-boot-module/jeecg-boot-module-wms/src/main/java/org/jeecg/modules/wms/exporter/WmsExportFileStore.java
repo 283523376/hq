@@ -87,8 +87,13 @@ public class WmsExportFileStore {
      * {@link #commit} 的 REPLACE_EXISTING 会让后者静默覆盖前者，先完成的那行从此指向别人的数据。
      */
     public String buildFileName(String taskId, Date time) {
+        return buildFileName(LEDGER_FILE_PREFIX, taskId, time);
+    }
+
+    /** 按任务类型给不同的文件前缀：审计日志导出的文件名不该叫「库存台账」。 */
+    public String buildFileName(String prefix, String taskId, Date time) {
         String stamp = new SimpleDateFormat(FILE_NAME_TIME_PATTERN).format(time);
-        return LEDGER_FILE_PREFIX + stamp + "_" + taskId + ".xlsx";
+        return prefix + stamp + "_" + taskId + ".xlsx";
     }
 
     /**

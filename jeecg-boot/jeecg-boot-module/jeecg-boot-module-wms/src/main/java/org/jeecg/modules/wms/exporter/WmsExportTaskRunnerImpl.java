@@ -65,7 +65,9 @@ public class WmsExportTaskRunnerImpl implements WmsExportTaskRunner {
         try {
             WmsLedgerExportResult result = generateByTaskType(task, part);
 
-            String fileName = fileStore.buildFileName(taskId, new Date());
+            String prefix = WmsConstants.EXPORT_TASK_TYPE_AUDIT_LOG.equals(task.getTaskType())
+                    ? "审计日志_" : "库存台账_";
+            String fileName = fileStore.buildFileName(prefix, taskId, new Date());
             File done = fileStore.commit(part, fileName);
             markSuccess(task, fileName, done, result);
         } catch (Exception e) {

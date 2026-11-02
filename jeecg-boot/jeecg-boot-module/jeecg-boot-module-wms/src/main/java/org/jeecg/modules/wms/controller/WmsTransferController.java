@@ -10,6 +10,7 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.audit.WmsAudit;
 import org.jeecg.modules.wms.dto.WmsTransferCreateDTO;
 import org.jeecg.modules.wms.entity.WmsTransferOrder;
 import org.jeecg.modules.wms.service.IWmsTransferService;
@@ -88,6 +89,7 @@ public class WmsTransferController extends JeecgController<WmsTransferOrder, IWm
     }
 
     @Operation(summary = "调拨-分配并下发（同仓走米塔）")
+    @WmsAudit(bizType = "调拨单", action = "修改", bizNoSpEL = "#id")
     @PostMapping(value = "/{id}/dispatch")
     @RequiresPermissions("wms:transfer:dispatch")
     public Result<WmsTransferOrder> dispatch(@PathVariable("id") String id) {
@@ -121,6 +123,7 @@ public class WmsTransferController extends JeecgController<WmsTransferOrder, IWm
     }
 
     @Operation(summary = "调拨-跨仓上架确认（→实物完成）")
+    @WmsAudit(bizType = "调拨单", action = "审核", bizNoSpEL = "#id")
     @PostMapping(value = "/{id}/putaway")
     @RequiresPermissions("wms:transfer:execute")
     public Result<WmsTransferOrder> putaway(@PathVariable("id") String id,
@@ -133,6 +136,7 @@ public class WmsTransferController extends JeecgController<WmsTransferOrder, IWm
     }
 
     @Operation(summary = "调拨-提交/刷新金蝶（Phase B）")
+    @WmsAudit(bizType = "调拨单", action = "回写ERP", bizNoSpEL = "#id")
     @PostMapping(value = "/{id}/sync-erp")
     @RequiresPermissions("wms:transfer:sync")
     public Result<WmsTransferOrder> syncErp(@PathVariable("id") String id) {
@@ -155,6 +159,7 @@ public class WmsTransferController extends JeecgController<WmsTransferOrder, IWm
     }
 
     @Operation(summary = "调拨-关单（释放锁定）")
+    @WmsAudit(bizType = "调拨单", action = "修改", bizNoSpEL = "#id")
     @PostMapping(value = "/{id}/close")
     @RequiresPermissions("wms:transfer:close")
     public Result<WmsTransferOrder> close(@PathVariable("id") String id,

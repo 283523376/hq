@@ -9,6 +9,7 @@ import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -132,5 +133,38 @@ class WmsAuditAspectTest {
         public void nested(Dto dto) {
             // 业务本体
         }
+
+        @WmsAudit(bizType = "出库单", action = "分配", bizNoSpEL = "#id")
+        public org.jeecg.common.api.vo.Result<?> softFail(String id) {
+            return org.jeecg.common.api.vo.Result.error("出库单不存在");
+        }
+
+        @WmsAudit(bizType = "出库单", action = "分配", bizNoSpEL = "#id")
+        public org.jeecg.common.api.vo.Result<?> softOk(String id) {
+            return org.jeecg.common.api.vo.Result.OK("分配成功");
+        }
+    }
+
+    /** 控制器吞异常返回 Result.error：审计必须记失败，不能因为方法正常返回就记成功。 */
+    @Test
+    void aspect_resultError_recordedAsFailed() {
+        Target target = proxy(new Target());
+
+        org.jeecg.common.api.vo.Result<?> result = target.softFail("OUT4");
+
+        assertFalse(result.isSuccess());
+        WmsAuditEvent event = capture();
+        assertEquals("失败", event.getResult());
+        assertTrue(event.getErrorMsg().contains("出库单不存在"), "实际：" + event.getErrorMsg());
+    }
+
+    /** 成功返回 Result.OK 仍然记成功。 */
+    @Test
+    void aspect_resultOk_recordedAsSuccess() {
+        Target target = proxy(new Target());
+
+        target.softOk("OUT5");
+
+        assertEquals("成功", capture().getResult());
     }
 }
