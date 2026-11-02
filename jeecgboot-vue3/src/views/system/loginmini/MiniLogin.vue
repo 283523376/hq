@@ -18,7 +18,7 @@
           <div class="aui-form">
             <div class="aui-image">
               <div class="aui-image-text">
-                <div class="aui-image-brand">楠柏莞</div>
+                <div class="aui-image-brand">永鑫WMS</div>
               </div>
             </div>
             <div class="aui-formBox">
