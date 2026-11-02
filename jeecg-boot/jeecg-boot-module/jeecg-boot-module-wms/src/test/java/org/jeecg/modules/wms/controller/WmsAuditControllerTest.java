@@ -115,4 +115,17 @@ class WmsAuditControllerTest {
             assertFalse(method.getName().startsWith("edit"), method.getName());
         }
     }
+
+    /** 时间字段必须带 @DateTimeFormat：前端传的是 "yyyy-MM-dd HH:mm:ss" 字符串，没有注解就 400。 */
+    @Test
+    void queryDto_timeFields_areBindable() throws Exception {
+        for (String field : new String[]{"startTime", "endTime"}) {
+            java.lang.reflect.Field f = org.jeecg.modules.wms.dto.WmsAuditQueryDTO.class
+                    .getDeclaredField(field);
+            org.springframework.format.annotation.DateTimeFormat fmt =
+                    f.getAnnotation(org.springframework.format.annotation.DateTimeFormat.class);
+            assertNotNull(fmt, field + " 缺少 @DateTimeFormat，时间区间查询会绑定失败");
+            assertEquals("yyyy-MM-dd HH:mm:ss", fmt.pattern());
+        }
+    }
 }

@@ -122,7 +122,8 @@ public class WmsAuditLogServiceImpl implements IWmsAuditLogService {
         if (q.getEndTime() != null) {
             wrapper.le(WmsAuditLog::getCreateTime, q.getEndTime());
         }
-        wrapper.orderByDesc(WmsAuditLog::getCreateTime);
+        // create_time 只到秒，批量同步时大量行同秒；同值排序不稳定会让翻页重复/漏行
+        wrapper.orderByDesc(WmsAuditLog::getCreateTime).orderByDesc(WmsAuditLog::getId);
         int pageNo = q.getPageNo() == null || q.getPageNo() < 1 ? 1 : q.getPageNo();
         int pageSize = q.getPageSize() == null || q.getPageSize() < 1 ? 10 : Math.min(q.getPageSize(), 200);
         return auditLogMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);

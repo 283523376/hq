@@ -179,6 +179,8 @@ class WmsAuditLogServiceTest {
         assertTrue(sql.contains("biz_no"), "实际：" + sql);
         assertTrue(sql.contains("channel"), "实际：" + sql);
         assertTrue(sql.contains("result"), "实际：" + sql);
+        // 同秒并列时必须有稳定次序，否则翻页重复/漏行
+        assertTrue(sql.toUpperCase().contains("ID DESC"), "缺少 id 兜底排序：" + sql);
         // like 查询会把值包成 %MO1%
         assertTrue(captor.getValue().getParamNameValuePairs().values().stream()
                         .anyMatch(v -> String.valueOf(v).contains("MO1")),

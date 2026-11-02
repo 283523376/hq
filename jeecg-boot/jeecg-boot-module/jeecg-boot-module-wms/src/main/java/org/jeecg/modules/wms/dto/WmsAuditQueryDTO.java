@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.io.Serializable;
 import java.util.Date;
@@ -34,9 +35,11 @@ public class WmsAuditQueryDTO implements Serializable {
     private String result;
 
     @Schema(description = "发生时间起")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date startTime;
 
     @Schema(description = "发生时间止")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date endTime;
 
     @Schema(description = "页码")

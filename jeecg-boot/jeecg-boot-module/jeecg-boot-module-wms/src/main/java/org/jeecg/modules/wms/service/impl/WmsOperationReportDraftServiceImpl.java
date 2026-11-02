@@ -130,13 +130,17 @@ public class WmsOperationReportDraftServiceImpl implements IWmsOperationReportDr
                 vo.skip(row.getBillNo() + "：草稿已推进到「" + existing.getStatus() + "」，跳过更新");
                 return;
             }
+            // before 必须在这里取：下面几行会把 existing 就地改写，事后再取就是两份相同的 JSON
+            String beforeJson = WmsAuditRecorder.snapshot(auditLogService, existing,
+                    "inboundNo", "quantity", "goodQty", "batchNo", "status");
             existing.setQuantity(row.getQualifiedQty());
             existing.setGoodQty(row.getQualifiedQty());
             existing.setBatchNo(resolveBatch(row));
             existing.setUpdateTime(now);
             inboundMapper.updateById(existing);
             vo.setUpdated(vo.getUpdated() + 1);
-            WmsAuditRecorder.record(auditLogService, reportEvent(entryKey, existing, existing, row));
+            WmsAuditRecorder.record(auditLogService,
+                    reportEvent(entryKey, beforeJson, existing, row));
             return;
         }
 
@@ -166,7 +170,7 @@ public class WmsOperationReportDraftServiceImpl implements IWmsOperationReportDr
     }
 
     /** 工序汇报的审计事件：biz_no 用「单号#序列#工序号」，与幂等键同源，事后按它反查。 */
-    private WmsAuditEvent reportEvent(String entryKey, WmsProductionInbound before,
+    private WmsAuditEvent reportEvent(String entryKey, Object before,
                                       WmsProductionInbound after, WmsOperationReportRowVO row) {
         return new WmsAuditEvent()
                 .setBizType(WmsConstants.AUDIT_BIZ_INBOUND)
@@ -174,8 +178,10 @@ public class WmsOperationReportDraftServiceImpl implements IWmsOperationReportDr
                 .setBizRef(row.getMoNumber())
                 .setAction(WmsConstants.AUDIT_ACTION_SYNC_IN)
                 .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
-                .setBeforeValue(WmsAuditRecorder.snapshot(auditLogService, before,
-                        "inboundNo", "quantity", "goodQty", "batchNo", "status"))
+                .setBeforeValue(before == null ? null
+                        : before instanceof String ? (String) before
+                        : WmsAuditRecorder.snapshot(auditLogService, before,
+                                "inboundNo", "quantity", "goodQty", "batchNo", "status"))
                 .setAfterValue(WmsAuditRecorder.snapshot(auditLogService, after,
                         "inboundNo", "quantity", "goodQty", "batchNo", "status", "erpBillNo"))
                 .setOperator(WmsConstants.AUDIT_OPERATOR_SYSTEM)
