@@ -55,7 +55,13 @@ public class WmsOrderController extends JeecgController<WmsOrder, IWmsOrderServi
         // 否则 QueryGenerator 会按它们拼出 supplier_name / supplier_code 条件导致 SQL 报错
         wmsOrder.setSupplierName(null);
         wmsOrder.setSupplierCode(null);
+        // 查询窗口模糊匹配（2026-11-02）：QueryGenerator 对 String 拼的是等值，
+        // 这里把文本字段置空后手写 like，让「任意连续子串」都能命中。
+        String orderNoKeyword = wmsOrder.getOrderNo();
+        wmsOrder.setOrderNo(null);
         QueryWrapper<WmsOrder> queryWrapper = QueryGenerator.initQueryWrapper(wmsOrder, req.getParameterMap());
+        queryWrapper.like(oConvertUtils.isNotEmpty(orderNoKeyword), "order_no",
+                orderNoKeyword == null ? null : orderNoKeyword.trim());
         queryWrapper.orderByDesc("create_time");
         Page<WmsOrder> page = new Page<>(pageNo, pageSize);
         IPage<WmsOrder> pageList = service.page(page, queryWrapper);

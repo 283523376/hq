@@ -51,8 +51,9 @@ public class WmsStocktakeController {
     @RequiresPermissions("wms:stocktake:list")
     public Result<IPage<WmsStocktakeOrder>> list(@RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
                                                  @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
-                                                 @RequestParam(name = "stocktakeType", required = false) String stocktakeType) {
-        return Result.OK(stocktakeService.listPage(pageNo, pageSize, stocktakeType));
+                                                 @RequestParam(name = "stocktakeType", required = false) String stocktakeType,
+                                                 @RequestParam(name = "stocktakeNo", required = false) String stocktakeNo) {
+        return Result.OK(stocktakeService.listPage(pageNo, pageSize, stocktakeType, stocktakeNo));
     }
 
     @Operation(summary = "盘点-详情")

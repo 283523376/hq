@@ -62,7 +62,17 @@ public class WmsDeviceController extends JeecgController<WmsDevice, IWmsDeviceSe
                                                   HttpServletRequest req) {
         // 非持久化字段必须先置空，否则 QueryGenerator 会拼出不存在的 warehouse_name 列条件
         wmsDevice.setWarehouseName(null);
+        // 查询窗口模糊匹配（2026-11-02）：QueryGenerator 对 String 拼的是等值，
+        // 这里把文本字段置空后手写 like，让「任意连续子串」都能命中。
+        String deviceCodeKeyword = wmsDevice.getDeviceCode();
+        String deviceNameKeyword = wmsDevice.getDeviceName();
+        wmsDevice.setDeviceCode(null);
+        wmsDevice.setDeviceName(null);
         QueryWrapper<WmsDevice> queryWrapper = QueryGenerator.initQueryWrapper(wmsDevice, req.getParameterMap());
+        queryWrapper.like(oConvertUtils.isNotEmpty(deviceCodeKeyword), "device_code",
+                deviceCodeKeyword == null ? null : deviceCodeKeyword.trim());
+        queryWrapper.like(oConvertUtils.isNotEmpty(deviceNameKeyword), "device_name",
+                deviceNameKeyword == null ? null : deviceNameKeyword.trim());
         queryWrapper.orderByAsc("device_type").orderByAsc("device_code");
         Page<WmsDevice> page = new Page<>(pageNo, pageSize);
         IPage<WmsDevice> pageList = service.page(page, queryWrapper);

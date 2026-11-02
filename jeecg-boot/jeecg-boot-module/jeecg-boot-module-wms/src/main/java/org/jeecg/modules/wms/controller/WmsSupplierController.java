@@ -52,7 +52,17 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
                                                    @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
                                                    @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
                                                    HttpServletRequest req) {
+        // 查询窗口模糊匹配（2026-11-02）：QueryGenerator 对 String 拼的是等值，
+        // 这里把文本字段置空后手写 like，让「任意连续子串」都能命中。
+        String supplierCodeKeyword = wmsSupplier.getSupplierCode();
+        String supplierNameKeyword = wmsSupplier.getSupplierName();
+        wmsSupplier.setSupplierCode(null);
+        wmsSupplier.setSupplierName(null);
         QueryWrapper<WmsSupplier> queryWrapper = QueryGenerator.initQueryWrapper(wmsSupplier, req.getParameterMap());
+        queryWrapper.like(oConvertUtils.isNotEmpty(supplierCodeKeyword), "supplier_code",
+                supplierCodeKeyword == null ? null : supplierCodeKeyword.trim());
+        queryWrapper.like(oConvertUtils.isNotEmpty(supplierNameKeyword), "supplier_name",
+                supplierNameKeyword == null ? null : supplierNameKeyword.trim());
         queryWrapper.orderByDesc("create_time");
         Page<WmsSupplier> page = new Page<>(pageNo, pageSize);
         return Result.OK(service.page(page, queryWrapper));

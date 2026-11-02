@@ -493,7 +493,8 @@ public class WmsProductionInboundServiceImpl
                 qw.like("inbound_no", query.getInboundNo().trim());
             }
             if (oConvertUtils.isNotEmpty(query.getWorkOrderNo())) {
-                qw.eq("work_order_no", query.getWorkOrderNo().trim());
+                // 查询窗口模糊匹配（2026-11-02）：与同页 inbound_no 口径一致，任意连续子串都能命中
+                qw.like("work_order_no", query.getWorkOrderNo().trim());
             }
             if (oConvertUtils.isNotEmpty(query.getProductType())) {
                 qw.eq("product_type", query.getProductType());

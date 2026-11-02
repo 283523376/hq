@@ -72,7 +72,13 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
                                                     HttpServletRequest req) {
         // 非持久化字段必须先置空，否则 QueryGenerator 会拼出不存在的 warehouse_name 列条件
         wmsLocation.setWarehouseName(null);
+        // 查询窗口模糊匹配（2026-11-02）：QueryGenerator 对 String 拼的是等值，
+        // 这里把文本字段置空后手写 like，让「任意连续子串」都能命中。
+        String locationCodeKeyword = wmsLocation.getLocationCode();
+        wmsLocation.setLocationCode(null);
         QueryWrapper<WmsLocation> queryWrapper = QueryGenerator.initQueryWrapper(wmsLocation, req.getParameterMap());
+        queryWrapper.like(oConvertUtils.isNotEmpty(locationCodeKeyword), "location_code",
+                locationCodeKeyword == null ? null : locationCodeKeyword.trim());
         // 范围收窄（2026-10-19）：线边柜方案 A 已移出，其库位不再展示（数据保留可回滚）
         queryWrapper.notInSql("warehouse_id",
                 "SELECT id FROM wms_warehouse WHERE warehouse_type = '" + WmsConstants.WAREHOUSE_TYPE_LINE_SIDE

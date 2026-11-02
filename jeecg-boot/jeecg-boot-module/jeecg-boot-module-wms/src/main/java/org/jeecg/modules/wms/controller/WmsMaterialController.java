@@ -95,7 +95,17 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
         // 必须先置空，否则 QueryGenerator 会按它们拼出 category_name/category_code 条件导致 SQL 报错
         wmsMaterial.setCategoryName(null);
         wmsMaterial.setCategoryCode(null);
+        // 查询窗口模糊匹配（2026-11-02）：QueryGenerator 对 String 拼的是等值，
+        // 这里把文本字段置空后手写 like，让「任意连续子串」都能命中。
+        String materialCodeKeyword = wmsMaterial.getMaterialCode();
+        String materialNameKeyword = wmsMaterial.getMaterialName();
+        wmsMaterial.setMaterialCode(null);
+        wmsMaterial.setMaterialName(null);
         QueryWrapper<WmsMaterial> queryWrapper = QueryGenerator.initQueryWrapper(wmsMaterial, req.getParameterMap());
+        queryWrapper.like(oConvertUtils.isNotEmpty(materialCodeKeyword), "material_code",
+                materialCodeKeyword == null ? null : materialCodeKeyword.trim());
+        queryWrapper.like(oConvertUtils.isNotEmpty(materialNameKeyword), "material_name",
+                materialNameKeyword == null ? null : materialNameKeyword.trim());
         queryWrapper.orderByDesc("create_time");
         Page<WmsMaterial> page = new Page<>(pageNo, pageSize);
         IPage<WmsMaterial> pageList = service.page(page, queryWrapper);
