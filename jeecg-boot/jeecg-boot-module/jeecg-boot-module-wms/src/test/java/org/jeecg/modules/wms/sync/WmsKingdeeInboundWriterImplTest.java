@@ -61,6 +61,9 @@ class WmsKingdeeInboundWriterImplTest {
         // 既有用例覆盖「旧 Save 路径」（成品仍走它）；下推路径由后面的专门用例覆盖
         properties.setPushInboundEnabled(false);
         defectWriter = mock(IWmsKingdeeDefectWriter.class);
+        // 混合单会额外调不良品回写；默认给成功，个别用例再按需覆盖
+        when(defectWriter.write(any(WmsProductionInbound.class)))
+                .thenReturn(WmsOrderSyncResult.ok());
         inboundMapper = mock(WmsProductionInboundMapper.class);
         materialResolver = mock(WmsMaterialCodeResolver.class);
         when(materialResolver.resolveKingdeeCode(anyString())).thenAnswer(
@@ -510,6 +513,57 @@ class WmsKingdeeInboundWriterImplTest {
 
         writer.write(record);
 
+        verify(defectWriter, never()).write(any(WmsProductionInbound.class));
+    }
+
+    /**
+     * 混合单（良品 + 不良品）：良品走 PRD_INSTOCK，不良品必须另开其他入库单。
+     *
+     * <p>过去只回写良品，不良品在金蝶账上漏记——WMS 看得到、ERP 看不到。
+     */
+    @Test
+    void write_mixedOrder_alsoWritesDefectBill() {
+        stubHappyPath();
+        when(defectWriter.write(any(WmsProductionInbound.class))).thenReturn(WmsOrderSyncResult.ok());
+
+        WmsOrderSyncResult result = writer.write(inbound("10", "2"));
+
+        assertTrue(result.isSuccess(), result.getErrorMessage());
+        verify(defectWriter).write(any(WmsProductionInbound.class));
+    }
+
+    /** 不良品回写失败：不能报「整单失败」让人以为要重做，文案要说清良品已入库。 */
+    @Test
+    void write_mixedOrder_defectFails_reportsPartialSuccess() {
+        stubHappyPath();
+        when(defectWriter.write(any(WmsProductionInbound.class)))
+                .thenReturn(WmsOrderSyncResult.fail("金蝶其他入库单保存失败：仓库必填"));
+
+        WmsOrderSyncResult result = writer.write(inbound("10", "2"));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("良品已入库"), result.getErrorMessage());
+        assertTrue(result.getErrorMessage().contains("不良品回写失败"), result.getErrorMessage());
+    }
+
+    /** 良品回写失败时不能再开不良品单：否则会留下一张无对应的孤立单据。 */
+    @Test
+    void write_goodFails_doesNotWriteDefect() {
+        // 不 stub 任何 ERP 响应 → 良品路径失败
+        WmsOrderSyncResult result = writer.write(inbound("10", "2"));
+
+        assertFalse(result.isSuccess());
+        verify(defectWriter, never()).write(any(WmsProductionInbound.class));
+    }
+
+    /** 全良品（不良=0）不应触发不良品回写。 */
+    @Test
+    void write_allGood_noDefectWrite() {
+        stubHappyPath();
+
+        WmsOrderSyncResult result = writer.write(inbound("10", "0"));
+
+        assertTrue(result.isSuccess(), result.getErrorMessage());
         verify(defectWriter, never()).write(any(WmsProductionInbound.class));
     }
 }

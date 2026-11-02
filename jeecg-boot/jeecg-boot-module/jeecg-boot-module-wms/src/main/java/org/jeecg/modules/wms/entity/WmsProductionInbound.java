@@ -132,6 +132,15 @@ public class WmsProductionInbound extends JeecgEntity {
     private String erpBillNo;
 
     /**
+     * 不良品回写的金蝶单号（其他入库单 QTRK…）。
+     *
+     * <p>混合单（良品与不良品都有）专用：良品走 {@code erpBillNo}（SCRK…），
+     * 不良品走本列。纯不良品仍是 {@code erpBillNo}（历史兼容）。
+     */
+    @Schema(description = "不良品回写的金蝶单号（混合单专用）")
+    private String defectErpBillNo;
+
+    /**
      * 工序汇报分录幂等键：`金蝶单号#工序序列#工序号`。
      *
      * <p>一张工序汇报单有多个分录行（每道工序一行），只用单号去重会把它们并成一条。

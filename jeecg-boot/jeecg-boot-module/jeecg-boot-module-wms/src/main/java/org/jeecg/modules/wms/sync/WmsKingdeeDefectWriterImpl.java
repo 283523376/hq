@@ -70,13 +70,16 @@ public class WmsKingdeeDefectWriterImpl implements IWmsKingdeeDefectWriter {
         }
         BigDecimal badQty = inbound.getBadQty() == null ? BigDecimal.ZERO : inbound.getBadQty();
         if (badQty.signum() <= 0) {
-            return WmsOrderSyncResult.fail("纯不良品回写要求不良数量大于 0：" + inbound.getInboundNo());
+            return WmsOrderSyncResult.fail("不良品回写要求不良数量大于 0：" + inbound.getInboundNo());
         }
         String wmsBillNo = inbound.getInboundNo();
         try {
-            // 1) 幂等：本地已回存金蝶单号 → 直接按该单号跟进状态
-            if (oConvertUtils.isNotEmpty(inbound.getErpBillNo())) {
-                return followUp(inbound.getErpBillNo());
+            // 1) 幂等：优先看不良品专用列；纯不良品（无良品）历史上存在 erp_bill_no 里
+            String existingDefectBill = oConvertUtils.isNotEmpty(inbound.getDefectErpBillNo())
+                    ? inbound.getDefectErpBillNo()
+                    : (isPureDefect(inbound) ? inbound.getErpBillNo() : null);
+            if (oConvertUtils.isNotEmpty(existingDefectBill)) {
+                return followUp(existingDefectBill);
             }
 
             // 2) 生产订单：组织 + 车间（部门）。金蝶对部门/客户二选一必填，先给出可读原因
@@ -169,12 +172,13 @@ public class WmsKingdeeDefectWriterImpl implements IWmsKingdeeDefectWriter {
             WmsOrderSyncResult submitted = submit(erpBillNo);
             if (submitted.isSuccess()) {
                 // 回存失败必须抛出（外层 catch 记失败、日志带单号）：回存不成功，重试会重复开单
-                persistErpBillNo(inbound.getId(), erpBillNo);
-                log.info("纯不良品[{}]自动开单金蝶其他入库单成功：{}", wmsBillNo, erpBillNo);
+                persistErpBillNo(inbound.getId(), erpBillNo, isPureDefect(inbound));
+                log.info("不良品[{}]自动开单金蝶其他入库单成功：{}（{}）", wmsBillNo, erpBillNo,
+                        isPureDefect(inbound) ? "纯不良品" : "混合单的不良品部分");
             }
             return submitted;
         } catch (Exception e) {
-            log.warn("纯不良品[{}]回写金蝶异常：{}", wmsBillNo, e.getMessage());
+            log.warn("不良品[{}]回写金蝶异常：{}", wmsBillNo, e.getMessage());
             return WmsOrderSyncResult.fail("回写金蝶异常：" + e.getMessage());
         }
     }
@@ -203,13 +207,22 @@ public class WmsKingdeeDefectWriterImpl implements IWmsKingdeeDefectWriter {
      * <p>失败直接抛异常：没有 erp_bill_no，重试时幂等检查会再次 Save，金蝶侧出现重复单。
      * 抛出后本次同步按失败收口（日志/告警带单号），由人工把单号补进 erp_bill_no 后重试即幂等。
      */
-    private void persistErpBillNo(String inboundId, String erpBillNo) {
-        // updateById 只更新非空字段：这里只有 id + erpBillNo，不会碰其他列
+    private void persistErpBillNo(String inboundId, String erpBillNo, boolean pureDefect) {
+        // updateById 只更新非空字段：这里只有 id + 单号列，不会碰其他列
         //（不用 LambdaUpdateWrapper：它要求 MP 实体缓存，纯单测环境起不来）
         WmsProductionInbound patch = new WmsProductionInbound();
         patch.setId(inboundId);
-        patch.setErpBillNo(erpBillNo);
+        if (pureDefect) {
+            // 纯不良品：沿用 erp_bill_no（历史与前端展示都依赖它），同时写专用列
+            patch.setErpBillNo(erpBillNo);
+        }
+        patch.setDefectErpBillNo(erpBillNo);
         inboundMapper.updateById(patch);
+    }
+
+    /** 纯不良品：整单没有良品。 */
+    private static boolean isPureDefect(WmsProductionInbound inbound) {
+        return inbound.getGoodQty() == null || inbound.getGoodQty().signum() <= 0;
     }
 
     private WmsOrderSyncResult submit(String number) {

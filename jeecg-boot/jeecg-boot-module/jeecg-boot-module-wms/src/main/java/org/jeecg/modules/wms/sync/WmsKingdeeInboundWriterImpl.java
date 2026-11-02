@@ -73,6 +73,31 @@ public class WmsKingdeeInboundWriterImpl implements IWmsKingdeeInboundWriter {
             }
             return defectWriter.write(inbound);
         }
+        // 良品走 PRD_INSTOCK
+        WmsOrderSyncResult result = writeGoods(inbound, goodQty);
+        if (!result.isSuccess()) {
+            return result;
+        }
+        // 混合单：金蝶生产入库单只记良品，不良品必须另开其他入库单，否则 ERP 账上漏记这批不良品
+        BigDecimal badQty = inbound.getBadQty() == null ? BigDecimal.ZERO : inbound.getBadQty();
+        if (badQty.signum() <= 0) {
+            return result;
+        }
+        if (defectWriter == null) {
+            return WmsOrderSyncResult.fail("良品已入库（金蝶单 " + inbound.getErpBillNo()
+                    + "），但不良品回写器未注入，不良品未记账，请人工处理");
+        }
+        WmsOrderSyncResult defect = defectWriter.write(inbound);
+        if (!defect.isSuccess()) {
+            // 良品已成功，这里不能报「整单失败」让人以为要重做——文案说清哪半成功、哪半失败
+            return WmsOrderSyncResult.fail("良品已入库（金蝶单 " + inbound.getErpBillNo()
+                    + "），不良品回写失败：" + defect.getErrorMessage());
+        }
+        return result;
+    }
+
+    /** 良品入库回写（PRD_INSTOCK）。 */
+    private WmsOrderSyncResult writeGoods(WmsProductionInbound inbound, BigDecimal goodQty) {
         String billNo = inbound.getInboundNo();
         try {
             // 1) 幂等：本地已回存金蝶单号 → 按它跟进状态
