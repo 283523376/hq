@@ -2,6 +2,10 @@ package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
@@ -48,6 +52,10 @@ public class WmsSubcontractOrderSyncServiceImpl implements IWmsSubcontractOrderS
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
     private final WmsOutboundOrderMapper outboundOrderMapper;
+
+    /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
+    @Autowired(required = false)
+    private IWmsAuditLogService auditLogService;
     private final IWmsSyncLogService syncLogService;
 
     public WmsSubcontractOrderSyncServiceImpl(WmsKingdeeFormClient formClient,
@@ -135,6 +143,16 @@ public class WmsSubcontractOrderSyncServiceImpl implements IWmsSubcontractOrderS
             draft.setRemark("金蝶委外订单同步生成的只读草稿：本期不含明细，不拣货不回写");
             outboundOrderMapper.insert(draft);
             vo.setCreated(vo.getCreated() + 1);
+            WmsAuditRecorder.record(auditLogService, new WmsAuditEvent()
+                    .setBizType(WmsConstants.AUDIT_BIZ_OUTBOUND)
+                    .setBizNo(draft.getOutboundNo())
+                    .setBizRef(billNo)
+                    .setAction(WmsConstants.AUDIT_ACTION_SYNC_IN)
+                    .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
+                    .setAfterValue(WmsAuditRecorder.snapshot(auditLogService, draft,
+                            "outboundNo", "outboundType", "status", "erpSubOrderNo"))
+                    .setOperator(WmsConstants.AUDIT_OPERATOR_SYSTEM)
+                    .setResult(WmsConstants.AUDIT_RESULT_SUCCESS));
             return;
         }
         if (done && !WmsConstants.OUTBOUND_STATUS_CLOSED.equals(existing.getStatus())) {
@@ -143,6 +161,16 @@ public class WmsSubcontractOrderSyncServiceImpl implements IWmsSubcontractOrderS
             existing.setCloseTime(new Date());
             outboundOrderMapper.updateById(existing);
             vo.setVoided(vo.getVoided() + 1);
+            WmsAuditRecorder.record(auditLogService, new WmsAuditEvent()
+                    .setBizType(WmsConstants.AUDIT_BIZ_OUTBOUND)
+                    .setBizNo(existing.getOutboundNo())
+                    .setBizRef(billNo)
+                    .setAction(WmsConstants.AUDIT_ACTION_CANCEL)
+                    .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
+                    .setAfterValue(WmsAuditRecorder.snapshot(auditLogService, existing,
+                            "outboundNo", "status", "closeReason"))
+                    .setOperator(WmsConstants.AUDIT_OPERATOR_SYSTEM)
+                    .setResult(WmsConstants.AUDIT_RESULT_SUCCESS));
             return;
         }
         if (!done) {

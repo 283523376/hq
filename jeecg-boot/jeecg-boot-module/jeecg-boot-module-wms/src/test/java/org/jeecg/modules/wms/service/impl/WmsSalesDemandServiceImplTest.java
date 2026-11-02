@@ -1,11 +1,13 @@
 package org.jeecg.modules.wms.service.impl;
 
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
 import org.jeecg.modules.wms.dto.WmsOutboundDetailDTO;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.service.IWmsOutboundService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
@@ -233,5 +235,37 @@ class WmsSalesDemandServiceImplTest {
         assertEquals(0, vo.getCreated(), "ERP 已有关联单但数量未知时不能生成待办");
         assertTrue(vo.getSkippedReasons().stream().anyMatch(r -> r.contains("数量未知")),
                 "跳过原因要说明占用数量未知，实际：" + vo.getSkippedReasons());
+    }
+
+    /** 可选依赖是字段注入，单测里手动塞进去。 */
+    private static void injectAudit(Object target, Object value) throws Exception {
+        java.lang.reflect.Field field = target.getClass().getDeclaredField("auditLogService");
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    /** 「错通知单生成了错出库单」是最典型的错数据链路：出库单号 + 通知单号都要能反查。 */
+    @Test
+    void audit_recordsGeneratedOrderWithNoticeNo() throws Exception {
+        IWmsAuditLogService auditService = mock(IWmsAuditLogService.class);
+        when(auditService.snapshot(any(), any(String[].class))).thenReturn("{\"outboundNo\":\"XSCK1\"}");
+        injectAudit(service, auditService);
+        stubRows(row("XSFH001", "M1", "10", "CK-01"));
+        when(stockMappingResolver.resolveWmsWarehouse(anyString())).thenReturn("CK-01");
+        when(materialResolver.resolveProductType(anyString())).thenReturn(null);
+        when(outboundService.createSalesFromNotice(anyString(), anyString(), anyString(), any(),
+                any(), any())).thenReturn(new WmsOutboundOrder().setOutboundNo("XSCK1"));
+
+        WmsDemandResultVO vo = service.generatePendingSalesOutbounds();
+
+        assertEquals(1, vo.getCreated(), vo.getMessage());
+        ArgumentCaptor<WmsAuditEvent> captor = ArgumentCaptor.forClass(WmsAuditEvent.class);
+        verify(auditService).record(captor.capture());
+        WmsAuditEvent event = captor.getValue();
+        assertEquals("出库单", event.getBizType());
+        assertEquals("XSCK1", event.getBizNo());
+        assertEquals("XSFH001", event.getBizRef(), "必须能按发货通知单反查它生成了哪些出库单");
+        assertEquals("创建", event.getAction());
+        assertEquals("ERP同步", event.getChannel());
     }
 }

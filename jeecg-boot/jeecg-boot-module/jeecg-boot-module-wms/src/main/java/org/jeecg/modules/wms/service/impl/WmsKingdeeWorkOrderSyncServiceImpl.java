@@ -3,12 +3,15 @@ package org.jeecg.modules.wms.service.impl;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
 import org.jeecg.modules.wms.dto.WmsWorkOrderPushDTO;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeWorkOrderSyncService;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.service.IWmsWorkOrderService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
@@ -17,6 +20,7 @@ import org.jeecg.modules.wms.sync.WmsKingdeeResult;
 import org.jeecg.modules.wms.sync.WmsMaterialCodeResolver;
 import org.jeecg.modules.wms.vo.WmsKingdeeWorkOrderSyncResultVO;
 import org.jeecg.modules.wms.vo.WmsWorkOrderInfoVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -60,6 +64,10 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
     private final IWmsSyncLogService syncLogService;
 
     private final WmsMaterialCodeResolver materialResolver;
+
+    /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
+    @Autowired(required = false)
+    private IWmsAuditLogService auditLogService;
 
     public WmsKingdeeWorkOrderSyncServiceImpl(WmsKingdeeFormClient formClient,
                                               WmsKingdeeProperties properties,
@@ -288,6 +296,19 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
         dto.setErpDocumentStatus(documentStatus);
         dto.setMesOrderNo(workOrderNo);
         workOrderService.push(dto);
+        // 二次同步时 before 是 WMS 原有状态——「ERP 作废后 WMS 还显示已下达」就靠这条记录解释
+        WmsAuditRecorder.record(auditLogService, new WmsAuditEvent()
+                .setBizType(WmsConstants.AUDIT_BIZ_WORK_ORDER)
+                .setBizNo(workOrderNo)
+                .setAction(WmsConstants.AUDIT_ACTION_SYNC_IN)
+                .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
+                .setBeforeValue(WmsAuditRecorder.snapshot(auditLogService, existed,
+                        "workOrderNo", "workOrderStatus", "planQty", "batchNo", "erpDocumentStatus"))
+                .setAfterValue(WmsAuditRecorder.snapshot(auditLogService, dto,
+                        "workOrderNo", "workOrderStatus", "planQty", "batchNo", "erpDocumentStatus",
+                        "materialCode", "productType"))
+                .setOperator(WmsConstants.AUDIT_OPERATOR_SYSTEM)
+                .setResult(WmsConstants.AUDIT_RESULT_SUCCESS));
         if (existed == null) {
             vo.setImported(vo.getImported() + 1);
         } else {

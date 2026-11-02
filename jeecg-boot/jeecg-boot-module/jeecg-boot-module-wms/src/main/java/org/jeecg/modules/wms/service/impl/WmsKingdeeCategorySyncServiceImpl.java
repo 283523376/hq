@@ -7,6 +7,9 @@ import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeCategorySyncService;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
@@ -49,6 +52,10 @@ public class WmsKingdeeCategorySyncServiceImpl implements IWmsKingdeeCategorySyn
     private final IWmsMaterialCategoryService categoryService;
     private final WmsMaterialCategoryMapper categoryMapper;
     private final IWmsSyncLogService syncLogService;
+
+    /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
+    @Autowired(required = false)
+    private IWmsAuditLogService auditLogService;
 
     public WmsKingdeeCategorySyncServiceImpl(WmsKingdeeFormClient formClient,
                                              WmsKingdeeProperties properties,
@@ -168,6 +175,8 @@ public class WmsKingdeeCategorySyncServiceImpl implements IWmsKingdeeCategorySyn
         category.setErpGroupNumber(asText(row.get(2)));
         category.setErpGroupName(asText(row.get(3)));
         categoryService.editCategory(category);
+        WmsAuditRecorder.recordMasterData(auditLogService, category.getCategoryCode(),
+                WmsConstants.AUDIT_ACTION_UPDATE, category);
         return true;
     }
 

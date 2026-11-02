@@ -6,6 +6,9 @@ import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeWarehouseSyncService;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
@@ -50,6 +53,10 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
     private final IWmsWarehouseService warehouseService;
     private final WmsWarehouseMapper warehouseMapper;
     private final IWmsSyncLogService syncLogService;
+
+    /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
+    @Autowired(required = false)
+    private IWmsAuditLogService auditLogService;
 
     public WmsKingdeeWarehouseSyncServiceImpl(WmsKingdeeFormClient formClient,
                                               WmsKingdeeProperties properties,
@@ -179,6 +186,8 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         if (!WmsConstants.WAREHOUSE_TYPE_EXTERNAL.equals(existing.getWarehouseType())) {
             existing.setWarehouseType(WmsConstants.WAREHOUSE_TYPE_EXTERNAL);
             warehouseService.editWarehouse(existing);
+            WmsAuditRecorder.recordMasterData(auditLogService, existing.getWarehouseCode(),
+                    WmsConstants.AUDIT_ACTION_UPDATE, existing);
         }
     }
 
@@ -218,6 +227,8 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         existing.setErpStockCode(erpCode);
         existing.setErpStockName(erpName);
         warehouseService.editWarehouse(existing);
+            WmsAuditRecorder.recordMasterData(auditLogService, existing.getWarehouseCode(),
+                    WmsConstants.AUDIT_ACTION_UPDATE, existing);
         return true;
     }
 
@@ -239,6 +250,8 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
                 existing.setWarehouseType(WmsConstants.WAREHOUSE_TYPE_EXTERNAL);
             }
             warehouseService.editWarehouse(existing);
+            WmsAuditRecorder.recordMasterData(auditLogService, existing.getWarehouseCode(),
+                    WmsConstants.AUDIT_ACTION_UPDATE, existing);
             return false;
         }
         WmsWarehouse created = new WmsWarehouse();
@@ -250,6 +263,8 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         created.setErpStockCode(erpCode);
         created.setErpStockName(erpName);
         warehouseService.addWarehouse(created);
+        WmsAuditRecorder.recordMasterData(auditLogService, created.getWarehouseCode(),
+                WmsConstants.AUDIT_ACTION_SYNC_IN, created);
         return true;
     }
 
@@ -261,6 +276,8 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         }
         existing.setWarehouseName(newName);
         warehouseService.editWarehouse(existing);
+            WmsAuditRecorder.recordMasterData(auditLogService, existing.getWarehouseCode(),
+                    WmsConstants.AUDIT_ACTION_UPDATE, existing);
     }
 
     private void createIfAbsent(String warehouseCode, String name) {
@@ -273,6 +290,8 @@ public class WmsKingdeeWarehouseSyncServiceImpl implements IWmsKingdeeWarehouseS
         created.setWarehouseType(WmsConstants.WAREHOUSE_TYPE_NORMAL);
         created.setStatus("1");
         warehouseService.addWarehouse(created);
+        WmsAuditRecorder.recordMasterData(auditLogService, created.getWarehouseCode(),
+                WmsConstants.AUDIT_ACTION_SYNC_IN, created);
     }
 
     private WmsWarehouse findByWarehouseCode(String warehouseCode) {

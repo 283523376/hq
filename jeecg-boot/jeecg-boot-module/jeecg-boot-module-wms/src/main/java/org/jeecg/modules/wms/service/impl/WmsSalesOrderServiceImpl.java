@@ -6,6 +6,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.dto.message.MessageDTO;
 import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
@@ -54,6 +58,10 @@ public class WmsSalesOrderServiceImpl extends ServiceImpl<WmsSalesOrderMapper, W
         implements IWmsSalesOrderService {
 
     private final WmsSalesOrderDetailMapper detailMapper;
+
+    /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
+    @Autowired(required = false)
+    private IWmsAuditLogService auditLogService;
     private final WmsMaterialMapper materialMapper;
     private final WmsOutboundOrderMapper outboundOrderMapper;
     private final WmsOutboundDetailMapper outboundDetailMapper;
@@ -173,6 +181,9 @@ public class WmsSalesOrderServiceImpl extends ServiceImpl<WmsSalesOrderMapper, W
     /** upsert 表头 + 分录（明细先逻辑删后重建），并刷新已出库数量。 */
     private WmsSalesOrder persist(WmsKingdeeSaleOrder source) {
         WmsSalesOrder existing = findByNo(source.getSalesOrderNo());
+        // 快照必须在覆盖之前取：existing 随后会被就地改写
+        String beforeJson = WmsAuditRecorder.snapshot(auditLogService, existing,
+                "salesOrderNo", "erpDocumentStatus", "customerCode", "deliveryDate");
         WmsSalesOrder order = existing == null ? new WmsSalesOrder() : existing;
         order.setSalesOrderNo(source.getSalesOrderNo())
                 .setCustomerCode(source.getCustomerCode())
@@ -211,6 +222,16 @@ public class WmsSalesOrderServiceImpl extends ServiceImpl<WmsSalesOrderMapper, W
                     .setShippedQty(shipped.getOrDefault(line.getMaterialCode(), BigDecimal.ZERO));
             detailMapper.insert(detail);
         }
+        WmsAuditRecorder.record(auditLogService, new WmsAuditEvent()
+                .setBizType(WmsConstants.AUDIT_BIZ_MASTER_DATA)
+                .setBizNo(source.getSalesOrderNo())
+                .setAction(existing == null ? WmsConstants.AUDIT_ACTION_SYNC_IN : WmsConstants.AUDIT_ACTION_UPDATE)
+                .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
+                .setBeforeValue(beforeJson)
+                .setAfterValue(WmsAuditRecorder.snapshot(auditLogService, order,
+                        "salesOrderNo", "erpDocumentStatus", "customerCode", "deliveryDate"))
+                .setOperator(WmsConstants.AUDIT_OPERATOR_SYSTEM)
+                .setResult(WmsConstants.AUDIT_RESULT_SUCCESS));
         return order;
     }
 

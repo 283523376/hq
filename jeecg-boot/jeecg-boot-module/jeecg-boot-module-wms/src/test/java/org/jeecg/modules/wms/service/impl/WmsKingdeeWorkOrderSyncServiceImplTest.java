@@ -1,9 +1,11 @@
 package org.jeecg.modules.wms.service.impl;
 
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
 import org.jeecg.modules.wms.dto.WmsWorkOrderPushDTO;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.service.IWmsWorkOrderService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
@@ -21,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -75,6 +78,47 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
         });
         service = new WmsKingdeeWorkOrderSyncServiceImpl(
                 formClient, properties, workOrderService, materialMapper, syncLogService, materialResolver);
+    }
+
+
+    /** 可选依赖是字段注入，单测里手动塞进去。 */
+    private static void injectAudit(Object target, Object value) throws Exception {
+        java.lang.reflect.Field field = target.getClass().getDeclaredField("auditLogService");
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    /** 二次同步必须能看出「同步前 WMS 是什么状态」——ERP 作废后靠它解释错误。 */
+    @Test
+    void audit_recordsBeforeAndAfterOnResync() throws Exception {
+        IWmsAuditLogService auditService = mock(IWmsAuditLogService.class);
+        when(auditService.snapshot(any(), any(String[].class))).thenReturn("{\"workOrderStatus\":\"x\"}");
+        injectAudit(service, auditService);
+
+        WmsWorkOrder existingOrder = new WmsWorkOrder()
+                .setWorkOrderNo("WORK00072").setWorkOrderStatus("待生产");
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of(List.of("WORK00072", "C", "1",
+                        "WA.2206.2201.02000430.A003", "半成品", "0", new BigDecimal("2000"),
+                        "2026-10-01"))));
+        when(materialMapper.selectOne(any())).thenReturn(pbc001());
+        when(workOrderService.getByWorkOrderNo("WORK00072")).thenReturn(existingOrder);
+
+        service.syncFromKingdee("WORK00072", null, null, 50);
+
+        ArgumentCaptor<WmsAuditEvent> captor = ArgumentCaptor.forClass(WmsAuditEvent.class);
+        verify(auditService).record(captor.capture());
+        WmsAuditEvent event = captor.getValue();
+        assertEquals("工单", event.getBizType());
+        assertEquals("WORK00072", event.getBizNo());
+        assertEquals("同步落地", event.getAction());
+        assertEquals("ERP同步", event.getChannel());
+        assertEquals("system", event.getOperator());
+        // before 必须取 WMS 原记录（而不是本次推入的 DTO）
+        verify(auditService).snapshot(org.mockito.ArgumentMatchers.same(existingOrder),
+                any(String[].class));
+        assertNotNull(event.getBeforeValue());
+        assertNotNull(event.getAfterValue());
     }
 
     private WmsKingdeeResult rows(List<List<Object>> rows) {

@@ -11,6 +11,9 @@ import org.jeecg.modules.wms.mapper.WmsInventoryMapper;
 import org.jeecg.modules.wms.mapper.WmsKingdeeBinMapper;
 import org.jeecg.modules.wms.mapper.WmsLocationMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeBinSyncService;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
@@ -58,6 +61,10 @@ public class WmsKingdeeBinSyncServiceImpl implements IWmsKingdeeBinSyncService {
     private final WmsLocationMapper locationMapper;
     private final WmsInventoryMapper inventoryMapper;
     private final IWmsSyncLogService syncLogService;
+
+    /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
+    @Autowired(required = false)
+    private IWmsAuditLogService auditLogService;
 
     public WmsKingdeeBinSyncServiceImpl(WmsKingdeeFormClient formClient,
                                         WmsKingdeeProperties properties,
@@ -225,6 +232,8 @@ public class WmsKingdeeBinSyncServiceImpl implements IWmsKingdeeBinSyncService {
             source.setLastSyncTime(now);
             source.setDeletedAt(0L);
             binMapper.insert(source);
+            WmsAuditRecorder.recordMasterData(auditLogService, source.getBinNumber(),
+                    WmsConstants.AUDIT_ACTION_SYNC_IN, source);
             return true;
         }
         existing.setBinName(source.getBinName());
@@ -237,6 +246,8 @@ public class WmsKingdeeBinSyncServiceImpl implements IWmsKingdeeBinSyncService {
         }
         existing.setLastSyncTime(now);
         binMapper.updateById(existing);
+        WmsAuditRecorder.recordMasterData(auditLogService, existing.getBinNumber(),
+                WmsConstants.AUDIT_ACTION_UPDATE, existing);
         return false;
     }
 
@@ -262,6 +273,8 @@ public class WmsKingdeeBinSyncServiceImpl implements IWmsKingdeeBinSyncService {
             patch.setSyncStatus(status);
             patch.setLastSyncTime(new Date());
             binMapper.updateById(patch);
+            WmsAuditRecorder.recordMasterData(auditLogService, bin.getBinNumber(),
+                    WmsConstants.AUDIT_ACTION_UPDATE, bin);
             marked++;
             log.warn("仓位属性[{}/{}]在金蝶侧已不存在，标记为「{}」", bin.getFlexNumber(), bin.getBinNumber(), status);
         }

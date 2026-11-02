@@ -7,6 +7,9 @@ import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeMaterialSyncService;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
@@ -53,6 +56,10 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
     private final IWmsKingdeeAuthService kingdeeAuthService;
     private final WmsMaterialMapper materialMapper;
     private final IWmsSyncLogService syncLogService;
+
+    /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
+    @Autowired(required = false)
+    private IWmsAuditLogService auditLogService;
 
     public WmsKingdeeMaterialSyncServiceImpl(WmsKingdeeFormClient formClient,
                                              WmsKingdeeProperties properties,
@@ -157,6 +164,8 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
             material.setDeletedAt(0L);
             WmsUtils.fillCreate(material);
             materialMapper.insert(material);
+            WmsAuditRecorder.recordMasterData(auditLogService, number,
+                    WmsConstants.AUDIT_ACTION_SYNC_IN, material);
             return true;
         }
         boolean changed = false;
@@ -178,6 +187,8 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
         }
         if (changed) {
             materialMapper.updateById(existing);
+            WmsAuditRecorder.recordMasterData(auditLogService, number,
+                    WmsConstants.AUDIT_ACTION_UPDATE, existing);
         }
         return false;
     }

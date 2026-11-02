@@ -2,18 +2,22 @@ package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.mapper.WmsProductionInboundMapper;
 import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.service.IWmsOperationReportDraftService;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.sync.WmsKingdeeOperationReportReader;
 import org.jeecg.modules.wms.vo.WmsOperationReportRowVO;
 import org.jeecg.modules.wms.vo.WmsOperationReportSyncResultVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +50,10 @@ public class WmsOperationReportDraftServiceImpl implements IWmsOperationReportDr
     private final WmsMaterialMapper materialMapper;
     private final WmsWarehouseMapper warehouseMapper;
     private final IWmsSyncLogService syncLogService;
+
+    /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null，落点走 WmsAuditRecorder 自动跳过。 */
+    @Autowired(required = false)
+    private IWmsAuditLogService auditLogService;
 
     public WmsOperationReportDraftServiceImpl(WmsKingdeeOperationReportReader reader,
                                               WmsProductionInboundMapper inboundMapper,
@@ -128,6 +136,7 @@ public class WmsOperationReportDraftServiceImpl implements IWmsOperationReportDr
             existing.setUpdateTime(now);
             inboundMapper.updateById(existing);
             vo.setUpdated(vo.getUpdated() + 1);
+            WmsAuditRecorder.record(auditLogService, reportEvent(entryKey, existing, existing, row));
             return;
         }
 
@@ -153,6 +162,24 @@ public class WmsOperationReportDraftServiceImpl implements IWmsOperationReportDr
         created.setUpdateTime(now);
         inboundMapper.insert(created);
         vo.setCreated(vo.getCreated() + 1);
+        WmsAuditRecorder.record(auditLogService, reportEvent(entryKey, null, created, row));
+    }
+
+    /** 工序汇报的审计事件：biz_no 用「单号#序列#工序号」，与幂等键同源，事后按它反查。 */
+    private WmsAuditEvent reportEvent(String entryKey, WmsProductionInbound before,
+                                      WmsProductionInbound after, WmsOperationReportRowVO row) {
+        return new WmsAuditEvent()
+                .setBizType(WmsConstants.AUDIT_BIZ_INBOUND)
+                .setBizNo(entryKey)
+                .setBizRef(row.getMoNumber())
+                .setAction(WmsConstants.AUDIT_ACTION_SYNC_IN)
+                .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
+                .setBeforeValue(WmsAuditRecorder.snapshot(auditLogService, before,
+                        "inboundNo", "quantity", "goodQty", "batchNo", "status"))
+                .setAfterValue(WmsAuditRecorder.snapshot(auditLogService, after,
+                        "inboundNo", "quantity", "goodQty", "batchNo", "status", "erpBillNo"))
+                .setOperator(WmsConstants.AUDIT_OPERATOR_SYSTEM)
+                .setResult(WmsConstants.AUDIT_RESULT_SUCCESS);
     }
 
     /** 幂等键：单号#工序序列#工序号（一张 GXHB 有多个分录，仅用单号会互相覆盖）。 */

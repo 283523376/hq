@@ -3,6 +3,10 @@ package org.jeecg.modules.wms.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsOutboundDetailDTO;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
@@ -62,6 +66,10 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
     private final WmsOutboundOrderMapper outboundMapper;
     private final WmsOutboundDetailMapper outboundDetailMapper;
     private final IWmsOutboundService outboundService;
+
+    /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
+    @Autowired(required = false)
+    private IWmsAuditLogService auditLogService;
 
     public WmsSalesDemandServiceImpl(WmsKingdeeProperties properties,
                                      WmsKingdeeFormClient formClient,
@@ -125,6 +133,17 @@ public class WmsSalesDemandServiceImpl implements IWmsSalesDemandService {
                         str(head, 1), str(head, 2), parseDate(str(head, 3)), null, details);
                 vo.getCreatedOrders().add(created.getOutboundNo());
                 vo.setCreated(vo.getCreated() + 1);
+                // 「错通知单生成了错出库单」是最典型的错数据链路，必须能按通知单号反查
+                WmsAuditRecorder.record(auditLogService, new WmsAuditEvent()
+                        .setBizType(WmsConstants.AUDIT_BIZ_OUTBOUND)
+                        .setBizNo(created.getOutboundNo())
+                        .setBizRef(billNo)
+                        .setAction(WmsConstants.AUDIT_ACTION_CREATE)
+                        .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
+                        .setAfterValue(WmsAuditRecorder.snapshot(auditLogService, created,
+                                "outboundNo", "outboundType", "status", "customerCode", "salesOrderNo"))
+                        .setOperator(WmsConstants.AUDIT_OPERATOR_SYSTEM)
+                        .setResult(WmsConstants.AUDIT_RESULT_SUCCESS));
             } catch (Exception e) {
                 log.warn("发货通知单[{}]生成销售出库待办失败：{}", billNo, e.getMessage());
                 skip(vo, billNo + "：" + e.getMessage());
