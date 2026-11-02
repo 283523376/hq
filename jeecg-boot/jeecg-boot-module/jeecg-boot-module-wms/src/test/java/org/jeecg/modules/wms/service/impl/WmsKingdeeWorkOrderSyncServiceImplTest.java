@@ -515,20 +515,60 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
         assertFalse(filter.getValue().contains("FDate>="), "实际：" + filter.getValue());
     }
 
-    /** 作废单同步进来后，WMS 状态必须是「已作废」。 */
+    /** 作废单同步进来后，WMS 必须通过最小通道把状态改成「已作废」（评审 I3：不走 push）。 */
     @Test
     void sync_cancelledOrder_writesCancelledStatus() {
         when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
                 .thenReturn(rows(List.of(List.of("MO-CANCELLED", "C", "1",
                         "WA.2206.2201.02000430.A003", "半成品", "0", new BigDecimal("100"),
                         "2026-10-01", "B"))));
-        when(materialMapper.selectOne(any())).thenReturn(pbc001());
-        when(workOrderService.getByWorkOrderNo("MO-CANCELLED")).thenReturn(null);
+        when(workOrderService.getByWorkOrderNo("MO-CANCELLED"))
+                .thenReturn(new WmsWorkOrder().setWorkOrderNo("MO-CANCELLED").setWorkOrderStatus("已下达"));
+        when(workOrderService.markCancelledByErp("MO-CANCELLED")).thenReturn(true);
 
         service.syncFromKingdee("MO-CANCELLED", null, null, 50);
 
-        ArgumentCaptor<WmsWorkOrderPushDTO> captor = ArgumentCaptor.forClass(WmsWorkOrderPushDTO.class);
-        verify(workOrderService).push(captor.capture());
-        assertEquals("已作废", captor.getValue().getWorkOrderStatus());
+        verify(workOrderService).markCancelledByErp("MO-CANCELLED");
+        verify(workOrderService, never()).push(any());
+    }
+
+    /**
+     * 评审 I3：作废单不能被多物料/多批次/物料缺失/零数量门槛「整单跳过」——
+     * 跳过了 WMS 就永远停在「已下达」，错单继续被执行。作废走最小更新通道。
+     */
+    @Test
+    void sync_cancelledOrder_bypassesMaterialAndLotGates() {
+        // 多批次 + 物料在 WMS 不存在 + 数量为 0：三个门槛任一命中都会跳过
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of(
+                        List.of("MO-CX", "C", "1", "UNMAPPED.X", "物料", "L1", new BigDecimal("0"),
+                                "2026-10-01", "B"),
+                        List.of("MO-CX", "C", "1", "UNMAPPED.Y", "物料", "L2", new BigDecimal("0"),
+                                "2026-10-01", "B"))));
+        when(workOrderService.getByWorkOrderNo("MO-CX"))
+                .thenReturn(new WmsWorkOrder().setWorkOrderNo("MO-CX").setWorkOrderStatus("已下达"));
+        when(workOrderService.markCancelledByErp("MO-CX")).thenReturn(true);
+
+        service.syncFromKingdee("MO-CX", null, null, 50);
+
+        verify(workOrderService).markCancelledByErp("MO-CX");
+        // 作废路径不落 push（push 需要合法物料，作废单给不了）
+        verify(workOrderService, never()).push(any());
+    }
+
+    /** WMS 里没有这张单：没进来过就没有可纠正的东西，跳过但不报错。 */
+    @Test
+    void sync_cancelledOrderNotInWms_skipsQuietly() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of(List.of("MO-GONE", "C", "1", "WA.2206.2201.02000430.A003",
+                        "半成品", "0", new BigDecimal("10"), "2026-10-01", "B"))));
+        when(workOrderService.getByWorkOrderNo("MO-GONE")).thenReturn(null);
+
+        WmsKingdeeWorkOrderSyncResultVO vo = service.syncFromKingdee("MO-GONE", null, null, 50);
+
+        verify(workOrderService, never()).markCancelledByErp(anyString());
+        verify(workOrderService, never()).push(any());
+        assertTrue(vo.getMessages().stream().anyMatch(m -> m.contains("MO-GONE")),
+                "应有跳过说明：" + vo.getMessages());
     }
 }

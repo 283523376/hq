@@ -112,6 +112,28 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         return pushInternal(dto, true);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean markCancelledByErp(String workOrderNo) {
+        if (oConvertUtils.isEmpty(workOrderNo)) {
+            return false;
+        }
+        WmsWorkOrder order = getByWorkOrderNo(workOrderNo);
+        if (order == null) {
+            // 从没同步进来过：没有可纠正的对象
+            return false;
+        }
+        if (WmsConstants.WORK_ORDER_STATUS_CANCELLED.equals(order.getWorkOrderStatus())
+                || WmsConstants.WORK_ORDER_STATUS_CLOSED.equals(order.getWorkOrderStatus())) {
+            // 已作废：幂等跳过；已关闭：WMS 关单的终态，不被作废覆盖（两个终态互不侵犯）
+            return false;
+        }
+        order.setWorkOrderStatus(WmsConstants.WORK_ORDER_STATUS_CANCELLED);
+        order.setUpdateTime(new java.util.Date());
+        baseMapper.updateById(order);
+        return true;
+    }
+
     private WmsWorkOrder pushInternal(WmsWorkOrderPushDTO dto, boolean retryOnDuplicate) {
         if (dto == null || oConvertUtils.isEmpty(dto.getWorkOrderNo())) {
             throw new RuntimeException("工单号不能为空");

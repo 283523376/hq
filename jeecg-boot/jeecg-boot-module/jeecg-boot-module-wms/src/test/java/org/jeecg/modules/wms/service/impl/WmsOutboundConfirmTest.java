@@ -10,7 +10,9 @@ import org.jeecg.modules.wms.mapper.WmsInventoryMapper;
 import org.jeecg.modules.wms.mapper.WmsLocationMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundAllocationMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
+import org.jeecg.modules.wms.entity.WmsWorkOrder;
 import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
+import org.jeecg.modules.wms.mapper.WmsWorkOrderMapper;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.vo.WmsOutboundConfirmVO;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +46,7 @@ class WmsOutboundConfirmTest {
     private WmsInventoryMapper inventoryMapper;
     private WmsLocationMapper locationMapper;
     private ISysBaseAPI sysBaseAPI;
+    private WmsWorkOrderMapper workOrderMapper;
     private WmsOutboundServiceImpl service;
 
     @BeforeEach
@@ -54,6 +57,7 @@ class WmsOutboundConfirmTest {
         inventoryMapper = mock(WmsInventoryMapper.class);
         locationMapper = mock(WmsLocationMapper.class);
         sysBaseAPI = mock(ISysBaseAPI.class);
+        workOrderMapper = mock(WmsWorkOrderMapper.class);
         service = new WmsOutboundServiceImpl();
         WmsTestSupport.inject(service, "baseMapper", orderMapper);
         WmsTestSupport.inject(service, "allocationMapper", allocationMapper);
@@ -61,6 +65,7 @@ class WmsOutboundConfirmTest {
         WmsTestSupport.inject(service, "inventoryMapper", inventoryMapper);
         WmsTestSupport.inject(service, "locationMapper", locationMapper);
         WmsTestSupport.inject(service, "sysBaseAPI", sysBaseAPI);
+        WmsTestSupport.inject(service, "workOrderMapper", workOrderMapper);
         when(orderMapper.update(any(), any())).thenReturn(1);
         when(allocationMapper.update(any(), any())).thenReturn(1);
         when(detailMapper.updateById(any(WmsOutboundDetail.class))).thenReturn(1);
@@ -242,5 +247,36 @@ class WmsOutboundConfirmTest {
 
         // 已通过类型闸门，卡在后续「复核明细不能为空」
         assertEquals("复核明细不能为空", e.getMessage());
+    }
+
+    /** 评审 I4：工单在单据生成后才被作废的，确认入口必须拦下（作废即止损）。 */
+    @Test
+    void confirmPick_cancelledWorkOrder_rejected() {
+        WmsOutboundOrder pickOrder = order(WmsConstants.OUTBOUND_TYPE_PICK,
+                WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW).setWorkOrderNo("WO-CX");
+        stubOrderAndAllocation(pickOrder, allocation(WmsConstants.REVIEW_STATUS_MATCHED, "5", "0"));
+        when(workOrderMapper.selectOne(any())).thenReturn(
+                new WmsWorkOrder().setWorkOrderNo("WO-CX").setWorkOrderStatus("已作废"));
+
+        RuntimeException e = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> service.confirmPick("o1", new WmsOutboundConfirmDTO()));
+
+        assertEquals("工单已作废，不能确认出库", e.getMessage());
+        // 库存没被扣
+        verify(inventoryMapper, never()).deductLocked(any(), any());
+    }
+
+    /** 销售出库没有关联工单：不受作废守卫影响，照常确认。 */
+    @Test
+    void confirm_salesOrderWithoutWorkOrder_unaffected() {
+        WmsOutboundOrder salesOrder = order(WmsConstants.OUTBOUND_TYPE_SALES,
+                WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW);
+        stubOrderAndAllocation(salesOrder, allocation(WmsConstants.REVIEW_STATUS_MATCHED, "5", "5"));
+
+        service.confirm("o1", new WmsOutboundConfirmDTO());
+
+        verify(workOrderMapper, never()).selectOne(any());
+        // 走到了扣减就说明守卫没有误伤销售出库
+        verify(inventoryMapper).deductLocked(any(), any());
     }
 }

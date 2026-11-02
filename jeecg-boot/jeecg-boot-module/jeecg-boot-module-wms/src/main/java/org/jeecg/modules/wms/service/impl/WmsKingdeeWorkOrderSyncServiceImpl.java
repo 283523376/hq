@@ -255,6 +255,31 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
                     + " 不受支持（未审核或不识别），已跳过");
             return false;
         }
+        if (WmsConstants.WORK_ORDER_STATUS_CANCELLED.equals(gatedStatus)) {
+            // 评审 I3：作废必须落地，不能被后面的物料/批次/数量门槛「整单跳过」——
+            // 错单恰恰可能是多物料、物料已删、数量为 0 的单。走最小更新通道，只改状态。
+            WmsWorkOrder existingOrder = workOrderService.getByWorkOrderNo(workOrderNo);
+            if (existingOrder == null) {
+                vo.getMessages().add(workOrderNo + "：ERP 已作废，但 WMS 中没有这张工单，无需纠正");
+                return false;
+            }
+            boolean changed = workOrderService.markCancelledByErp(workOrderNo);
+            WmsAuditRecorder.record(auditLogService, new WmsAuditEvent()
+                    .setBizType(WmsConstants.AUDIT_BIZ_WORK_ORDER)
+                    .setBizNo(workOrderNo)
+                    .setAction(WmsConstants.AUDIT_ACTION_CANCEL)
+                    .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
+                    .setBeforeValue(WmsAuditRecorder.snapshot(auditLogService, existingOrder,
+                            "workOrderNo", "workOrderStatus"))
+                    .setAfterValue("{\"workOrderStatus\":\"已作废\"}")
+                    .setOperator(WmsConstants.AUDIT_OPERATOR_SYSTEM)
+                    .setResult(changed ? WmsConstants.AUDIT_RESULT_SUCCESS : WmsConstants.AUDIT_RESULT_FAILED)
+                    .setErrorMsg(changed ? null : "工单已是终态（已关闭/已作废），状态未变更"));
+            if (changed) {
+                vo.setUpdated(vo.getUpdated() + 1);
+            }
+            return changed;
+        }
         Set<String> materialNumbers = new LinkedHashSet<>();
         Set<String> lots = new LinkedHashSet<>();
         BigDecimal planQty = BigDecimal.ZERO;

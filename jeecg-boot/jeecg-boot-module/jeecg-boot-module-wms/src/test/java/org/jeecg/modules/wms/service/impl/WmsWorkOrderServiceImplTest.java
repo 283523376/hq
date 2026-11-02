@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 /**
@@ -488,5 +490,32 @@ class WmsWorkOrderServiceImplTest {
         RuntimeException e3 = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
                 () -> service.push(manualCancel));
         assertEquals("工单状态「已作废」只能由 ERP 作废同步产生", e3.getMessage());
+    }
+
+    /** ERP 作废最小通道：只动状态，不碰物料/数量；终态互不覆盖。 */
+    @Test
+    void markCancelledByErp_guardsAndTransitions() {
+        // 单不存在：没有可纠正的对象
+        when(mapper.selectOne(any())).thenReturn(null);
+        assertFalse(service.markCancelledByErp("MO-NONE"));
+
+        // 已是终态：已作废幂等跳过；已关闭不被作废覆盖
+        when(mapper.selectOne(any())).thenReturn(
+                new WmsWorkOrder().setWorkOrderNo("MO-1").setWorkOrderStatus("已作废"));
+        assertFalse(service.markCancelledByErp("MO-1"));
+        when(mapper.selectOne(any())).thenReturn(
+                new WmsWorkOrder().setWorkOrderNo("MO-2").setWorkOrderStatus("已关闭"));
+        assertFalse(service.markCancelledByErp("MO-2"));
+        verify(mapper, never()).updateById(org.mockito.ArgumentMatchers.any(org.jeecg.modules.wms.entity.WmsWorkOrder.class));
+
+        // 正常路径：状态改为已作废
+        when(mapper.selectOne(any())).thenReturn(
+                new WmsWorkOrder().setWorkOrderNo("MO-3").setWorkOrderStatus("已下达"));
+        assertTrue(service.markCancelledByErp("MO-3"));
+        org.mockito.ArgumentCaptor<org.jeecg.modules.wms.entity.WmsWorkOrder> captor =
+                org.mockito.ArgumentCaptor.forClass(org.jeecg.modules.wms.entity.WmsWorkOrder.class);
+        verify(mapper).updateById(captor.capture());
+        assertEquals("已作废", captor.getValue().getWorkOrderStatus());
+        assertEquals("MO-3", captor.getValue().getWorkOrderNo());
     }
 }

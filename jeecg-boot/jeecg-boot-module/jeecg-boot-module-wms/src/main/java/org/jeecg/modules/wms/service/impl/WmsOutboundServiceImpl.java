@@ -429,6 +429,16 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
         if (!WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW.equals(order.getStatus())) {
             throw new RuntimeException("当前状态不允许确认出库");
         }
+        // 评审 I4：工单可能在单据生成后才被 ERP 作废——确认是库存出库的最后一道闸，必须再拦一次。
+        // 销售出库没有关联工单（workOrderNo 为空），天然跳过。
+        if (oConvertUtils.isNotEmpty(order.getWorkOrderNo())) {
+            WmsWorkOrder workOrder = workOrderMapper.selectOne(Wrappers.<WmsWorkOrder>query()
+                    .eq("work_order_no", order.getWorkOrderNo().trim()).last("LIMIT 1"));
+            if (workOrder != null
+                    && WmsConstants.WORK_ORDER_STATUS_CANCELLED.equals(workOrder.getWorkOrderStatus())) {
+                throw new RuntimeException("工单已作废，不能确认出库");
+            }
+        }
         List<WmsOutboundAllocation> allocations = allocationMapper.selectList(
                 Wrappers.<WmsOutboundAllocation>query().eq("outbound_id", id));
         if (allocations == null || allocations.isEmpty()) {
