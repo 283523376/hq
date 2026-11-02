@@ -17,6 +17,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * @Description: @WmsAudit 切面单测（不启 Spring 容器，用 AspectJProxyFactory 织入）。
@@ -166,5 +167,53 @@ class WmsAuditAspectTest {
         target.softOk("OUT5");
 
         assertEquals("成功", capture().getResult());
+    }
+
+    /**
+     * 评审 I2：出库/调拨端点的 SpEL 只能拿到行主键（19 位雪花 id），
+     * 切面要把它换成业务单号，并把工单号放进 biz_ref——否则「凭单号反查」查不到 UI 动作。
+     */
+    @Test
+    void aspect_replacesInternalIdWithBusinessNo() throws Exception {
+        org.jeecg.modules.wms.entity.WmsOutboundOrder order =
+                new org.jeecg.modules.wms.entity.WmsOutboundOrder()
+                        .setOutboundNo("CK001").setWorkOrderNo("MO1");
+        org.jeecg.modules.wms.service.IWmsOutboundService outboundService =
+                mock(org.jeecg.modules.wms.service.IWmsOutboundService.class);
+        when(outboundService.getById("1234567890123456789")).thenReturn(order);
+        org.springframework.beans.factory.annotation.Autowired.class.getName();
+        java.lang.reflect.Field f = WmsAuditAspect.class.getDeclaredField("outboundService");
+        f.setAccessible(true);
+        f.set(aspect, outboundService);
+
+        proxy(new Target()).confirm("1234567890123456789");
+
+        WmsAuditEvent event = capture();
+        assertEquals("CK001", event.getBizNo(), "业务单号必须替换内部主键");
+        assertEquals("MO1", event.getBizRef(), "工单号要进 biz_ref，影响面时间线才能串起来");
+    }
+
+    /** 解析失败（单已删/服务不在）保留原值，审计照写。 */
+    @Test
+    void aspect_idResolutionFailure_keepsRawId() throws Exception {
+        org.jeecg.modules.wms.service.IWmsOutboundService outboundService =
+                mock(org.jeecg.modules.wms.service.IWmsOutboundService.class);
+        when(outboundService.getById(org.mockito.ArgumentMatchers.anyString())).thenReturn(null);
+        java.lang.reflect.Field f = WmsAuditAspect.class.getDeclaredField("outboundService");
+        f.setAccessible(true);
+        f.set(aspect, outboundService);
+
+        proxy(new Target()).confirm("1234567890123456789");
+
+        assertEquals("1234567890123456789", capture().getBizNo());
+    }
+
+    /** 普通单号（非纯数字长串）不做解析，省一次回查。 */
+    @Test
+    void aspect_plainBusinessNo_notResolved() {
+        proxy(new Target()).confirm("CK-PLAIN-1");
+
+        WmsAuditEvent event = capture();
+        assertEquals("CK-PLAIN-1", event.getBizNo());
     }
 }

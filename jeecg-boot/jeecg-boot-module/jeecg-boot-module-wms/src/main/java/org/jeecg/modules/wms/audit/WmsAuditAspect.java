@@ -9,7 +9,12 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsAuditEvent;
+import org.jeecg.modules.wms.entity.WmsOutboundOrder;
+import org.jeecg.modules.wms.entity.WmsTransferOrder;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.jeecg.modules.wms.service.IWmsOutboundService;
+import org.jeecg.modules.wms.service.IWmsTransferService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.jeecg.modules.wms.util.WmsUtils;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.context.expression.MethodBasedEvaluationContext;
@@ -46,6 +51,17 @@ public class WmsAuditAspect {
     private final ExpressionParser expressionParser = new SpelExpressionParser();
     private final ParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
 
+    /**
+     * 评审 I2：出库/调拨端点的 SpEL 只能拿到行主键（雪花 id）。
+     * 这两个可选依赖用于把 id 换成业务单号（outboundNo/transferNo），
+     * 并顺带把工单号放进 biz_ref——否则「凭单号反查」查不到 UI 动作。
+     */
+    @Autowired(required = false)
+    private IWmsOutboundService outboundService;
+
+    @Autowired(required = false)
+    private IWmsTransferService transferService;
+
     public WmsAuditAspect(IWmsAuditLogService auditLogService) {
         this.auditLogService = auditLogService;
     }
@@ -55,6 +71,7 @@ public class WmsAuditAspect {
         long start = System.currentTimeMillis();
         // 单号在 proceed 之前取：万一业务改写了入参，仍以调用时为准
         String bizNo = resolveBizNo(joinPoint, wmsAudit.bizNoSpEL());
+        ResolvedBiz resolved = resolveBusinessNo(wmsAudit.bizType(), bizNo);
         String operator = WmsUtils.currentUsername();
         String ip = resolveIp();
 
@@ -63,26 +80,31 @@ public class WmsAuditAspect {
             // 控制器普遍把业务异常吞成 Result.error(...)：此时方法本身正常返回，
             // 只有看返回值才知道这次操作其实失败了——否则审计会把失败记成成功。
             if (result instanceof Result && !((Result<?>) result).isSuccess()) {
-                writeQuietly(wmsAudit, bizNo, operator, ip, WmsConstants.AUDIT_RESULT_FAILED,
+                writeQuietly(wmsAudit, resolved, operator, ip, WmsConstants.AUDIT_RESULT_FAILED,
                         ((Result<?>) result).getMessage(), System.currentTimeMillis() - start);
                 return result;
             }
-            writeQuietly(wmsAudit, bizNo, operator, ip, WmsConstants.AUDIT_RESULT_SUCCESS, null,
+            writeQuietly(wmsAudit, resolved, operator, ip, WmsConstants.AUDIT_RESULT_SUCCESS, null,
                     System.currentTimeMillis() - start);
             return result;
         } catch (Throwable ex) {
-            writeQuietly(wmsAudit, bizNo, operator, ip, WmsConstants.AUDIT_RESULT_FAILED, ex.getMessage(),
+            writeQuietly(wmsAudit, resolved, operator, ip, WmsConstants.AUDIT_RESULT_FAILED, ex.getMessage(),
                     System.currentTimeMillis() - start);
             throw ex;
         }
     }
 
-    private void writeQuietly(WmsAudit wmsAudit, String bizNo, String operator, String ip,
+    /** 业务单号 + 关联单号的解析结果；未解析时 bizRef 为 null。 */
+    private record ResolvedBiz(String bizNo, String bizRef) {
+    }
+
+    private void writeQuietly(WmsAudit wmsAudit, ResolvedBiz resolved, String operator, String ip,
                               String result, String errorMsg, long costMs) {
         try {
             auditLogService.record(new WmsAuditEvent()
                     .setBizType(wmsAudit.bizType())
-                    .setBizNo(bizNo)
+                    .setBizNo(resolved.bizNo())
+                    .setBizRef(resolved.bizRef())
                     .setAction(wmsAudit.action())
                     .setChannel(wmsAudit.channel())
                     .setOperator(operator)
@@ -93,7 +115,7 @@ public class WmsAuditAspect {
         } catch (Exception e) {
             // record() 本身是 fail-open 的，这里再兜一层：将来换成别的实现也不会波及业务
             log.error("@WmsAudit 审计写入异常（已忽略，不影响业务）：bizType={}, bizNo={}",
-                    wmsAudit.bizType(), bizNo, e);
+                    wmsAudit.bizType(), resolved == null ? null : resolved.bizNo(), e);
         }
     }
 
@@ -115,6 +137,33 @@ public class WmsAuditAspect {
             log.warn("@WmsAudit 业务单号解析失败（已置空）：spel={}", spel, e);
             return null;
         }
+    }
+
+    /**
+     * SpEL 解析出来的是 19 位雪花主键时，回查单据把它换成业务单号；
+     * 顺带把工单号放进 biz_ref，影响面时间线（按 biz_ref=工单号查）才能串到 UI 动作。
+     * 解析失败保留原值——审计宁可记 id，也不能因为回查失败丢记录。
+     */
+    private ResolvedBiz resolveBusinessNo(String bizType, String bizNo) {
+        if (bizNo == null || !bizNo.matches("\\d{18,20}")) {
+            return new ResolvedBiz(bizNo, null);
+        }
+        try {
+            if (WmsConstants.AUDIT_BIZ_OUTBOUND.equals(bizType) && outboundService != null) {
+                WmsOutboundOrder order = outboundService.getById(bizNo);
+                if (order != null && oConvertUtils.isNotEmpty(order.getOutboundNo())) {
+                    return new ResolvedBiz(order.getOutboundNo(), order.getWorkOrderNo());
+                }
+            } else if (WmsConstants.AUDIT_BIZ_TRANSFER.equals(bizType) && transferService != null) {
+                WmsTransferOrder transfer = transferService.getById(bizNo);
+                if (transfer != null && oConvertUtils.isNotEmpty(transfer.getTransferNo())) {
+                    return new ResolvedBiz(transfer.getTransferNo(), null);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("@WmsAudit 业务单号回查失败，保留原值：{}", bizNo, e);
+        }
+        return new ResolvedBiz(bizNo, null);
     }
 
     /** 非 Web 线程（如异步任务里）取不到请求，返回 null。 */
