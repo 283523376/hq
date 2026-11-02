@@ -5,7 +5,7 @@
 <template>
   <div class="anticon" :class="getAppLogoClass" @click="goHome">
     <!-- 深色底用白色图形、浅色底用深色图形：同一份齿轮 logo 的两种墨色，背景均透明 -->
-    <img :src="logoSrc" alt="永鑫WMS" />
+    <img :src="logoSrc" alt="楠柏莞" />
     <div class="ml-2 truncate md:opacity-100" :class="getTitleClass" v-show="showTitle">
       {{ shortTitle }}
     </div>
@@ -90,8 +90,11 @@
     }
 
     &__title {
-      font-size: 18px;
+      // 「楠柏莞」只有 3 个字，比原来的「永鑫WMS」短，字号可以放大一档；
+      // 加一点字距让三个字更舒展，不至于挤在一起（2026-11-02）
+      font-size: 22px;
       font-weight: 600;
+      letter-spacing: 1.5px;
       transition: all 0.5s;
       line-height: normal;
     }
