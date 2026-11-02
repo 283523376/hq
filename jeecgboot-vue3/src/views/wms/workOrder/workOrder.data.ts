@@ -7,7 +7,8 @@ export const PRODUCT_TYPE_OPTIONS = [
   { label: '成品（敏捷仓 / SCR / 料箱二维码）', value: '成品' },
 ];
 
-export const WORK_ORDER_STATUS_OPTIONS = ['待生产', '已下达', '生产中', '已完成', '已关闭'].map((v) => ({
+// 已作废（XT-002）：ERP 侧作废同步进 WMS 的终态，与「已关闭」并列但来源不同
+export const WORK_ORDER_STATUS_OPTIONS = ['待生产', '已下达', '生产中', '已完成', '已关闭', '已作废'].map((v) => ({
   label: v,
   value: v,
 }));
@@ -25,6 +26,7 @@ const statusColor: Record<string, string> = {
   生产中: 'processing',
   已完成: 'success',
   已关闭: 'default',
+  已作废: 'error',
 };
 
 const syncStatusColor: Record<string, string> = {

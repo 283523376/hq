@@ -703,6 +703,9 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
         if (workOrder == null) {
             throw new RuntimeException("工单号无效");
         }
+        if (WmsConstants.WORK_ORDER_STATUS_CANCELLED.equals(workOrder.getWorkOrderStatus())) {
+            throw new RuntimeException("工单已作废，不能领料");
+        }
         if (!WmsConstants.WORK_ORDER_STATUS_RELEASED.equals(workOrder.getWorkOrderStatus())
                 && !WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS.equals(workOrder.getWorkOrderStatus())
                 && !WmsConstants.WORK_ORDER_STATUS_FINISHED.equals(workOrder.getWorkOrderStatus())) {

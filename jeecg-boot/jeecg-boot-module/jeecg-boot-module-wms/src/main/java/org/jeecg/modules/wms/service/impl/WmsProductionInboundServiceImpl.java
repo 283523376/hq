@@ -88,6 +88,10 @@ public class WmsProductionInboundServiceImpl
         if (order == null) {
             throw new RuntimeException("工单号无效");
         }
+        if (WmsConstants.WORK_ORDER_STATUS_CANCELLED.equals(order.getWorkOrderStatus())) {
+            // 作废单不能再产出库存，否则纠正完又制造出新的错数据
+            throw new RuntimeException("工单已作废，不能提交入库");
+        }
         if (!WmsConstants.WORK_ORDER_STATUS_RELEASED.equals(order.getWorkOrderStatus())
                 && !WmsConstants.WORK_ORDER_STATUS_IN_PROGRESS.equals(order.getWorkOrderStatus())
                 && !WmsConstants.WORK_ORDER_STATUS_FINISHED.equals(order.getWorkOrderStatus())) {

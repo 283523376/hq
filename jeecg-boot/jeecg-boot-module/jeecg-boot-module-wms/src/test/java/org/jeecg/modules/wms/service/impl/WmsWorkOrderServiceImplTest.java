@@ -1,5 +1,6 @@
 package org.jeecg.modules.wms.service.impl;
 
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsWorkOrderPushDTO;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -445,5 +447,46 @@ class WmsWorkOrderServiceImplTest {
         service.push(dto);
 
         assertEquals(0, capturedOnUpdate().getPlanQty().compareTo(new BigDecimal("10")));
+    }
+
+    /** 已作废与已关闭同为终态，任何来源都不能把它拖回「已下达」。 */
+    @Test
+    void statusRank_cancelledIsTerminal() {
+        assertEquals(WmsWorkOrderServiceImpl.statusRank("已关闭"),
+                WmsWorkOrderServiceImpl.statusRank("已作废"));
+        assertTrue(WmsWorkOrderServiceImpl.statusRank("已作废")
+                > WmsWorkOrderServiceImpl.statusRank("已下达"));
+    }
+
+    /** ERP 来源可以写「已作废」；「已关闭」仍只能由 WMS 关单产生。 */
+    @Test
+    void push_erpCancelled_allowed_but_manualClosed_rejected() {
+        WmsWorkOrderPushDTO cancelled = new WmsWorkOrderPushDTO();
+        cancelled.setWorkOrderNo("MO-CANCEL");
+        cancelled.setMaterialCode("M1");
+        cancelled.setWorkOrderStatus("已作废");
+        cancelled.setSource(WmsConstants.WORK_ORDER_SOURCE_ERP);
+        // 走到物料校验说明没被状态守卫拦下
+        RuntimeException e1 = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> service.push(cancelled));
+        assertFalse("工单状态「已作废」只能由 ERP 作废同步产生".equals(e1.getMessage()),
+                "ERP 来源的作废单不应被拦：" + e1.getMessage());
+
+        WmsWorkOrderPushDTO closed = new WmsWorkOrderPushDTO();
+        closed.setWorkOrderNo("MO-CLOSE");
+        closed.setMaterialCode("M1");
+        closed.setWorkOrderStatus("已关闭");
+        closed.setSource(WmsConstants.WORK_ORDER_SOURCE_ERP);
+        RuntimeException e2 = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> service.push(closed));
+        assertEquals("工单状态已关闭只能由WMS关单产生", e2.getMessage());
+
+        WmsWorkOrderPushDTO manualCancel = new WmsWorkOrderPushDTO();
+        manualCancel.setWorkOrderNo("MO-MANUAL");
+        manualCancel.setMaterialCode("M1");
+        manualCancel.setWorkOrderStatus("已作废");
+        RuntimeException e3 = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> service.push(manualCancel));
+        assertEquals("工单状态「已作废」只能由 ERP 作废同步产生", e3.getMessage());
     }
 }

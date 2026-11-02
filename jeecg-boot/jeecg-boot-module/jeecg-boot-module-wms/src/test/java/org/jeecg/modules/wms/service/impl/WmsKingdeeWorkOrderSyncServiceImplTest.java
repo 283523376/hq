@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -271,8 +272,9 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
 
         ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
         verify(formClient).executeBillQuery(eq("PRD_MO"), anyString(), filter.capture(), anyInt());
-        assertTrue(filter.getValue().contains("FDate>='2026-10-01'"));
-        assertTrue(filter.getValue().contains("FDate<='2026-10-15'"));
+        // XT-002：窗口按修改时间，否则「昨天建、今天作废」的单永远在窗口外
+        assertTrue(filter.getValue().contains("FModifyDate>='2026-10-01'"), filter.getValue());
+        assertTrue(filter.getValue().contains("FModifyDate<='2026-10-15'"), filter.getValue());
         assertEquals("2026-10-01", vo.getEffectiveStartDate());
         assertEquals("2026-10-15", vo.getEffectiveEndDate());
     }
@@ -286,7 +288,7 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
 
         ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
         verify(formClient).executeBillQuery(eq("PRD_MO"), anyString(), filter.capture(), eq(50));
-        assertTrue(filter.getValue().contains("FDate>="));
+        assertTrue(filter.getValue().contains("FModifyDate>="), filter.getValue());
         assertEquals(7, vo.getEffectiveWindowDays());
     }
 
@@ -445,7 +447,7 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
         assertNull(captor.getValue().getOrderType());
         // 未配置类型字段时，查询字段串不得追加
         verify(formClient).executeBillQuery(eq("PRD_MO"),
-                eq("FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty,FDate"),
+                eq("FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty,FDate,FCancelStatus"),
                 anyString(), anyInt());
     }
 
@@ -454,11 +456,11 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
         properties.getMasterData().setOrderTypeField("F_UNW_Text_hp8");
         properties.getMasterData().getOrderTypeValueMap().put("客户订单", "客户订单");
         when(formClient.executeBillQuery(eq("PRD_MO"),
-                eq("FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty,FDate,F_UNW_Text_hp8"),
+                eq("FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty,FDate,FCancelStatus,F_UNW_Text_hp8"),
                 anyString(), anyInt()))
                 .thenReturn(rows(List.of(List.of("WORK00081", "C", "1",
                         "WA.2206.2201.02000430.A003", "半成品", "0", new BigDecimal("10"),
-                        "2026-10-01", "客户订单"))));
+                        "2026-10-01", "A", "客户订单"))));
         when(materialMapper.selectOne(any())).thenReturn(pbc001());
         when(workOrderService.getByWorkOrderNo("WORK00081")).thenReturn(null);
 
@@ -484,5 +486,49 @@ class WmsKingdeeWorkOrderSyncServiceImplTest {
         ArgumentCaptor<WmsWorkOrderPushDTO> captor = ArgumentCaptor.forClass(WmsWorkOrderPushDTO.class);
         verify(workOrderService).push(captor.capture());
         assertNull(captor.getValue().getOrderType());
+    }
+
+    /** 金蝶作废工单时 FDocumentStatus 仍是 C，只有 FCancelStatus=B 才是真相。 */
+    @Test
+    void gateStatus_cancelled_returnsCancelled() {
+        assertEquals("已作废", WmsKingdeeWorkOrderSyncServiceImpl.gateStatus("C", "B"));
+    }
+
+    /** 未作废的正常单不能被新逻辑误判。 */
+    @Test
+    void gateStatus_normalC_unchanged() {
+        assertEquals("已下达", WmsKingdeeWorkOrderSyncServiceImpl.gateStatus("C", "A"));
+        assertEquals("待生产", WmsKingdeeWorkOrderSyncServiceImpl.gateStatus("B", null));
+    }
+
+    /** 增量窗口按修改时间：业务日期在窗口外的单，今天被作废也必须能被拉回来。 */
+    @Test
+    void syncWindow_usesModifyDate() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of()));
+
+        service.syncFromKingdee(null, null, null, 50);
+
+        ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
+        verify(formClient).executeBillQuery(eq("PRD_MO"), anyString(), filter.capture(), anyInt());
+        assertTrue(filter.getValue().contains("FModifyDate"), "实际：" + filter.getValue());
+        assertFalse(filter.getValue().contains("FDate>="), "实际：" + filter.getValue());
+    }
+
+    /** 作废单同步进来后，WMS 状态必须是「已作废」。 */
+    @Test
+    void sync_cancelledOrder_writesCancelledStatus() {
+        when(formClient.executeBillQuery(eq("PRD_MO"), anyString(), anyString(), anyInt()))
+                .thenReturn(rows(List.of(List.of("MO-CANCELLED", "C", "1",
+                        "WA.2206.2201.02000430.A003", "半成品", "0", new BigDecimal("100"),
+                        "2026-10-01", "B"))));
+        when(materialMapper.selectOne(any())).thenReturn(pbc001());
+        when(workOrderService.getByWorkOrderNo("MO-CANCELLED")).thenReturn(null);
+
+        service.syncFromKingdee("MO-CANCELLED", null, null, 50);
+
+        ArgumentCaptor<WmsWorkOrderPushDTO> captor = ArgumentCaptor.forClass(WmsWorkOrderPushDTO.class);
+        verify(workOrderService).push(captor.capture());
+        assertEquals("已作废", captor.getValue().getWorkOrderStatus());
     }
 }

@@ -268,4 +268,18 @@ class WmsProductionInboundServiceImplTest {
         assertTrue(!"工单状态不允许入库".equals(e.getMessage()),
                 "已下达工单应通过门槛，实际被拦：" + e.getMessage());
     }
+
+    /** 已作废工单不能再提交入库，否则纠正完又产生新错误。 */
+    @Test
+    void cancelledWorkOrder_rejectedAtGate() {
+        org.jeecg.modules.wms.entity.WmsWorkOrder wo = new org.jeecg.modules.wms.entity.WmsWorkOrder()
+                .setWorkOrderNo("WO-CANCEL").setWorkOrderStatus("已作废").setPlanQty(new BigDecimal("10"));
+        when(workOrderMapper.selectByNoForUpdate("WO-CANCEL")).thenReturn(wo);
+        org.jeecg.modules.wms.dto.WmsProductionSubmitDTO dto = new org.jeecg.modules.wms.dto.WmsProductionSubmitDTO();
+        dto.setWorkOrderNo("WO-CANCEL");
+        dto.setGoodQty(BigDecimal.ONE);
+        dto.setBadQty(BigDecimal.ZERO);
+        RuntimeException e = assertThrows(RuntimeException.class, () -> service.submit(dto));
+        assertEquals("工单已作废，不能提交入库", e.getMessage());
+    }
 }

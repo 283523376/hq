@@ -403,6 +403,14 @@ public final class WmsConstants {
     /** 工单状态：已关闭。 */
     public static final String WORK_ORDER_STATUS_CLOSED = "已关闭";
 
+    /**
+     * 工单终态：ERP 侧作废同步进来（方案 B，XT-002）。
+     *
+     * <p>与「已关闭」并列终态，但职责分离：已关闭只由 WMS 关单产生，
+     * 已作废只由 ERP 作废同步产生（FCancelStatus=B）。
+     */
+    public static final String WORK_ORDER_STATUS_CANCELLED = "已作废";
+
     /** 工单来源：MES。 */
     public static final String WORK_ORDER_SOURCE_MES = "MES";
     /** 工单来源：ERP（金蝶 PRD_MO 同步，BD-002 V2.2 起为唯一业务来源）。 */

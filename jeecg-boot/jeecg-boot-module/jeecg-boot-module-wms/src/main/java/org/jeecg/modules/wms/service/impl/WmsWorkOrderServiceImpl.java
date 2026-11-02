@@ -97,7 +97,10 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         if (WmsConstants.WORK_ORDER_STATUS_FINISHED.equals(status)) {
             return 3;
         }
-        if (WmsConstants.WORK_ORDER_STATUS_CLOSED.equals(status)) {
+        if (WmsConstants.WORK_ORDER_STATUS_CLOSED.equals(status)
+                || WmsConstants.WORK_ORDER_STATUS_CANCELLED.equals(status)) {
+            // 两个终态并列最高：任何来源都不能把终态拖回「已下达」。
+            // 但两者的产生渠道不同（WMS 关单 / ERP 作废同步），见 pushInternal 的守卫。
             return 4;
         }
         return -1;
@@ -118,6 +121,11 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
         if (WmsConstants.WORK_ORDER_STATUS_CLOSED.equals(incomingStatus)) {
             // 已关闭只能由 WMS 关单动作产生；外部 MES/ERP 推送不得直接关单（评审 I6）
             throw new RuntimeException("工单状态已关闭只能由WMS关单产生");
+        }
+        if (WmsConstants.WORK_ORDER_STATUS_CANCELLED.equals(incomingStatus)
+                && !WmsConstants.WORK_ORDER_SOURCE_ERP.equals(dto.getSource())) {
+            // 已作废同样不能被随手写进来：它代表「ERP 把这单废了」，只有同步通道能这么说
+            throw new RuntimeException("工单状态「已作废」只能由 ERP 作废同步产生");
         }
         if (oConvertUtils.isEmpty(dto.getMaterialCode())) {
             throw new RuntimeException("物料编码不能为空");

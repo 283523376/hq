@@ -47,15 +47,18 @@ import java.util.Set;
 public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderSyncService {
 
     private static final String FORM_ID = "PRD_MO";
-    /** FDate 追加在末尾（索引 7），避免打乱既有下标。 */
+    /** 字段顺序即下标，追加项只能排在末尾；FCancelStatus（索引 8）由 XT-002 追加。 */
     private static final String FIELD_KEYS =
-            "FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty,FDate";
+            "FBillNo,FDocumentStatus,FProductType,FMaterialId.FNumber,FMaterialId.FName,FLot,FQty,FDate,FCancelStatus";
     private static final int DEFAULT_TOP = 50;
     private static final int MAX_TOP = 200;
     /** 手工同步未给窗口时的默认回看天数。 */
     private static final int DEFAULT_WINDOW_DAYS = 7;
-    /** 工单类型字段在查询结果中的下标（FIELD_KEYS 共 8 列，追加项固定排在第 8 位）。 */
-    private static final int ORDER_TYPE_INDEX = 8;
+    /** FCancelStatus 的下标：作废状态（A=未作废 / B=已作废），金蝶作废时 FDocumentStatus 仍是 C。 */
+    private static final int CANCEL_STATUS_INDEX = 8;
+
+    /** 工单类型字段在查询结果中的下标（FIELD_KEYS 共 9 列，追加项固定排在第 9 位）。 */
+    private static final int ORDER_TYPE_INDEX = 9;
 
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
@@ -89,6 +92,22 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
      * @return 已下达/待生产；D 及未知返回 null（整单跳过，不默认已完成）
      */
     static String gateStatus(String documentStatus) {
+        return gateStatus(documentStatus, null);
+    }
+
+    /**
+     * 金蝶状态 → WMS 工单状态门槛（含作废，XT-002 方案 B）。
+     *
+     * <p><b>作废判断优先于单据状态</b>：金蝶作废工单时 {@code FDocumentStatus} 通常仍是
+     * {@code C}（已审核），只看单据状态会永远显示「已下达」，于是错单继续被下游执行。
+     *
+     * @param cancelStatus 金蝶 {@code FCancelStatus}：{@code B}=已作废；null/其它视为未作废
+     * @return 已作废/已下达/待生产；D 及未知返回 null（整单跳过，不默认已完成）
+     */
+    static String gateStatus(String documentStatus, String cancelStatus) {
+        if ("B".equals(cancelStatus)) {
+            return WmsConstants.WORK_ORDER_STATUS_CANCELLED;
+        }
         if ("C".equals(documentStatus)) {
             return WmsConstants.WORK_ORDER_STATUS_RELEASED;
         }
@@ -121,13 +140,13 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
             }
             StringBuilder sb = new StringBuilder();
             if (oConvertUtils.isNotEmpty(effectiveStart)) {
-                sb.append("FDate>='").append(effectiveStart).append("'");
+                sb.append("FModifyDate>='").append(effectiveStart).append("'");
             }
             if (oConvertUtils.isNotEmpty(effectiveEnd)) {
                 if (sb.length() > 0) {
                     sb.append(" AND ");
                 }
-                sb.append("FDate<='").append(effectiveEnd).append("'");
+                sb.append("FModifyDate<='").append(effectiveEnd).append("'");
             }
             // 必须限定生产组织：其它组织（如 100 江西兆鑫）的工单物料不在本组织物料集里，
             // 拉进来只会全部「物料不存在」跳过，白占 maxTop 配额
@@ -228,7 +247,9 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
                             WmsKingdeeWorkOrderSyncResultVO vo, Set<String> unknownOrderTypes) {
         // 审核门槛最先判：门槛外状态整单跳过（评审 B1，不默认已完成）
         String documentStatus = str(rows.get(0).get(1));
-        String gatedStatus = gateStatus(documentStatus);
+        String cancelStatus = rows.get(0).size() > CANCEL_STATUS_INDEX
+                ? str(rows.get(0).get(CANCEL_STATUS_INDEX)) : null;
+        String gatedStatus = gateStatus(documentStatus, cancelStatus);
         if (gatedStatus == null) {
             vo.getMessages().add(workOrderNo + "：金蝶单据状态 " + documentStatus
                     + " 不受支持（未审核或不识别），已跳过");
