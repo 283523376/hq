@@ -481,6 +481,14 @@ public final class WmsConstants {
     /** 出库类型：样品出库（对接研发仓，回写形态待 E5 确认）。 */
     public static final String OUTBOUND_TYPE_SAMPLE = "样品出库";
 
+    /**
+     * 出库类型：报废出库（XT-001）。
+     *
+     * <p>从废品仓把不良品彻底出账。与其他出库不同，它**一步到位**：
+     * 废品仓是固定库位、无设备搬运，所以不走「分配→下发→复核→确认」。
+     */
+    public static final String OUTBOUND_TYPE_SCRAP = "报废出库";
+
     // ---------------------------------------------------------------- 审计留痕域（XT-002）
 
     /** 审计业务类型：生产工单。 */
@@ -559,6 +567,9 @@ public final class WmsConstants {
 
     /** 样品出库单号前缀。 */
     public static final String OUTBOUND_NO_PREFIX_SAMPLE = "YP";
+
+    /** 报废出库单号前缀（XT-001）。 */
+    public static final String OUTBOUND_NO_PREFIX_SCRAP = "BF";
 
     /** 出库单状态：草稿（外协出库同步生成的只读单，不可分配）。 */
     public static final String OUTBOUND_STATUS_DRAFT = "草稿";

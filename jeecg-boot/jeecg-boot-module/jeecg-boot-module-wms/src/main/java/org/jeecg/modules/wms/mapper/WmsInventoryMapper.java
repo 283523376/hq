@@ -62,6 +62,13 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
     int deductLocked(@Param("id") String id, @Param("qty") BigDecimal qty);
 
     /**
+     * 直接扣减库存（不涉及锁定）——报废出库用。
+     *
+     * @return 影响行数；0 表示库存已被并发改动或不足，调用方应回滚
+     */
+    int deductQuantity(@Param("id") String id, @Param("qty") BigDecimal qty);
+
+    /**
      * 库存台账分页（KC-004）。
      *
      * <p>排序按 `wms_inventory` 唯一键的四列，与 {@link #selectLedgerCursor} 保持一致，

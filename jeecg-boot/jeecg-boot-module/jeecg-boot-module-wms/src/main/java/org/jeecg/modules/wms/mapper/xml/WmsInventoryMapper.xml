@@ -102,6 +102,19 @@
            AND quantity &gt;= #{qty}
     </update>
 
+    <!--
+      直接扣减库存（不涉及锁定）——报废出库用（XT-001）。
+      报废不走「分配-锁定-确认」流程，所以没有 locked_qty 可扣；
+      条件里的 quantity &gt;= #{qty} 是并发保护：扣到负数直接影响 0 行，由调用方回滚。
+    -->
+    <update id="deductQuantity">
+        UPDATE wms_inventory
+           SET quantity = quantity - #{qty},
+               update_time = NOW()
+         WHERE id = #{id}
+           AND quantity &gt;= #{qty}
+    </update>
+
     <!-- ============================================================
          KC-004 库存台账
          ============================================================ -->
