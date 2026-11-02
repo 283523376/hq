@@ -800,6 +800,12 @@ public final class WmsConstants {
 
     /** 任务类型：库存台账。 */
     public static final String EXPORT_TASK_TYPE_INVENTORY_LEDGER = "INVENTORY_LEDGER";
+
+    /** 导出任务类型：审计日志（XT-002）。 */
+    public static final String EXPORT_TASK_TYPE_AUDIT_LOG = "AUDIT_LOG";
+
+    /** 审计日志导出每批取数。 */
+    public static final int AUDIT_EXPORT_BATCH_SIZE = 2000;
     /** 任务状态：排队。 */
     public static final String EXPORT_STATUS_PENDING = "PENDING";
     /** 任务状态：生成中。 */

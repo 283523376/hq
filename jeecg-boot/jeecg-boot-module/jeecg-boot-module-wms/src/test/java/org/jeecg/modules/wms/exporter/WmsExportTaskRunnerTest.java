@@ -41,6 +41,7 @@ class WmsExportTaskRunnerTest {
 
     private WmsExportTaskMapper taskMapper;
     private WmsLedgerExportService exportService;
+    private WmsAuditExportService auditExportService;
     private WmsExportFileStore fileStore;
     private WmsExportTaskRunnerImpl runner;
 
@@ -48,8 +49,10 @@ class WmsExportTaskRunnerTest {
     void setUp() {
         taskMapper = mock(WmsExportTaskMapper.class);
         exportService = mock(WmsLedgerExportService.class);
+        auditExportService = mock(WmsAuditExportService.class);
         fileStore = new WmsExportFileStore(tempDir);
-        runner = new WmsExportTaskRunnerImpl(taskMapper, exportService, fileStore, new WmsExportProperties());
+        runner = new WmsExportTaskRunnerImpl(taskMapper, exportService, auditExportService,
+                fileStore, new WmsExportProperties());
     }
 
     private WmsExportTask pendingTask(String queryParams) {

@@ -10,10 +10,12 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.dto.WmsAuditQueryDTO;
 import org.jeecg.modules.wms.entity.WmsAuditLog;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.jeecg.modules.wms.service.IWmsExportTaskService;
 import org.jeecg.modules.wms.service.IWmsImpactService;
 import org.jeecg.modules.wms.vo.WmsImpactVO;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -33,10 +35,14 @@ public class WmsAuditController {
 
     private final IWmsAuditLogService auditLogService;
     private final IWmsImpactService impactService;
+    private final IWmsExportTaskService exportTaskService;
 
-    public WmsAuditController(IWmsAuditLogService auditLogService, IWmsImpactService impactService) {
+    public WmsAuditController(IWmsAuditLogService auditLogService,
+                              IWmsImpactService impactService,
+                              IWmsExportTaskService exportTaskService) {
         this.auditLogService = auditLogService;
         this.impactService = impactService;
+        this.exportTaskService = exportTaskService;
     }
 
     @Operation(summary = "审计日志-分页列表")
@@ -51,6 +57,22 @@ public class WmsAuditController {
         query.setPageNo(pageNo);
         query.setPageSize(pageSize);
         return Result.OK(auditLogService.pageQuery(query));
+    }
+
+    @Operation(summary = "审计日志-创建异步导出任务")
+    @PostMapping(value = "/export")
+    @RequiresPermissions("wms:audit:export")
+    public Result<String> export(WmsAuditQueryDTO query) {
+        String operator = org.jeecg.modules.wms.util.WmsUtils.currentUsername();
+        if (oConvertUtils.isEmpty(operator)) {
+            return Result.error("未获取到登录用户，无法导出");
+        }
+        try {
+            return Result.OK("导出任务已提交", exportTaskService.createAuditExport(query, operator));
+        } catch (Exception e) {
+            log.warn("创建审计导出任务失败", e);
+            return Result.error(e.getMessage());
+        }
     }
 
     @Operation(summary = "影响面查询：这张工单在 WMS 碰过什么")

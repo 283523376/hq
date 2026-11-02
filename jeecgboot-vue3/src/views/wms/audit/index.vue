@@ -3,6 +3,9 @@
     <BasicTable @register="registerTable">
       <template #tableTitle>
         <a-button type="primary" preIcon="ant-design:search-outlined" @click="openImpact">影响面查询</a-button>
+        <a-button preIcon="ant-design:download-outlined" v-auth="'wms:audit:export'" :loading="exporting" @click="handleExport">
+          导出
+        </a-button>
         <span class="tip">按工单号查它会牵动哪些单据与库存</span>
       </template>
     </BasicTable>
@@ -96,7 +99,7 @@
   import { useDesign } from '/@/hooks/web/useDesign';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { columns, searchFormSchema } from './audit.data';
-  import { list, queryImpact } from './audit.api';
+  import { list, queryImpact, createAuditExport } from './audit.api';
 
   const { prefixCls } = useDesign('wms-audit');
   const { createMessage } = useMessage();
@@ -118,7 +121,28 @@
       },
     },
   });
-  const [registerTable] = tableContext;
+  const [registerTable, { getForm }] = tableContext;
+
+  // ---------------------------------------------------------------- 导出
+  const exporting = ref(false);
+
+  /** 导出走异步任务：这里只负责提交，文件在「导出任务」里下载 */
+  async function handleExport() {
+    const { timeRange, ...filters } = (await getForm().validate()) || {};
+    if (Array.isArray(timeRange) && timeRange.length === 2) {
+      filters.startTime = dayjs(timeRange[0]).format('YYYY-MM-DD HH:mm:ss');
+      filters.endTime = dayjs(timeRange[1]).format('YYYY-MM-DD HH:mm:ss');
+    }
+    exporting.value = true;
+    try {
+      await createAuditExport(filters);
+      createMessage.success('导出任务已提交，请到导出任务列表下载');
+    } catch (e: any) {
+      createMessage.error(e?.message || '提交导出任务失败');
+    } finally {
+      exporting.value = false;
+    }
+  }
 
   // ---------------------------------------------------------------- 影响面
   const impactOpen = ref(false);

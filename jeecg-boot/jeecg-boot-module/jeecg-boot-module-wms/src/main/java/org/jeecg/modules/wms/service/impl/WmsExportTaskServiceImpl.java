@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsAuditQueryDTO;
 import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.entity.WmsExportTask;
 import org.jeecg.modules.wms.exporter.WmsExportExecutorConfig;
@@ -70,6 +71,43 @@ public class WmsExportTaskServiceImpl implements IWmsExportTaskService {
         Object lock = operatorLocks.computeIfAbsent(operator, k -> new Object());
         synchronized (lock) {
             return doCreateLedgerExport(query, operator);
+        }
+    }
+
+    @Override
+    public String createAuditExport(WmsAuditQueryDTO query, String operator) {
+        Object lock = operatorLocks.computeIfAbsent(operator, k -> new Object());
+        synchronized (lock) {
+            ensureNoRunning(operator);
+            Date now = new Date();
+            WmsExportTask task = new WmsExportTask();
+            task.setId(IdWorker.getIdStr());
+            task.setTaskType(WmsConstants.EXPORT_TASK_TYPE_AUDIT_LOG);
+            JSONObject root = new JSONObject();
+            root.put("v", QUERY_PARAMS_VERSION);
+            root.put("q", query == null ? new WmsAuditQueryDTO() : query);
+            task.setQueryParams(root.toJSONString());
+            task.setStatus(WmsConstants.EXPORT_STATUS_PENDING);
+            task.setCreateBy(operator);
+            task.setCreateTime(now);
+            task.setUpdateBy(operator);
+            task.setUpdateTime(now);
+            taskMapper.insert(task);
+
+            submit(task, operator);
+            log.info("审计导出任务[{}]已提交，导出人={}", task.getId(), operator);
+            return task.getId();
+        }
+    }
+
+    /** 同一账号只允许一个进行中的导出：两个大导出同时跑会互相拖慢并抢磁盘。 */
+    private void ensureNoRunning(String operator) {
+        long running = taskMapper.selectCount(new LambdaQueryWrapper<WmsExportTask>()
+                .eq(WmsExportTask::getCreateBy, operator)
+                .in(WmsExportTask::getStatus,
+                        Arrays.asList(WmsConstants.EXPORT_STATUS_PENDING, WmsConstants.EXPORT_STATUS_RUNNING)));
+        if (running > 0) {
+            throw new RuntimeException("你已有导出任务正在进行，请等待完成后再提交");
         }
     }
 

@@ -5,6 +5,7 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.modules.wms.dto.WmsAuditQueryDTO;
 import org.jeecg.modules.wms.entity.WmsAuditLog;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.jeecg.modules.wms.service.IWmsExportTaskService;
 import org.jeecg.modules.wms.service.IWmsImpactService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,19 +35,23 @@ class WmsAuditControllerTest {
 
     private IWmsAuditLogService auditLogService;
     private IWmsImpactService impactService;
+    private IWmsExportTaskService exportTaskService;
     private WmsAuditController controller;
 
     @BeforeEach
     void setUp() {
         auditLogService = mock(IWmsAuditLogService.class);
         impactService = mock(IWmsImpactService.class);
-        controller = new WmsAuditController(auditLogService, impactService);
+        exportTaskService = mock(IWmsExportTaskService.class);
+        controller = new WmsAuditController(auditLogService, impactService, exportTaskService);
     }
 
     /** 两个端点都必须挂 wms:audit:list，且是同一枚权限码。 */
     @Test
     void list_requiresPermissionCode() throws Exception {
-        for (String name : new String[]{"list", "impact"}) {
+        java.util.Map<String, String> expected = java.util.Map.of(
+                "list", "wms:audit:list", "impact", "wms:audit:list", "export", "wms:audit:export");
+        for (String name : new String[]{"list", "impact", "export"}) {
             Method method = null;
             for (Method m : WmsAuditController.class.getDeclaredMethods()) {
                 if (m.getName().equals(name)) {
@@ -56,7 +61,7 @@ class WmsAuditControllerTest {
             assertNotNull(method, "找不到端点方法：" + name);
             RequiresPermissions annotation = method.getAnnotation(RequiresPermissions.class);
             assertNotNull(annotation, name + " 缺少 @RequiresPermissions");
-            assertEquals("wms:audit:list", annotation.value()[0], name + " 权限码不对");
+            assertEquals(expected.get(name), annotation.value()[0], name + " 权限码不对");
         }
     }
 

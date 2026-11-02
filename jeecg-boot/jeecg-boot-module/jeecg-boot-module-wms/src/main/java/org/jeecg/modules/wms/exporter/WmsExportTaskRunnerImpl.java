@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsAuditQueryDTO;
 import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.entity.WmsExportTask;
 import org.jeecg.modules.wms.mapper.WmsExportTaskMapper;
@@ -35,15 +36,18 @@ public class WmsExportTaskRunnerImpl implements WmsExportTaskRunner {
 
     private final WmsExportTaskMapper taskMapper;
     private final WmsLedgerExportService exportService;
+    private final WmsAuditExportService auditExportService;
     private final WmsExportFileStore fileStore;
     private final WmsExportProperties properties;
 
     public WmsExportTaskRunnerImpl(WmsExportTaskMapper taskMapper,
                                    WmsLedgerExportService exportService,
+                                   WmsAuditExportService auditExportService,
                                    WmsExportFileStore fileStore,
                                    WmsExportProperties properties) {
         this.taskMapper = taskMapper;
         this.exportService = exportService;
+        this.auditExportService = auditExportService;
         this.fileStore = fileStore;
         this.properties = properties;
     }
@@ -59,8 +63,7 @@ public class WmsExportTaskRunnerImpl implements WmsExportTaskRunner {
 
         File part = fileStore.partFile(taskId);
         try {
-            WmsInventoryLedgerQueryDTO query = parseQuery(task.getQueryParams());
-            WmsLedgerExportResult result = exportService.generate(query, part);
+            WmsLedgerExportResult result = generateByTaskType(task, part);
 
             String fileName = fileStore.buildFileName(taskId, new Date());
             File done = fileStore.commit(part, fileName);
@@ -69,6 +72,41 @@ public class WmsExportTaskRunnerImpl implements WmsExportTaskRunner {
             fileStore.deleteQuietly(part);
             log.error("导出任务[{}]失败", taskId, e);
             markFailed(task, e);
+        }
+    }
+
+    /**
+     * 按 taskType 分发到对应的导出器。
+     *
+     * <p>未知/空类型按库存台账处理——历史上所有任务都是台账，不能让老任务失败。
+     */
+    private WmsLedgerExportResult generateByTaskType(WmsExportTask task, File target) throws Exception {
+        if (WmsConstants.EXPORT_TASK_TYPE_AUDIT_LOG.equals(task.getTaskType())) {
+            return auditExportService.generate(parseAuditQuery(task.getQueryParams()), target);
+        }
+        if (task.getTaskType() != null
+                && !WmsConstants.EXPORT_TASK_TYPE_INVENTORY_LEDGER.equals(task.getTaskType())) {
+            log.warn("导出任务[{}]的类型 {} 未知，按库存台账处理", task.getId(), task.getTaskType());
+        }
+        WmsInventoryLedgerQueryDTO query = parseQuery(task.getQueryParams());
+        return exportService.generate(query, target);
+    }
+
+    /** 审计导出条件快照（结构与台账一致：{v, q}）。 */
+    WmsAuditQueryDTO parseAuditQuery(String queryParams) {
+        if (queryParams == null || queryParams.trim().isEmpty()) {
+            return new WmsAuditQueryDTO();
+        }
+        try {
+            JSONObject root = JSON.parseObject(queryParams);
+            if (root == null) {
+                return new WmsAuditQueryDTO();
+            }
+            WmsAuditQueryDTO query = root.getObject("q", WmsAuditQueryDTO.class);
+            return query == null ? new WmsAuditQueryDTO() : query;
+        } catch (Exception e) {
+            log.warn("审计导出条件快照解析失败，按无条件导出处理：{}", e.getMessage());
+            return new WmsAuditQueryDTO();
         }
     }
 

@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import org.jeecg.modules.wms.dto.WmsAuditQueryDTO;
 import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.entity.WmsExportTask;
 
@@ -24,6 +25,14 @@ public interface IWmsExportTaskService {
      * @throws RuntimeException 已有进行中任务 / 线程池队列已满
      */
     String createLedgerExport(WmsInventoryLedgerQueryDTO query, String operator);
+
+    /**
+     * 创建一条审计日志导出任务并入队。
+     *
+     * @return 任务主键
+     * @throws RuntimeException 已有进行中任务 / 线程池队列已满
+     */
+    String createAuditExport(WmsAuditQueryDTO query, String operator);
 
     /** 当前账号的导出任务分页（强制按 operator 过滤，不接受外部指定账号）。 */
     IPage<WmsExportTask> pageMine(String operator, int pageNo, int pageSize);
