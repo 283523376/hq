@@ -49,7 +49,7 @@ class WmsProductionInboundListTest {
         query.setInboundNo("SC001");
         query.setCarrierCode("RFID-1");
 
-        service.listPage(1, 10, query);
+        service.listPage(1, 10, query, null);
 
         verify(inboundMapper).selectPage(any(), ArgumentMatchers.<Wrapper<WmsProductionInbound>>argThat(w -> {
             String sql = ((QueryWrapper<?>) w).getSqlSegment();
@@ -71,7 +71,7 @@ class WmsProductionInboundListTest {
         when(locationMapper.selectBatchIds(any())).thenReturn(java.util.List.of(location));
 
         com.baomidou.mybatisplus.core.metadata.IPage<WmsProductionInbound> result =
-                service.listPage(1, 10, new WmsProductionInbound());
+                service.listPage(1, 10, new WmsProductionInbound(), null);
 
         assertEquals("LB-R01-C01-L01", result.getRecords().get(0).getLocationCode());
     }

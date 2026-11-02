@@ -51,6 +51,13 @@ export const columns: BasicColumn[] = [
 ];
 
 export const searchFormSchema: FormSchema[] = [
+  {
+    label: '全局关键词',
+    field: 'keyword',
+    component: 'JInput',
+    colProps: { span: 6 },
+    componentProps: { placeholder: '跨字段模糊匹配，如 10126' },
+  },
   { field: 'bizNo', label: '业务单号', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '支持模糊' } },
   { field: 'bizType', label: '业务类型', component: 'Select', colProps: { span: 6 }, componentProps: { options: AUDIT_BIZ_TYPE_OPTIONS, allowClear: true } },
   { field: 'channel', label: '通道', component: 'Select', colProps: { span: 6 }, componentProps: { options: AUDIT_CHANNEL_OPTIONS, allowClear: true } },

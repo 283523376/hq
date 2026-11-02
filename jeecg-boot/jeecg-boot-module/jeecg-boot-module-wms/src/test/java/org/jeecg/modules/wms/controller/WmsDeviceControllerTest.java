@@ -67,7 +67,7 @@ class WmsDeviceControllerTest {
         WmsDeviceController controller = newController(deviceService, warehouseService);
 
         Result<IPage<WmsDevice>> result = controller.queryPageList(
-                new WmsDevice(), 1, 10, new MockHttpServletRequest());
+                new WmsDevice(), null, 1, 10, new MockHttpServletRequest());
 
         assertEquals("半成品立库", result.getResult().getRecords().get(0).getWarehouseName());
     }
@@ -84,7 +84,7 @@ class WmsDeviceControllerTest {
         WmsDeviceController controller = newController(deviceService, warehouseService);
 
         Result<IPage<WmsDevice>> result = controller.queryPageList(
-                new WmsDevice(), 1, 10, new MockHttpServletRequest());
+                new WmsDevice(), null, 1, 10, new MockHttpServletRequest());
 
         assertNull(result.getResult().getRecords().get(0).getWarehouseName());
     }
@@ -98,7 +98,7 @@ class WmsDeviceControllerTest {
         WmsDeviceController controller = newController(deviceService, mock(IWmsWarehouseService.class));
 
         Result<IPage<WmsDevice>> result = controller.queryPageList(
-                new WmsDevice(), 1, 10, new MockHttpServletRequest());
+                new WmsDevice(), null, 1, 10, new MockHttpServletRequest());
 
         assertTrue(result.isSuccess());
         assertNull(result.getResult().getRecords().get(0).getWarehouseName());

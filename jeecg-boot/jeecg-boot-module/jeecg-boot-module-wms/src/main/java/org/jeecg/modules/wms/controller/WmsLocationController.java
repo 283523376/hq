@@ -67,6 +67,7 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
     @GetMapping(value = "/list")
     public Result<IPage<WmsLocation>> queryPageList(WmsLocation wmsLocation,
                                                     @RequestParam(name = "warehouseType", required = false) String warehouseType,
+                                                    @RequestParam(name = "keyword", required = false) String keyword,
                                                     @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
                                                     @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
                                                     HttpServletRequest req) {
@@ -92,6 +93,12 @@ public class WmsLocationController extends JeecgController<WmsLocation, IWmsLoca
                 return Result.OK(new Page<>(pageNo, pageSize));
             }
             queryWrapper.in("warehouse_id", warehouseIds);
+        }
+        // 全局关键词（2026-11-02）：一次跨字段模糊，与单字段框是 AND 关系。
+        if (oConvertUtils.isNotEmpty(keyword)) {
+            final String kw = keyword.trim();
+            queryWrapper.and(w -> w.like("location_code", kw)
+            );
         }
         queryWrapper.orderByAsc("warehouse_id")
                 .orderByAsc("layer_no").orderByAsc("row_no").orderByAsc("col_no");

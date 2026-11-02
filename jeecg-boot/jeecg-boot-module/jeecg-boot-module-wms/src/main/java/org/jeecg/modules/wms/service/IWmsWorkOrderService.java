@@ -52,7 +52,10 @@ public interface IWmsWorkOrderService extends JeecgService<WmsWorkOrder> {
     /**
      * 分页查询（支持来源/同步状态/创建时间窗口过滤）。
      */
+    /**
+     * @param keyword 全局关键词：跨 work_order_no / mes_order_no 模糊；与其它条件是 AND 关系
+     */
     IPage<WmsWorkOrder> listPage(int pageNo, int pageSize, String workOrderNo, String productType,
                                  String workOrderStatus, String source, String syncStatus,
-                                 String startDate, String endDate);
+                                 String startDate, String endDate, String keyword);
 }

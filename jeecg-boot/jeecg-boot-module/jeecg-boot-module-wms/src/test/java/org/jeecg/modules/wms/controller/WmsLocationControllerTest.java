@@ -67,7 +67,7 @@ class WmsLocationControllerTest {
         WmsLocationController controller = newController(locationService, warehouseService);
 
         Result<IPage<WmsLocation>> result = controller.queryPageList(
-                new WmsLocation(), "不存在的类型", 1, 10, new MockHttpServletRequest());
+                new WmsLocation(), "不存在的类型", null, 1, 10, new MockHttpServletRequest());
 
         assertTrue(result.isSuccess());
         assertNotNull(result.getResult());
@@ -85,7 +85,7 @@ class WmsLocationControllerTest {
         WmsLocationController controller = newController(locationService, warehouseService);
 
         Result<IPage<WmsLocation>> result = controller.queryPageList(
-                new WmsLocation(), WmsConstants.WAREHOUSE_TYPE_STEREO, 1, 10, new MockHttpServletRequest());
+                new WmsLocation(), null, WmsConstants.WAREHOUSE_TYPE_STEREO, 1, 10, new MockHttpServletRequest());
 
         assertTrue(result.isSuccess());
         verify(locationService).page(any(), any());
@@ -104,8 +104,7 @@ class WmsLocationControllerTest {
         // 树上选中库区节点时 warehouseId 与 warehouseType 会同时传（WarehouseTree.onSelect）
         WmsLocation query = new WmsLocation().setWarehouseId("W1");
 
-        Result<IPage<WmsLocation>> result = controller.queryPageList(
-                query, WmsConstants.WAREHOUSE_TYPE_STEREO, 1, 10, new MockHttpServletRequest());
+        Result<IPage<WmsLocation>> result = controller.queryPageList(query, WmsConstants.WAREHOUSE_TYPE_STEREO, null, 1, 10, new MockHttpServletRequest());
 
         assertTrue(result.isSuccess());
         verify(warehouseService, never()).queryIdsByType(any());
@@ -127,7 +126,7 @@ class WmsLocationControllerTest {
         WmsLocationController controller = newController(locationService, warehouseService);
 
         Result<IPage<WmsLocation>> result = controller.queryPageList(
-                new WmsLocation(), null, 1, 10, new MockHttpServletRequest());
+                new WmsLocation(), null, null, 1, 10, new MockHttpServletRequest());
 
         assertEquals("半成品立库", result.getResult().getRecords().get(0).getWarehouseName());
     }
@@ -144,7 +143,7 @@ class WmsLocationControllerTest {
         WmsLocationController controller = newController(locationService, warehouseService);
 
         Result<IPage<WmsLocation>> result = controller.queryPageList(
-                new WmsLocation(), null, 1, 10, new MockHttpServletRequest());
+                new WmsLocation(), null, null, 1, 10, new MockHttpServletRequest());
 
         assertNull(result.getResult().getRecords().get(0).getWarehouseName());
     }

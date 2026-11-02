@@ -66,7 +66,7 @@ class WmsSupplierControllerTest {
         WmsSupplier query = new WmsSupplier().setSupplierName("永鑫");
 
         Result<IPage<WmsSupplier>> result = controller(service)
-                .queryPageList(query, 1, 10, new MockHttpServletRequest());
+                .queryPageList(query, null, 1, 10, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
         assertEquals(1, result.getResult().getTotal());
@@ -93,7 +93,7 @@ class WmsSupplierControllerTest {
                 .setStatus(WmsConstants.STATUS_ENABLE);
 
         Result<IPage<WmsSupplier>> result = controller(service)
-                .queryPageList(query, 1, 10, new MockHttpServletRequest());
+                .queryPageList(query, null, 1, 10, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
         assertEquals(0, result.getResult().getTotal());

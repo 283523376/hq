@@ -49,6 +49,7 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
     @Operation(summary = "供应商-分页列表查询")
     @GetMapping(value = "/list")
     public Result<IPage<WmsSupplier>> queryPageList(WmsSupplier wmsSupplier,
+                                                   @RequestParam(name = "keyword", required = false) String keyword,
                                                    @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
                                                    @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
                                                    HttpServletRequest req) {
@@ -63,6 +64,15 @@ public class WmsSupplierController extends JeecgController<WmsSupplier, IWmsSupp
                 supplierCodeKeyword == null ? null : supplierCodeKeyword.trim());
         queryWrapper.like(oConvertUtils.isNotEmpty(supplierNameKeyword), "supplier_name",
                 supplierNameKeyword == null ? null : supplierNameKeyword.trim());
+                // 全局关键词（2026-11-02）：一次跨字段模糊，与单字段框是 AND 关系。
+        // OR 必须包在 and(...) 里，否则会与其它条件串成 xxx AND a OR b，优先级错误。
+        if (oConvertUtils.isNotEmpty(keyword)) {
+            final String kw = keyword.trim();
+            queryWrapper.and(w -> w.like("supplier_code", kw)
+                    .or().like("supplier_name", kw)
+                    .or().like("contact", kw)
+            );
+        }
         queryWrapper.orderByDesc("create_time");
         Page<WmsSupplier> page = new Page<>(pageNo, pageSize);
         return Result.OK(service.page(page, queryWrapper));

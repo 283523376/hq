@@ -88,6 +88,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
     @Operation(summary = "物料-分页列表查询")
     @GetMapping(value = "/list")
     public Result<IPage<WmsMaterial>> queryPageList(WmsMaterial wmsMaterial,
+                                                    @RequestParam(name = "keyword", required = false) String keyword,
                                                     @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
                                                     @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
                                                     HttpServletRequest req) {
@@ -106,6 +107,15 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
                 materialCodeKeyword == null ? null : materialCodeKeyword.trim());
         queryWrapper.like(oConvertUtils.isNotEmpty(materialNameKeyword), "material_name",
                 materialNameKeyword == null ? null : materialNameKeyword.trim());
+                // 全局关键词（2026-11-02）：一次跨字段模糊，与单字段框是 AND 关系。
+        // OR 必须包在 and(...) 里，否则会与其它条件串成 xxx AND a OR b，优先级错误。
+        if (oConvertUtils.isNotEmpty(keyword)) {
+            final String kw = keyword.trim();
+            queryWrapper.and(w -> w.like("material_code", kw)
+                    .or().like("material_name", kw)
+                    .or().like("kingdee_code", kw)
+            );
+        }
         queryWrapper.orderByDesc("create_time");
         Page<WmsMaterial> page = new Page<>(pageNo, pageSize);
         IPage<WmsMaterial> pageList = service.page(page, queryWrapper);

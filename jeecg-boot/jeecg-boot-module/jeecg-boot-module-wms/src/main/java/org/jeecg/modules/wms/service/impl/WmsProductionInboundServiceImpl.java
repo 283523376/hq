@@ -485,10 +485,17 @@ public class WmsProductionInboundServiceImpl
 
     @Override
     public com.baomidou.mybatisplus.core.metadata.IPage<WmsProductionInbound> listPage(
-            int pageNo, int pageSize, WmsProductionInbound query) {
+            int pageNo, int pageSize, WmsProductionInbound query, String keyword) {
         com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<WmsProductionInbound> qw =
                 new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<>();
         if (query != null) {
+            // 全局关键词（2026-11-02）：跨入库单号/工单号/金蝶单号模糊
+            if (oConvertUtils.isNotEmpty(keyword)) {
+                String kw = keyword.trim();
+                qw.and(w -> w.like("inbound_no", kw)
+                        .or().like("work_order_no", kw)
+                        .or().like("erp_bill_no", kw));
+            }
             if (oConvertUtils.isNotEmpty(query.getInboundNo())) {
                 qw.like("inbound_no", query.getInboundNo().trim());
             }

@@ -117,7 +117,7 @@ class WmsMaterialControllerTest {
         doReturn(page).when(service).page(any(Page.class), any(Wrapper.class));
 
         Result<IPage<WmsMaterial>> result = controller(service)
-                .queryPageList(new WmsMaterial(), 1, 10, new MockHttpServletRequest());
+                .queryPageList(new WmsMaterial(), null, 1, 10, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
         assertEquals(1, result.getResult().getTotal());
@@ -141,7 +141,7 @@ class WmsMaterialControllerTest {
         WmsMaterial probe = new WmsMaterial().setCategoryName("半成品").setCategoryCode("C01");
 
         Result<IPage<WmsMaterial>> result = controller(service)
-                .queryPageList(probe, 1, 10, new MockHttpServletRequest());
+                .queryPageList(probe, null, 1, 10, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
         // 直接断言控制器的动作：它必须把非持久化字段置空后才交给 QueryGenerator

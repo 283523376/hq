@@ -105,7 +105,10 @@ public interface IWmsProductionInboundService extends JeecgService<WmsProduction
     /**
      * 分页查询（入库单号模糊；其余字段精确）。
      */
-    IPage<WmsProductionInbound> listPage(int pageNo, int pageSize, WmsProductionInbound query);
+        /**
+     * @param keyword 全局关键词：跨 inbound_no / work_order_no / erp_bill_no 模糊
+     */
+    IPage<WmsProductionInbound> listPage(int pageNo, int pageSize, WmsProductionInbound query, String keyword);
 
     /**
      * 工单关联的生产入库记录（BD-002 V2.2：工单详情展示，按提交时间倒序，上限 100 条）。

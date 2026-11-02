@@ -214,9 +214,10 @@ public class WmsProductionController {
     @GetMapping(value = "/list")
     public Result<IPage<WmsProductionInbound>> list(
             @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
+            @RequestParam(name = "keyword", required = false) String keyword,
             @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
             WmsProductionInbound query) {
-        return Result.OK(service.listPage(pageNo, pageSize, query));
+        return Result.OK(service.listPage(pageNo, pageSize, query, keyword));
     }
 
     @Operation(summary = "生产入库-详情")

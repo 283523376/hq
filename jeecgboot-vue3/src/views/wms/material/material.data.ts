@@ -32,6 +32,13 @@ export const columns: BasicColumn[] = [
 ];
 
 export const searchFormSchema: FormSchema[] = [
+  {
+    label: '全局关键词',
+    field: 'keyword',
+    component: 'JInput',
+    colProps: { span: 6 },
+    componentProps: { placeholder: '跨字段模糊匹配，如 10126' },
+  },
   { label: '物料编码', field: 'materialCode', component: 'JInput', colProps: { span: 6 } },
   { label: '物料名称', field: 'materialName', component: 'JInput', colProps: { span: 6 } },
   {

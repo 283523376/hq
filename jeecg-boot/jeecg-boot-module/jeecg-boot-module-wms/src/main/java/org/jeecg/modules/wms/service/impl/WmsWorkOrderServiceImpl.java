@@ -247,8 +247,13 @@ public class WmsWorkOrderServiceImpl extends ServiceImpl<WmsWorkOrderMapper, Wms
     public IPage<WmsWorkOrder> listPage(int pageNo, int pageSize, String workOrderNo,
                                         String productType, String workOrderStatus,
                                         String source, String syncStatus,
-                                        String startDate, String endDate) {
+                                        String startDate, String endDate, String keyword) {
         QueryWrapper<WmsWorkOrder> qw = new QueryWrapper<>();
+        // 全局关键词（2026-11-02）：跨工单号/生产订单号模糊，OR 包在 and 里避免优先级错误
+        if (oConvertUtils.isNotEmpty(keyword)) {
+            String kw = keyword.trim();
+            qw.and(w -> w.like("work_order_no", kw).or().like("mes_order_no", kw));
+        }
         if (oConvertUtils.isNotEmpty(workOrderNo)) {
             qw.like("work_order_no", workOrderNo.trim());
         }

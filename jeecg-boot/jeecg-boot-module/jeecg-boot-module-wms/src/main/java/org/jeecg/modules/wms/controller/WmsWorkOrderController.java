@@ -62,9 +62,10 @@ public class WmsWorkOrderController extends JeecgController<WmsWorkOrder, IWmsWo
             @RequestParam(name = "source", required = false) String source,
             @RequestParam(name = "syncStatus", required = false) String syncStatus,
             @RequestParam(name = "startDate", required = false) String startDate,
-            @RequestParam(name = "endDate", required = false) String endDate) {
+            @RequestParam(name = "endDate", required = false) String endDate,
+            @RequestParam(name = "keyword", required = false) String keyword) {
         return Result.OK(service.listPage(pageNo, pageSize, workOrderNo, productType, workOrderStatus,
-                source, syncStatus, startDate, endDate));
+                source, syncStatus, startDate, endDate, keyword));
     }
 
     @RequiresPermissions("wms:work-order:sync")

@@ -19,7 +19,8 @@ public interface IWmsStocktakeService {
     /**
      * @param stocktakeNo 盘点单号，**模糊匹配**（任意连续子串）；为空则不筛
      */
-    IPage<WmsStocktakeOrder> listPage(int pageNo, int pageSize, String stocktakeType, String stocktakeNo);
+        IPage<WmsStocktakeOrder> listPage(int pageNo, int pageSize, String stocktakeType, String stocktakeNo,
+                                      String keyword);
 
     /** 建盘点单：按库位快照账面数量生成明细，并冻结范围内库位。 */
     WmsStocktakeOrder create(WmsStocktakeCreateDTO dto, String operator);
