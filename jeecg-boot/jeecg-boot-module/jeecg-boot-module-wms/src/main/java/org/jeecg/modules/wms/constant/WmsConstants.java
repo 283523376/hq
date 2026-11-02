@@ -507,6 +507,11 @@ public final class WmsConstants {
     /** 审计动作：解除绑定。 */
     public static final String AUDIT_ACTION_UNBIND = "解绑";
 
+    /** 审计日志清理任务 id。 */
+    public static final String AUDIT_CLEAN_JOB_ID = "wmsAuditCleanJob";
+    /** 审计日志清理 cron：每天 03:30（与导出任务清理错开）。 */
+    public static final String AUDIT_CLEAN_JOB_CRON = "0 30 3 * * ?";
+
     /** 审计通道：用户在界面上操作。 */
     public static final String AUDIT_CHANNEL_UI = "界面操作";
     /** 审计通道：定时任务/手工触发从 ERP 同步进来。 */
