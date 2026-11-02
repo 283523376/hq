@@ -1,0 +1,147 @@
+package org.jeecg.modules.wms.service.impl;
+
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
+import org.jeecg.modules.wms.entity.WmsAuditLog;
+import org.jeecg.modules.wms.mapper.WmsAuditLogMapper;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * @Description: 审计写入服务单测（不启 Spring、不连库）。
+ *
+ * <p>三条约束是这个组件存在的理由，缺一条就退化成一个会拖垮业务的日志工具：
+ * 字段落全、没有单号不写、写失败不抛。
+ *
+ * @Author: 永鑫WMS
+ * @Date: 2026-11-02
+ */
+class WmsAuditLogServiceTest {
+
+    private WmsAuditLogMapper mapper;
+    private WmsAuditLogServiceImpl service;
+
+    @BeforeEach
+    void setUp() {
+        mapper = mock(WmsAuditLogMapper.class);
+        service = new WmsAuditLogServiceImpl(mapper);
+    }
+
+    private static WmsAuditEvent fullEvent() {
+        Map<String, Object> before = new HashMap<>();
+        before.put("status", "待生产");
+        before.put("qty", 10);
+        Map<String, Object> after = new HashMap<>();
+        after.put("status", "已下达");
+        after.put("qty", 10);
+        return new WmsAuditEvent()
+                .setBizType("工单")
+                .setBizNo("MO1")
+                .setBizRef("MO1#1")
+                .setAction("修改")
+                .setChannel("ERP同步")
+                .setBeforeValue(before)
+                .setAfterValue(after)
+                .setOperator("张三")
+                .setIp("127.0.0.1")
+                .setRequestId("req-1")
+                .setResult("成功")
+                .setCostMs(12);
+    }
+
+    private WmsAuditLog captureInserted() {
+        ArgumentCaptor<WmsAuditLog> captor = ArgumentCaptor.forClass(WmsAuditLog.class);
+        verify(mapper).insert(captor.capture());
+        return captor.getValue();
+    }
+
+    /** 事件里的每个字段都要落到实体，且 diff_fields 只报真正变化的字段。 */
+    @Test
+    void record_persistsAllFields() {
+        service.record(fullEvent());
+
+        WmsAuditLog row = captureInserted();
+        assertNotNull(row.getId(), "主键必须由服务生成");
+        assertEquals("工单", row.getBizType());
+        assertEquals("MO1", row.getBizNo());
+        assertEquals("MO1#1", row.getBizRef());
+        assertEquals("修改", row.getAction());
+        assertEquals("ERP同步", row.getChannel());
+        assertEquals("张三", row.getOperator());
+        assertEquals("127.0.0.1", row.getIp());
+        assertEquals("req-1", row.getRequestId());
+        assertEquals("成功", row.getResult());
+        assertEquals(12, row.getCostMs());
+        assertNotNull(row.getCreateTime(), "发生时间必须落库，不能依赖 DB 默认值");
+        assertTrue(row.getBeforeValue().contains("待生产"), "变更前值应为 JSON：" + row.getBeforeValue());
+        assertTrue(row.getAfterValue().contains("已下达"), "变更后值应为 JSON：" + row.getAfterValue());
+        assertEquals("status", row.getDiffFields(), "qty 未变化，不应出现在差异字段里");
+    }
+
+    /** 没有业务单号就失去反查入口——宁可不写，也不能落一条事后查不到的日志。 */
+    @Test
+    void record_missingBizNo_rejected() {
+        WmsAuditEvent event = fullEvent().setBizNo("   ");
+
+        assertDoesNotThrow(() -> service.record(event));
+        verify(mapper, never()).insert(any(WmsAuditLog.class));
+    }
+
+    /** fail-open：审计库炸了，业务必须照常。金蝶那边可能已经落了单，回滚只会两边不一致。 */
+    @Test
+    void record_swallowsException_neverThrows() {
+        when(mapper.insert(any(WmsAuditLog.class))).thenThrow(new RuntimeException("db down"));
+
+        assertDoesNotThrow(() -> service.record(fullEvent()));
+        verify(mapper).insert(any(WmsAuditLog.class));
+    }
+
+    /** 前后值为空时 diff_fields 为 null，不写空串。 */
+    @Test
+    void record_withoutBeforeAfter_hasNoDiff() {
+        WmsAuditEvent event = fullEvent().setBeforeValue(null).setAfterValue(null);
+
+        service.record(event);
+
+        assertNull(captureInserted().getDiffFields());
+    }
+
+    /** snapshot 只取点名的字段，字段不存在就跳过；bean 为 null 时返回 null。 */
+    @Test
+    void snapshot_keepsRequestedFieldsOnly() {
+        WmsAuditEvent bean = new WmsAuditEvent().setBizNo("MO1").setOperator("张三");
+
+        String json = service.snapshot(bean, "bizNo", "noSuchField");
+
+        assertTrue(json.contains("\"bizNo\":\"MO1\""), "实际：" + json);
+        assertFalse(json.contains("noSuchField"), "不存在的字段必须跳过，实际：" + json);
+        assertFalse(json.contains("operator"), "未点名的字段不应出现，实际：" + json);
+        assertNull(service.snapshot(null, "bizNo"));
+    }
+
+    /** 超长文本按列宽截断，否则一条脏数据会让整表插入失败（进而丢审计）。 */
+    @Test
+    void record_truncatesOverlongText() {
+        String longMsg = "x".repeat(800);
+        service.record(fullEvent().setErrorMsg(longMsg));
+
+        WmsAuditLog row = captureInserted();
+        assertNotNull(row.getErrorMsg());
+        assertEquals(500, row.getErrorMsg().length(), "error_msg 列宽 500");
+    }
+}
