@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -99,5 +100,57 @@ class WmsSalesOrderServiceImplTest {
     void requireApprovedDetails_blankNo_throws() {
         org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
                 () -> service.preview(""));
+    }
+
+    /** 评审 M3：快照同步要留痕，但「没变化」的单反复扫到不该刷屏；类型是销售订单不是主数据。 */
+    @Test
+    void syncByBillNo_auditsCreateButSkipsUnchanged() throws Exception {
+        org.jeecg.modules.wms.sync.WmsKingdeeSaleOrder source =
+                new org.jeecg.modules.wms.sync.WmsKingdeeSaleOrder();
+        source.setSalesOrderNo("SO-A1");
+        source.setCustomerCode("C1");
+        org.jeecg.modules.wms.sync.WmsKingdeeSaleOrderQueryResult result =
+                new org.jeecg.modules.wms.sync.WmsKingdeeSaleOrderQueryResult();
+        result.setSuccess(true);
+        result.setOrders(List.of(source));
+        org.jeecg.modules.wms.sync.IWmsKingdeeSaleOrderReader reader =
+                mock(org.jeecg.modules.wms.sync.IWmsKingdeeSaleOrderReader.class);
+        when(reader.queryByBillNo("SO-A1")).thenReturn(result);
+        org.jeecg.modules.wms.support.WmsTestSupport.inject(service, "reader", reader);
+
+        org.jeecg.modules.wms.service.IWmsAuditLogService auditService =
+                mock(org.jeecg.modules.wms.service.IWmsAuditLogService.class);
+        when(auditService.snapshot(any(), any(String[].class)))
+                .thenAnswer(inv -> {
+                    Object bean = inv.getArgument(0);
+                    if (bean == null) {
+                        return null;
+                    }
+                    org.jeecg.modules.wms.entity.WmsSalesOrder o = (org.jeecg.modules.wms.entity.WmsSalesOrder) bean;
+                    return String.format("{\"salesOrderNo\":\"%s\",\"erpDocumentStatus\":\"%s\","
+                                    + "\"customerCode\":\"%s\"}",
+                            o.getSalesOrderNo(), o.getErpDocumentStatus(), o.getCustomerCode());
+                });
+        org.jeecg.modules.wms.support.WmsTestSupport.inject(service, "auditLogService", auditService);
+        // 出库回查：无出库
+        when(outboundOrderMapper.selectList(any())).thenReturn(List.of());
+
+        // 第一次：新建 → 记「同步落地」
+        when(orderMapper.selectOne(any())).thenReturn(null);
+        service.syncByBillNo("SO-A1");
+        org.mockito.ArgumentCaptor<org.jeecg.modules.wms.dto.WmsAuditEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(org.jeecg.modules.wms.dto.WmsAuditEvent.class);
+        verify(auditService).record(captor.capture());
+        assertEquals("销售订单", captor.getValue().getBizType());
+        assertEquals("同步落地", captor.getValue().getAction());
+
+        // 第二次：内容没变 → 不再记（findByNo 走 ServiceImpl.list → baseMapper.selectList）
+        org.mockito.Mockito.reset(auditService);
+        when(auditService.snapshot(any(), any(String[].class))).thenReturn("{\"same\":1}");
+        when(orderMapper.selectList(any())).thenReturn(
+                List.of(new WmsSalesOrder().setSalesOrderNo("SO-A1").setErpDocumentStatus(null)
+                        .setCustomerCode(null)));
+        service.syncByBillNo("SO-A1");
+        verify(auditService, never()).record(any());
     }
 }

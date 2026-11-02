@@ -222,10 +222,28 @@ public class WmsSalesOrderServiceImpl extends ServiceImpl<WmsSalesOrderMapper, W
                     .setShippedQty(shipped.getOrDefault(line.getMaterialCode(), BigDecimal.ZERO));
             detailMapper.insert(detail);
         }
+        // 全量窗口同步会反复扫到没变的单：无变化不写审计，否则订单一多全是噪音（评审 M3）
+        if (existing != null) {
+            String afterJson = WmsAuditRecorder.snapshot(auditLogService, order,
+                    "salesOrderNo", "erpDocumentStatus", "customerCode", "deliveryDate");
+            if (java.util.Objects.equals(beforeJson, afterJson)) {
+                return order;
+            }
+            WmsAuditRecorder.record(auditLogService, new WmsAuditEvent()
+                    .setBizType(WmsConstants.AUDIT_BIZ_SALES_ORDER)
+                    .setBizNo(source.getSalesOrderNo())
+                    .setAction(WmsConstants.AUDIT_ACTION_UPDATE)
+                    .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
+                    .setBeforeValue(beforeJson)
+                    .setAfterValue(afterJson)
+                    .setOperator(WmsConstants.AUDIT_OPERATOR_SYSTEM)
+                    .setResult(WmsConstants.AUDIT_RESULT_SUCCESS));
+            return order;
+        }
         WmsAuditRecorder.record(auditLogService, new WmsAuditEvent()
-                .setBizType(WmsConstants.AUDIT_BIZ_MASTER_DATA)
+                .setBizType(WmsConstants.AUDIT_BIZ_SALES_ORDER)
                 .setBizNo(source.getSalesOrderNo())
-                .setAction(existing == null ? WmsConstants.AUDIT_ACTION_SYNC_IN : WmsConstants.AUDIT_ACTION_UPDATE)
+                .setAction(WmsConstants.AUDIT_ACTION_SYNC_IN)
                 .setChannel(WmsConstants.AUDIT_CHANNEL_ERP_SYNC)
                 .setBeforeValue(beforeJson)
                 .setAfterValue(WmsAuditRecorder.snapshot(auditLogService, order,

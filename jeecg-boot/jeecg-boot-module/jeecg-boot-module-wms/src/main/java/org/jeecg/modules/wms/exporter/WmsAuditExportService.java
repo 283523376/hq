@@ -8,7 +8,6 @@ import org.jeecg.modules.wms.mapper.WmsAuditLogMapper;
 import org.jeecgframework.poi.excel.entity.ExportParams;
 import org.jeecgframework.poi.excel.entity.enmus.ExcelType;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.File;
 import java.io.IOException;
@@ -47,8 +46,10 @@ public class WmsAuditExportService {
      * @param query  查询条件（已由调用方转成对象）
      * @param target 目标文件；调用方负责父目录与临时后缀
      * @throws RuntimeException 没有符合条件的日志
+     *
+     * <p>**刻意不加只读事务**（评审 M7）：审计表只增不改，(create_time,id) 游标分页在无事务下
+     * 依然稳定；长事务包住整表扫描会让 undo 无法回收，还和清理 Job 的批量 DELETE 互相拖慢。
      */
-    @Transactional(readOnly = true)
     public WmsLedgerExportResult generate(WmsAuditQueryDTO query, File target) throws IOException {
         Date snapshotTime = new Date();
         Long total = auditLogMapper.selectCount(WmsAuditExportPageSource.filter(query));

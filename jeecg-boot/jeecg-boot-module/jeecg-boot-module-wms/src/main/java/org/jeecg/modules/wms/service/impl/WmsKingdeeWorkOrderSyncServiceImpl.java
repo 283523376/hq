@@ -68,6 +68,10 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
 
     private final WmsMaterialCodeResolver materialResolver;
 
+    /** M6：FCancelStatus 缺列只告警一次，不按单刷屏。 */
+    private final java.util.concurrent.atomic.AtomicBoolean cancelStatusWarned =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
     /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
     @Autowired(required = false)
     private IWmsAuditLogService auditLogService;
@@ -247,8 +251,14 @@ public class WmsKingdeeWorkOrderSyncServiceImpl implements IWmsKingdeeWorkOrderS
                             WmsKingdeeWorkOrderSyncResultVO vo, Set<String> unknownOrderTypes) {
         // 审核门槛最先判：门槛外状态整单跳过（评审 B1，不默认已完成）
         String documentStatus = str(rows.get(0).get(1));
-        String cancelStatus = rows.get(0).size() > CANCEL_STATUS_INDEX
-                ? str(rows.get(0).get(CANCEL_STATUS_INDEX)) : null;
+        String cancelStatus = null;
+        if (rows.get(0).size() > CANCEL_STATUS_INDEX) {
+            cancelStatus = str(rows.get(0).get(CANCEL_STATUS_INDEX));
+        } else if (cancelStatusWarned.compareAndSet(false, true)) {
+            // 金蝶没返回 FCancelStatus 列时作废检测会静默失效（评审 M6）——至少要让运维看见
+            log.warn("金蝶工单查询结果不含 FCancelStatus 列（实际 {} 列），作废状态检测将不生效，请检查查询字段配置",
+                    rows.get(0).size());
+        }
         String gatedStatus = gateStatus(documentStatus, cancelStatus);
         if (gatedStatus == null) {
             vo.getMessages().add(workOrderNo + "：金蝶单据状态 " + documentStatus

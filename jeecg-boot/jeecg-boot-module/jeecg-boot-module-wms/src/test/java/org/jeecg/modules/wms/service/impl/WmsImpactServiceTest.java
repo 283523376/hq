@@ -83,6 +83,13 @@ class WmsImpactServiceTest {
         when(workOrderMapper.selectOne(any())).thenReturn(order());
         when(inboundMapper.selectList(any())).thenReturn(List.of(inbound()));
         when(outboundMapper.selectList(any())).thenReturn(List.of(outbound()));
+        // 库存行也要能查到，否则「数据齐全」的断言会被新的缺口提示打脸
+        WmsInventoryLedgerVO row = new WmsInventoryLedgerVO();
+        row.setMaterialCode("M1");
+        row.setBatchNo("L1");
+        Page<WmsInventoryLedgerVO> page = new Page<>();
+        page.setRecords(List.of(row));
+        when(inventoryMapper.selectLedgerPage(any(), any())).thenReturn(page);
 
         WmsImpactVO vo = service.analyzeByWorkOrderNo("MO1");
 
@@ -178,5 +185,59 @@ class WmsImpactServiceTest {
         org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
                 () -> service.analyzeByWorkOrderNo("  "));
         org.mockito.Mockito.verifyNoInteractions(workOrderMapper);
+    }
+
+    /** 评审 M5：LIKE 模糊匹配会把 M0012 混进 M001 的影响面，必须按物料+批次精确过滤。 */
+    @Test
+    void analyze_inventoryRows_matchedExactly() {
+        when(workOrderMapper.selectOne(any())).thenReturn(order());
+        when(inboundMapper.selectList(any())).thenReturn(List.of(inbound()));
+        when(outboundMapper.selectList(any())).thenReturn(List.of());
+        WmsInventoryLedgerVO mine = new WmsInventoryLedgerVO();
+        mine.setMaterialCode("M1");
+        mine.setBatchNo("L1");
+        WmsInventoryLedgerVO others = new WmsInventoryLedgerVO();
+        others.setMaterialCode("M12");
+        others.setBatchNo("L1");
+        Page<WmsInventoryLedgerVO> page = new Page<>();
+        page.setRecords(List.of(mine, others));
+        when(inventoryMapper.selectLedgerPage(any(), any())).thenReturn(page);
+
+        WmsImpactVO vo = service.analyzeByWorkOrderNo("MO1");
+
+        assertEquals(1, vo.getInventoryRows().size(), "M12 不该出现在 M1 的影响面里");
+        assertEquals("M1", vo.getInventoryRows().get(0).getMaterialCode());
+    }
+
+    /** 库存行超过一页时必须明说「只显示了一部分」，不能静默截断。 */
+    @Test
+    void analyze_inventoryTruncated_reportsGap() {
+        when(workOrderMapper.selectOne(any())).thenReturn(order());
+        when(inboundMapper.selectList(any())).thenReturn(List.of(inbound()));
+        when(outboundMapper.selectList(any())).thenReturn(List.of());
+        WmsInventoryLedgerVO row = new WmsInventoryLedgerVO();
+        row.setMaterialCode("M1");
+        row.setBatchNo("L1");
+        Page<WmsInventoryLedgerVO> page = new Page<>(1, 200, 350);
+        page.setRecords(new java.util.ArrayList<>(java.util.Collections.nCopies(200, row)));
+        when(inventoryMapper.selectLedgerPage(any(), any())).thenReturn(page);
+
+        WmsImpactVO vo = service.analyzeByWorkOrderNo("MO1");
+
+        assertTrue(vo.getGaps().stream().anyMatch(g -> g.contains("仅显示")),
+                "实际：" + vo.getGaps());
+    }
+
+    /** 有物料+批次却没有当前库存行：如实说明（可能已出完/被调整），不静默空白。 */
+    @Test
+    void analyze_noInventoryRow_reportsGap() {
+        when(workOrderMapper.selectOne(any())).thenReturn(order());
+        when(inboundMapper.selectList(any())).thenReturn(List.of(inbound()));
+        when(outboundMapper.selectList(any())).thenReturn(List.of());
+
+        WmsImpactVO vo = service.analyzeByWorkOrderNo("MO1");
+
+        assertTrue(vo.getGaps().stream().anyMatch(g -> g.contains("未查到当前库存行")),
+                "实际：" + vo.getGaps());
     }
 }

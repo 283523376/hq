@@ -122,29 +122,48 @@ public class WmsImpactServiceImpl implements IWmsImpactService {
                 }
             }
         }
+        // 台账查询的 materialKeyword 是 LIKE %..%，M001 会连带 M0012（评审 M5）。
+        // 影响面是「这张单碰过什么」的证据清单，宁可少不可错：取回后按物料+批次精确过滤。
+        boolean queriedAny = false;
         for (String pair : pairs) {
             String[] parts = pair.split("\u0000", -1);
+            String materialCode = parts[0];
+            String batchNo = parts.length > 1 && !parts[1].isEmpty() ? parts[1] : null;
             WmsInventoryLedgerQueryDTO query = new WmsInventoryLedgerQueryDTO();
-            query.setMaterialKeyword(parts[0]);
-            query.setBatchNo(parts.length > 1 && !parts[1].isEmpty() ? parts[1] : null);
+            query.setMaterialKeyword(materialCode);
+            query.setBatchNo(batchNo);
             query.setOnlyPositive(Boolean.FALSE);
             query.setPageNo(1);
             query.setPageSize(INVENTORY_PAGE_SIZE);
             try {
                 IPage<WmsInventoryLedgerVO> page = inventoryMapper.selectLedgerPage(
                         new Page<>(1, INVENTORY_PAGE_SIZE), query);
+                queriedAny = true;
                 if (page != null && page.getRecords() != null) {
                     for (WmsInventoryLedgerVO row : page.getRecords()) {
+                        if (!materialCode.equals(row.getMaterialCode())) {
+                            continue;
+                        }
+                        if (batchNo != null && !batchNo.equals(row.getBatchNo())) {
+                            continue;
+                        }
                         if (!vo.getInventoryRows().contains(row)) {
                             vo.getInventoryRows().add(row);
                         }
                     }
+                    if (page.getTotal() > page.getRecords().size()) {
+                        vo.getGaps().add("物料 " + materialCode + " 的库存行超过 "
+                                + INVENTORY_PAGE_SIZE + " 条，仅显示前 " + page.getRecords().size() + " 条");
+                    }
                 }
             } catch (Exception e) {
-                log.warn("影响面查询库存行失败：material={}, batch={}", parts[0],
-                        parts.length > 1 ? parts[1] : null, e);
-                vo.getGaps().add("库存行查询失败（物料 " + parts[0] + "）：" + e.getMessage());
+                log.warn("影响面查询库存行失败：material={}, batch={}", materialCode, batchNo, e);
+                vo.getGaps().add("库存行查询失败（物料 " + materialCode + "）：" + e.getMessage());
             }
+        }
+        // 有入库/出库却查不到任何当前库存行：如实说明，不静默空白
+        if (queriedAny && vo.getInventoryRows().isEmpty()) {
+            vo.getGaps().add("未查到当前库存行（可能已全部出库、被调整，或库存行已删除）；历史动作仅审计日志可见");
         }
     }
 

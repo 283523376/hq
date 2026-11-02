@@ -273,6 +273,8 @@ public class WmsKingdeeBinSyncServiceImpl implements IWmsKingdeeBinSyncService {
             patch.setSyncStatus(status);
             patch.setLastSyncTime(new Date());
             binMapper.updateById(patch);
+            // 审计快照记的是「变更后」：bin 是旧对象，先把新状态补上再快照（评审 M2）
+            bin.setSyncStatus(status);
             WmsAuditRecorder.recordMasterData(auditLogService, bin.getBinNumber(),
                     WmsConstants.AUDIT_ACTION_UPDATE, bin);
             marked++;

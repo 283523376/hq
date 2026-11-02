@@ -24,6 +24,7 @@ export const AUDIT_BIZ_TYPE_OPTIONS = [
   { label: '盘点单', value: '盘点单' },
   { label: '系统配置', value: '系统配置' },
   { label: '主数据', value: '主数据' },
+  { label: '销售订单', value: '销售订单' },
 ];
 
 /** 结果色：失败必须刺眼——它就是「要去看一眼」的信号 */

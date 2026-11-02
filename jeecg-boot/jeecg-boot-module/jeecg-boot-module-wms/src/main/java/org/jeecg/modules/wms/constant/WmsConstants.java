@@ -497,6 +497,8 @@ public final class WmsConstants {
     public static final String AUDIT_BIZ_CONFIG = "系统配置";
     /** 审计业务类型：主数据（物料/仓库/库位/分类/设备）。 */
     public static final String AUDIT_BIZ_MASTER_DATA = "主数据";
+    /** 审计业务类型：销售订单（ERP 只读快照）。 */
+    public static final String AUDIT_BIZ_SALES_ORDER = "销售订单";
 
     /** 审计动作：新建。 */
     public static final String AUDIT_ACTION_CREATE = "创建";
