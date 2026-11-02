@@ -206,4 +206,27 @@ class WmsAuditLogServiceTest {
         assertEquals(1, captor.getValue().getCurrent());
         assertEquals(200, captor.getValue().getSize());
     }
+
+    /**
+     * 数字精度差异不算变更：金蝶返回 2000.000、WMS 落库 2000.0，
+     * 按字符串比会把每个工单都误报成「planQty 变了」（真账套同步实测踩到的）。
+     */
+    @Test
+    void diffFields_numericScaleDifference_isNotAChange() {
+        String before = "{\"planQty\":2000.000,\"workOrderStatus\":\"已下达\"}";
+        String after = "{\"planQty\":2000.0,\"workOrderStatus\":\"已下达\"}";
+
+        String diff = WmsAuditLogServiceImpl.diffFields(before, after);
+
+        assertNull(diff, "数值相同只是精度不同，不应记为变更");
+    }
+
+    /** 真正变化的数值仍然要报出来。 */
+    @Test
+    void diffFields_realNumericChange_isReported() {
+        String diff = WmsAuditLogServiceImpl.diffFields(
+                "{\"planQty\":2000}", "{\"planQty\":1500}");
+
+        assertEquals("planQty", diff);
+    }
 }

@@ -196,13 +196,26 @@ public class WmsAuditLogServiceImpl implements IWmsAuditLogService {
         }
     }
 
-    /** JSON 反序列化后数值类型可能不同（10 vs 10L），按字符串比较避免误报差异。 */
+    /**
+     * 比较两个 JSON 值是否相同。
+     *
+     * <p>数值按 BigDecimal.compareTo 比：金蝶返回 2000.000、WMS 落库 2000.0，
+     * 按字符串比会把每张工单都误报成「planQty 变了」（真账套同步实测踩到）。
+     */
     private static boolean sameValue(Object a, Object b) {
         if (a == null && b == null) {
             return true;
         }
         if (a == null || b == null) {
             return false;
+        }
+        if (a instanceof Number && b instanceof Number) {
+            try {
+                return new java.math.BigDecimal(String.valueOf(a))
+                        .compareTo(new java.math.BigDecimal(String.valueOf(b))) == 0;
+            } catch (NumberFormatException e) {
+                // 落到字符串比较
+            }
         }
         return String.valueOf(a).equals(String.valueOf(b));
     }
