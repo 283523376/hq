@@ -112,6 +112,13 @@ export function applyZoomScale(
 ): void {
   if (el) {
     el.style.zoom = percent === DEFAULT_SCALE ? '' : String(percent / 100);
+    // 弹层（下拉/日期/提示）由 antd 用 getBoundingClientRect 定位，而 rect 返回的是
+    // **已缩放**坐标；把 top/left 再写回 zoom 上下文会被二次放大，弹层于是飞掉。
+    // 这里暴露一个倒数给全局样式，让弹层自己抵消掉这一层缩放。
+    document.documentElement.style.setProperty(
+      '--wms-zoom-inverse',
+      percent === DEFAULT_SCALE ? '' : String(DEFAULT_SCALE / percent),
+    );
   }
 }
 

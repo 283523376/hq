@@ -356,3 +356,22 @@ html[data-theme='dark'] {
     }
   }
 }
+
+/* ------------------------------------------------------------------
+ * 弹层抵消页面缩放
+ *
+ * useFontScale 用 body{zoom} 做整体缩放，但 antd 弹层（Select 下拉、
+ * 日期面板、气泡、菜单）是用 getBoundingClientRect 算坐标的：
+ * rect 返回**已缩放**的值，把它写回 top/left 会被 zoom 再放大一次，
+ * 弹层于是跑到屏幕右下角（2026-11-02 实测：zoom=120% 时偏移 240px）。
+ *
+ * 给弹层加倒数缩放即可抵消。代价是弹层自身不随页面放大，
+ * 但位置正确 > 尺寸一致——位置错了整个控件就不可用。
+ * ------------------------------------------------------------------ */
+.ant-select-dropdown,
+.ant-picker-dropdown,
+.ant-dropdown,
+.ant-popover,
+.ant-tooltip {
+  zoom: var(--wms-zoom-inverse, 1);
+}
