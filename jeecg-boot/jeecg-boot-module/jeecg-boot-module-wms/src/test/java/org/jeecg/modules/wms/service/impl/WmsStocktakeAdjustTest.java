@@ -67,13 +67,16 @@ class WmsStocktakeAdjustTest {
     void adjustShouldOverwriteInventoryWithActualQty() {
         stubOrder(WmsConstants.STOCKTAKE_STATUS_DIFF_CONFIRMED);
         when(detailMapper.selectList(any())).thenReturn(List.of(detail("10", "7")));
-        when(inventoryMapper.selectOne(any())).thenReturn(new WmsInventory());
+        WmsInventory existing = new WmsInventory();
+        existing.setId("inv-1");
+        when(inventoryMapper.selectOne(any())).thenReturn(existing);
 
         service.applyAdjustment("st-1", "alice");
 
-        ArgumentCaptor<WmsInventory> captor = ArgumentCaptor.forClass(WmsInventory.class);
-        verify(inventoryMapper).updateById(captor.capture());
-        assertEquals(0, captor.getValue().getQuantity().compareTo(new BigDecimal("7")));
+        // 2026-11-03 SB-001 前置修复：覆盖改走 touchQuantity（显式刷 update_time/update_by），
+        // 不再走通用 updateById（无自动填充，审计列不变，对账会漏掉盘点调整）
+        verify(inventoryMapper).touchQuantity("inv-1", new BigDecimal("7"), "alice");
+        verify(inventoryMapper, never()).updateById(any(WmsInventory.class));
 
         WmsStocktakeOrder order = orderAfterAdjust();
         assertEquals(WmsConstants.STOCKTAKE_STATUS_ADJUSTED, order.getStatus());

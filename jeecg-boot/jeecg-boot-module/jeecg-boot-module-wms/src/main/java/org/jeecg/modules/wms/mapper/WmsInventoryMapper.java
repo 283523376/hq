@@ -69,6 +69,15 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
     int deductQuantity(@Param("id") String id, @Param("qty") BigDecimal qty);
 
     /**
+     * 整行覆盖库存数量并显式刷新 update_time / update_by——盘点调整用（SB-001 前置修复）。
+     *
+     * <p>「今日变动」对账按 {@code update_time} 取数；本项目无 MyBatis-Plus 自动填充，
+     * 走通用 {@code updateById} 审计列不会变，对账会漏掉全部盘点调整。
+     * 盘点是覆盖不是增减，故不带数量余量条件。
+     */
+    int touchQuantity(@Param("id") String id, @Param("qty") BigDecimal qty, @Param("updateBy") String updateBy);
+
+    /**
      * 库存台账分页（KC-004）。
      *
      * <p>排序按 `wms_inventory` 唯一键的四列，与 {@link #selectLedgerCursor} 保持一致，

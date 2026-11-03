@@ -13,6 +13,7 @@ import org.jeecg.modules.wms.mapper.WmsLocationMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
 import org.jeecg.modules.wms.service.IWmsStocktakeService;
+import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsStocktakeDetailVO;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -337,7 +338,7 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
             if (detail.getActualQty() == null || FLAG_YES.equals(detail.getAdjusted())) {
                 continue;
             }
-            applyToInventory(detail);
+            applyToInventory(detail, operator);
             detail.setAdjusted(FLAG_YES);
             detailMapper.updateById(detail);
         }
@@ -350,8 +351,13 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
         log.info("盘点单[{}]库存调整完成，操作人={}", order.getStocktakeNo(), operator);
     }
 
-    /** 按实盘覆盖库存：0 → 删行；有行 → 覆盖；无行且 >0 → 插入。绝不建出入库单据。 */
-    private void applyToInventory(WmsStocktakeDetail detail) {
+    /**
+     * 按实盘覆盖库存：0 → 删行；有行 → 覆盖；无行且 >0 → 插入。绝不建出入库单据。
+     *
+     * <p>覆盖必须显式刷新 update_time / update_by（touchQuantity）——SB-001「今日变动」
+     * 对账按 update_time 取数，本项目无自动填充，走通用 updateById 审计列不变。
+     */
+    private void applyToInventory(WmsStocktakeDetail detail, String operator) {
         WmsInventory existing = inventoryMapper.selectOne(new LambdaQueryWrapper<WmsInventory>()
                 .eq(WmsInventory::getMaterialId, detail.getMaterialId())
                 .eq(WmsInventory::getLocationId, detail.getLocationId())
@@ -374,11 +380,15 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
             created.setLockedQty(BigDecimal.ZERO);
             // 盘盈是新增行：实物入库时点无从得知，取发现时间（spec 2026-10-28 D4）
             created.setFirstInboundTime(new Date());
+            // 时间列由 fillCreate 填；操作人列显式用 operator——fillCreate 取 Shiro 上下文，
+            // 盘点调整可能来自无登录态的调用方，且时间戳口径必须与更新路径一致（SB-001 依赖）
+            WmsUtils.fillCreate(created);
+            created.setCreateBy(operator);
+            created.setUpdateBy(operator);
             inventoryMapper.insert(created);
             return;
         }
-        existing.setQuantity(detail.getActualQty());
-        inventoryMapper.updateById(existing);
+        inventoryMapper.touchQuantity(existing.getId(), detail.getActualQty(), operator);
     }
 
     /**

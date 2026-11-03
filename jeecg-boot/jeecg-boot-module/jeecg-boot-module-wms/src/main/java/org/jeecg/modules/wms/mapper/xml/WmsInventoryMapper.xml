@@ -115,6 +115,20 @@
            AND quantity &gt;= #{qty}
     </update>
 
+    <!--
+      盘点整行覆盖库存（SB-001 前置修复）：quantity 直接写成实盘值，不是增减，
+      所以不带数量余量条件。必须显式刷 update_time / update_by——本项目无
+      MetaObjectHandler 自动填充，SB-001「今日变动」对账按 update_time 取数，
+      走通用 updateById 审计列不变，对账会漏掉全部盘点调整。
+    -->
+    <update id="touchQuantity">
+        UPDATE wms_inventory
+           SET quantity = #{qty},
+               update_time = NOW(),
+               update_by = #{updateBy}
+         WHERE id = #{id}
+    </update>
+
     <!-- ============================================================
          KC-004 库存台账
          ============================================================ -->
