@@ -19,6 +19,11 @@ import java.util.Map;
  * 翻页——{@code TopRowCount} 会先截断结果集，StartRow 就永远取不到第二页。每页 500，
  * 返回行数 &lt; 500 即结束。
  *
+ * <p><b>必须带稳定排序</b>（{@link #ORDER_STRING}）：金蝶在无 {@code OrderString} 时不保证返回顺序，
+ * 翻页会出现「上一页的行又出现、另一些行永远取不到」。本类又按 key 累加数量，重复行会直接把
+ * ERP 数量翻倍、产出假的「多账」，所以排序键必须覆盖仓库/物料/批号，并补上仓位、库存状态这类
+ * 区分同一 key 多行的字段（排序键不必出现在 {@code FieldKeys} 里）。
+ *
  * <p><b>key 口径</b>：{@code 仓库|物料|批号}，批号 null/空串统一归一为 {@code ""}，与 WMS 侧
  * {@code COALESCE(batch_no,'')} 聚合口径一致。同一 key 多行（如同一批号的不同库存状态）数量相加，
  * 与 WMS 侧 SUM 口径一致。
@@ -35,10 +40,22 @@ public class WmsKingdeeInventoryReaderImpl implements IWmsKingdeeInventoryReader
     /** 字段顺序与 {@link #mergeRow} 的下标解析一一对应，改动时同步。 */
     static final String FIELD_KEYS = "FMaterialId.FNumber,FStockId.FNumber,FLot.FNumber,FBaseQty";
 
+    /**
+     * 稳定排序：仓库/物料/批号是对账 key，仓位与库存状态区分同一 key 的多行。
+     *
+     * <p>不加排序时金蝶不保证翻页间的行序，会静默漏行或重复行；本类按 key 累加，重复行会造成
+     * ERP 数量翻倍。风格与 {@link WmsKingdeeOperationReportReader#ORDER_STRING} 一致。
+     */
+    static final String ORDER_STRING = "FStockId.FNumber ASC,FMaterialId.FNumber ASC,FLot.FNumber ASC,"
+            + "FStockLocId.FNumber ASC,FStockStatusId.FNumber ASC";
+
     /** 只查 101 组织（江西兆鑫 100 的库存不在永鑫 WMS 范围内）。 */
     static final String ORG_FILTER = "FStockOrgId.FNumber='101'";
 
     static final int PAGE_SIZE = 500;
+
+    /** 翻页上限：防止金蝶忽略 StartRow 时死循环。 */
+    static final int MAX_PAGES = 200;
 
     /** key 分隔符。 */
     static final String KEY_SEPARATOR = "|";
@@ -54,9 +71,9 @@ public class WmsKingdeeInventoryReaderImpl implements IWmsKingdeeInventoryReader
         String filter = buildFilter(warehouseCodes);
         Map<String, BigDecimal> inventory = new LinkedHashMap<>();
         int startRow = 0;
-        while (true) {
+        for (int pageNo = 0; pageNo < MAX_PAGES; pageNo++) {
             WmsKingdeeResult page = formClient.executeBillQuery(
-                    FORM_ID, FIELD_KEYS, filter, PAGE_SIZE, startRow);
+                    FORM_ID, FIELD_KEYS, filter, PAGE_SIZE, startRow, ORDER_STRING);
             if (!page.isSuccess()) {
                 throw new RuntimeException(page.getMessage());
             }
@@ -69,6 +86,7 @@ public class WmsKingdeeInventoryReaderImpl implements IWmsKingdeeInventoryReader
             }
             startRow += rows.size();
         }
+        throw new RuntimeException("金蝶即时库存分页超过 " + MAX_PAGES + " 页，疑似 StartRow 翻页失效");
     }
 
     /** 组织过滤 + 可选仓库过滤；空列表视为不过滤仓库。 */
@@ -108,11 +126,24 @@ public class WmsKingdeeInventoryReaderImpl implements IWmsKingdeeInventoryReader
         }
         String key = warehouse + KEY_SEPARATOR + material + KEY_SEPARATOR + text(row.get(2));
         BigDecimal qty = parseQty(row.get(3));
+        if (qty == null) {
+            // 单行数量缺失不应让整批对账失败；跳过并留痕，便于真账套排查
+            log.warn("金蝶即时库存数量为空或非法，已跳过该行：{}", row);
+            return;
+        }
         inventory.merge(key, qty, BigDecimal::add);
     }
 
+    /** 数量解析：null/空串/非法值返回 null（调用方跳过该行），不做默认补 0 以免掩盖脏数据。 */
     private BigDecimal parseQty(Object value) {
-        return new BigDecimal(String.valueOf(value));
+        if (value == null || String.valueOf(value).trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** 文本归一：null → ""，并去掉首尾空白（批号的 null/空串因此落到同一 key）。 */
