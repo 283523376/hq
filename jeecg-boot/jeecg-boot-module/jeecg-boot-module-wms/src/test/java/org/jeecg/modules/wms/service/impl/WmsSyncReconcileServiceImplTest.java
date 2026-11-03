@@ -1,7 +1,10 @@
 package org.jeecg.modules.wms.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
 import org.jeecg.modules.wms.dto.WmsSyncRunCreateDTO;
 import org.jeecg.modules.wms.entity.WmsSyncDiff;
 import org.jeecg.modules.wms.entity.WmsSyncFlow;
@@ -12,6 +15,7 @@ import org.jeecg.modules.wms.mapper.WmsSyncDiffMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncFlowMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncRunMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncSnapshotMapper;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
@@ -44,6 +48,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -74,6 +79,7 @@ class WmsSyncReconcileServiceImplTest {
     private IWmsSystemConfigService configService;
     private WmsKingdeeProperties kingdeeProperties;
     private ISysBaseAPI sysBaseAPI;
+    private IWmsAuditLogService auditLogService;
     private WmsSyncReconcileServiceImpl service;
 
     private long[] originalBackoff;
@@ -92,11 +98,12 @@ class WmsSyncReconcileServiceImplTest {
         syncLogService = mock(IWmsSyncLogService.class);
         configService = mock(IWmsSystemConfigService.class);
         sysBaseAPI = mock(ISysBaseAPI.class);
+        auditLogService = mock(IWmsAuditLogService.class);
         kingdeeProperties = new WmsKingdeeProperties();
         kingdeeProperties.setEnabled(true);
 
         service = new WmsSyncReconcileServiceImpl(inventoryMapper, snapshotMapper, flowMapper, diffMapper,
-                inventoryReader, syncLogService, configService, kingdeeProperties, sysBaseAPI);
+                inventoryReader, syncLogService, configService, kingdeeProperties, sysBaseAPI, auditLogService);
         WmsTestSupport.inject(service, "baseMapper", runMapper);
         service.setAlertToUserForTest("admin");
         service.setExecutorForTest(Runnable::run);
@@ -235,6 +242,9 @@ class WmsSyncReconcileServiceImplTest {
                 aggregate("D.01", "WMS-A", "M1", "L1", "10"),
                 aggregate("D.01", "WMS-A", "M2", "L2", "20")));
         when(inventoryReader.queryInventory(any())).thenThrow(new RuntimeException("金蝶超时"));
+        // 失败批次回填「已落库」行数：快照 2 行、流水 0 行
+        when(snapshotMapper.selectCount(any())).thenReturn(2L);
+        when(flowMapper.selectCount(any())).thenReturn(0L);
 
         service.executeRunForTest(RUN_ID);
 
@@ -259,6 +269,9 @@ class WmsSyncReconcileServiceImplTest {
         assertEquals(WmsConstants.SYNC_RUN_STATUS_FAILED, failed.getStatus());
         assertTrue(failed.getErrorMessage().contains("金蝶超时"));
         assertEquals(3, failed.getRetryCount().intValue());
+        // 失败批次不能显示 0/0：已落库的快照行数必须回填
+        assertEquals(2, failed.getSnapshotCount().intValue());
+        assertEquals(0, failed.getFlowCount().intValue());
 
         verify(sysBaseAPI, times(1)).sendSysAnnouncement(any());
     }
@@ -359,6 +372,27 @@ class WmsSyncReconcileServiceImplTest {
         assertEquals(now, endCap.getValue());
     }
 
+    @Test
+    void executeRun_warehouseScope_filtersFlowsBySelectedWarehouses() {
+        Date now = new Date();
+        WmsSyncRun run = run(WmsConstants.SYNC_SCOPE_WAREHOUSE, now, now);
+        run.setWarehouseCodes("D.01");
+        when(runMapper.selectById(RUN_ID)).thenReturn(run);
+        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of(
+                aggregate("D.01", "WMS-A", "M1", "L1", "10")));
+        when(inventoryReader.queryInventory(any())).thenReturn(map("D.01|M1|L1", "10"));
+        when(flowMapper.selectOutboundRows(any(), any())).thenReturn(List.of(
+                flowRow("  d.01 "), flowRow("D.02")));
+
+        service.executeRunForTest(RUN_ID);
+
+        // 指定仓库批次：只保留所选仓库的流水（trim + 忽略大小写），未选仓库不得掺入「待推送包」
+        ArgumentCaptor<WmsSyncFlow> flowCap = ArgumentCaptor.forClass(WmsSyncFlow.class);
+        verify(flowMapper, times(1)).insert(flowCap.capture());
+        assertEquals("  d.01 ", flowCap.getValue().getWarehouseCode());
+        assertEquals(1, lastRunUpdate().getFlowCount().intValue());
+    }
+
     // ================================================================ 空快照短路
 
     @Test
@@ -419,6 +453,8 @@ class WmsSyncReconcileServiceImplTest {
 
     @Test
     void createRun_rejectsWhenAnotherRunIsRunning() {
+        // 自愈只影响 30 分钟前的行；未超时的「执行中」仍必须拒绝
+        when(runMapper.update(isNull(), any())).thenReturn(0);
         when(runMapper.selectCount(any())).thenReturn(1L);
         WmsSyncRunCreateDTO dto = new WmsSyncRunCreateDTO();
         dto.setScopeType(WmsConstants.SYNC_SCOPE_FULL);
@@ -426,7 +462,55 @@ class WmsSyncReconcileServiceImplTest {
         RuntimeException e = assertThrows(RuntimeException.class,
                 () -> service.createRun(dto, OPERATOR));
         assertEquals("已有对账批次在执行中，请稍后再试", e.getMessage());
+        verify(runMapper).update(isNull(), any());
         verify(runMapper, never()).insert(any(WmsSyncRun.class));
+    }
+
+    @Test
+    void createRun_healsStaleRunningBatchBeforeGuard() {
+        // 陈旧行自愈 1 行后，status=执行中 已清零，可以正常建批次
+        when(runMapper.update(isNull(), any())).thenReturn(1);
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(runMapper.selectById(anyString())).thenReturn(null);
+        WmsSyncRunCreateDTO dto = new WmsSyncRunCreateDTO();
+        dto.setScopeType(WmsConstants.SYNC_SCOPE_FULL);
+
+        String runId = service.createRun(dto, OPERATOR);
+
+        assertNotNull(runId);
+        ArgumentCaptor<Wrapper<WmsSyncRun>> wrapperCap = ArgumentCaptor.forClass(Wrapper.class);
+        verify(runMapper).update(isNull(), wrapperCap.capture());
+        Wrapper<WmsSyncRun> wrapper = wrapperCap.getValue();
+        String sql = wrapper.getSqlSegment();
+        assertTrue(sql.contains("status"), "自愈未按状态过滤：" + sql);
+        assertTrue(sql.contains("update_time"), "自愈未按超时阈值过滤：" + sql);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = ((AbstractWrapper<?, ?, ?>) wrapper).getParamNameValuePairs();
+        assertTrue(params.containsValue(WmsConstants.SYNC_RUN_STATUS_RUNNING));
+        assertTrue(params.containsValue(WmsConstants.SYNC_RUN_STATUS_FAILED));
+        assertTrue(params.containsValue(WmsSyncReconcileServiceImpl.STALE_RUNNING_MESSAGE));
+        verify(runMapper).insert(any(WmsSyncRun.class));
+    }
+
+    @Test
+    void createRun_recordsCreateAuditWithRunNo() {
+        // 控制器 @WmsAudit 取不到服务层生成的批次号，服务必须显式补一条
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(runMapper.selectById(anyString())).thenReturn(null);
+        WmsSyncRunCreateDTO dto = new WmsSyncRunCreateDTO();
+        dto.setScopeType(WmsConstants.SYNC_SCOPE_FULL);
+
+        service.createRun(dto, OPERATOR);
+
+        ArgumentCaptor<WmsAuditEvent> eventCap = ArgumentCaptor.forClass(WmsAuditEvent.class);
+        verify(auditLogService).record(eventCap.capture());
+        WmsAuditEvent event = eventCap.getValue();
+        assertEquals(WmsConstants.AUDIT_BIZ_SYNC, event.getBizType());
+        assertEquals(WmsConstants.AUDIT_ACTION_CREATE, event.getAction());
+        assertEquals(WmsConstants.AUDIT_CHANNEL_UI, event.getChannel());
+        assertEquals(OPERATOR, event.getOperator());
+        assertTrue(event.getBizNo().startsWith("SB"), "审计 bizNo 必须是服务层生成的批次号：" + event.getBizNo());
+        assertEquals(19, event.getBizNo().length());
     }
 
     @Test
@@ -513,6 +597,12 @@ class WmsSyncReconcileServiceImplTest {
         vo.setQty(new BigDecimal(qty));
         vo.setLockedQty(BigDecimal.ZERO);
         return vo;
+    }
+
+    private WmsSyncFlowRowVO flowRow(String warehouseCode) {
+        WmsSyncFlowRowVO row = flowRow();
+        row.setWarehouseCode(warehouseCode);
+        return row;
     }
 
     private WmsSyncFlowRowVO flowRow() {

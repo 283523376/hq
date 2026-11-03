@@ -1,5 +1,6 @@
 package org.jeecg.modules.wms.job;
 
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
@@ -18,6 +19,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -118,14 +120,27 @@ class WmsSyncReconcileJobTest {
         assertEquals(WmsConstants.SYNC_SCOPE_TODAY, dto.getScopeType());
         assertEquals(watermark, dto.getWindowStart());
 
-        // 只断言返回值不够：漏写 status/scope/排序时用例仍会通过
+        // 只断言返回值不够：漏写 status/scope/operator/排序时用例仍会通过
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Wrapper<WmsSyncRun>> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(syncRunMapper).selectOne(wrapperCaptor.capture());
-        String sql = wrapperCaptor.getValue().getSqlSegment();
+        Wrapper<WmsSyncRun> wrapper = wrapperCaptor.getValue();
+        String sql = wrapper.getSqlSegment();
         assertTrue(sql.contains("status"), "水位线未按批次状态过滤：" + sql);
         assertTrue(sql.contains("scope_type"), "水位线未限定 FULL/TODAY，WAREHOUSE 会污染水位线：" + sql);
+        assertTrue(sql.contains("operator"), "水位线未限定 operator=system，手工批次会推高水位线：" + sql);
         assertTrue(sql.contains("ORDER BY window_end DESC"), "水位线未按 window_end 倒序取最新：" + sql);
+
+        // 列名通过不代表取值正确（缓办项）：逐个校验绑定值
+        Map<String, Object> params = ((AbstractWrapper<?, ?, ?>) wrapper).getParamNameValuePairs();
+        assertTrue(params.containsValue(WmsConstants.SYNC_RUN_STATUS_SUCCESS),
+                "水位线未限定成功批次：" + params);
+        assertTrue(params.containsValue(WmsConstants.SYNC_SCOPE_FULL),
+                "水位线未限定 FULL：" + params);
+        assertTrue(params.containsValue(WmsConstants.SYNC_SCOPE_TODAY),
+                "水位线未限定 TODAY：" + params);
+        assertTrue(params.containsValue(WmsConstants.AUDIT_OPERATOR_SYSTEM),
+                "水位线未限定定时批次（operator=system）：" + params);
     }
 
     /** TODAY 且无历史成功批次：回落当天 00:00。 */

@@ -59,12 +59,12 @@ public class WmsSyncDiff extends JeecgEntity {
     @Excel(name = "批次号", width = 18)
     private String batchNo;
 
-    /** WMS 侧数量（仅ERP 差异为 NULL） */
+    /** WMS 侧数量（仅ERP 差异记 0） */
     @Schema(description = "WMS 侧数量")
     @Excel(name = "WMS数量", width = 14)
     private BigDecimal wmsQty;
 
-    /** 金蝶侧数量（仅WMS 差异为 NULL） */
+    /** 金蝶侧数量（仅WMS 差异记 0） */
     @Schema(description = "金蝶数量")
     @Excel(name = "金蝶数量", width = 14)
     private BigDecimal erpQty;

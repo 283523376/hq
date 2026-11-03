@@ -3,6 +3,7 @@ package org.jeecg.modules.wms.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -11,8 +12,10 @@ import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.common.system.base.entity.JeecgEntity;
 import org.jeecg.common.system.base.service.impl.JeecgServiceImpl;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.audit.WmsAuditRecorder;
 import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsAuditEvent;
 import org.jeecg.modules.wms.dto.WmsSyncRunCreateDTO;
 import org.jeecg.modules.wms.entity.WmsSyncDiff;
 import org.jeecg.modules.wms.entity.WmsSyncFlow;
@@ -23,6 +26,7 @@ import org.jeecg.modules.wms.mapper.WmsSyncDiffMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncFlowMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncRunMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncSnapshotMapper;
+import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.service.IWmsSyncReconcileService;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
@@ -43,6 +47,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -96,7 +101,18 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
     static final int MAX_PAGE_SIZE = 200;
 
     /** 定时任务（无登录态）的操作人。 */
-    static final String SYSTEM_OPERATOR = "system";
+    static final String SYSTEM_OPERATOR = WmsConstants.AUDIT_OPERATOR_SYSTEM;
+
+    /**
+     * 「执行中」批次的陈旧阈值（分钟）。
+     *
+     * <p>进程被杀 / DB 抖动 / failRun 自身失败都会留下永久「执行中」，此后所有对账被拒。
+     * 建批次前先把超过该阈值的行自愈成失败（2026-11-03 评审 C1）。
+     */
+    static final int STALE_RUNNING_MINUTES = 30;
+
+    /** 自愈时写入的失败原因。 */
+    static final String STALE_RUNNING_MESSAGE = "执行超时（进程中断），自动置失败";
 
     private final WmsInventoryMapper inventoryMapper;
     private final WmsSyncSnapshotMapper snapshotMapper;
@@ -107,6 +123,7 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
     private final IWmsSystemConfigService configService;
     private final WmsKingdeeProperties kingdeeProperties;
     private final ISysBaseAPI sysBaseAPI;
+    private final IWmsAuditLogService auditLogService;
 
     /** 对账执行线程池：单线程即可（并发批次在建单时已拒绝），daemon 不阻塞 JVM 退出。 */
     private final ExecutorService reconcileExecutor = Executors.newSingleThreadExecutor(runnable -> {
@@ -129,7 +146,8 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
                                        IWmsSyncLogService syncLogService,
                                        IWmsSystemConfigService configService,
                                        WmsKingdeeProperties kingdeeProperties,
-                                       ISysBaseAPI sysBaseAPI) {
+                                       ISysBaseAPI sysBaseAPI,
+                                       IWmsAuditLogService auditLogService) {
         this.inventoryMapper = inventoryMapper;
         this.snapshotMapper = snapshotMapper;
         this.flowMapper = flowMapper;
@@ -139,6 +157,7 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
         this.configService = configService;
         this.kingdeeProperties = kingdeeProperties;
         this.sysBaseAPI = sysBaseAPI;
+        this.auditLogService = auditLogService;
     }
 
     @PreDestroy
@@ -183,6 +202,9 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
         if (WmsConstants.SYNC_SCOPE_WAREHOUSE.equals(scope) && warehouses.isEmpty()) {
             throw new RuntimeException("指定仓库对账必须选择至少一个仓库");
         }
+
+        // 先自愈陈旧的「执行中」批次，再判并发——否则一次进程中断会把对账永久锁死
+        healStaleRunningRuns();
 
         Long running = baseMapper.selectCount(
                 new QueryWrapper<WmsSyncRun>().eq("status", WmsConstants.SYNC_RUN_STATUS_RUNNING));
@@ -231,6 +253,9 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
             baseMapper.insert(run);
         }
 
+        // 控制器上的 @WmsAudit 取不到服务层生成的批次号（bizNo 为空会被跳过），这里显式补一条
+        recordCreateAudit(run);
+
         String runId = run.getId();
         try {
             executor.execute(() -> executeRun(runId));
@@ -243,6 +268,48 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
             baseMapper.updateById(run);
         }
         return runId;
+    }
+
+    /**
+     * 自愈陈旧的「执行中」批次：{@code status=执行中 且 update_time < 30 分钟前} → 置失败。
+     *
+     * <p>进程被杀 / DB 抖动 / failRun 自身失败都会留下永久「执行中」，此后手工与定时对账会被
+     * 「已有对账批次在执行中」永久拒绝。自愈放在并发校验之前，自愈失败只记日志、不阻断本次建单
+     * （后续 status 校验仍会兜底）。
+     *
+     * @return 自愈行数
+     */
+    int healStaleRunningRuns() {
+        Date cutoff = new Date(System.currentTimeMillis() - STALE_RUNNING_MINUTES * 60_000L);
+        try {
+            int healed = baseMapper.update(null, Wrappers.<WmsSyncRun>update()
+                    .set("status", WmsConstants.SYNC_RUN_STATUS_FAILED)
+                    .set("error_message", STALE_RUNNING_MESSAGE)
+                    .set("update_by", SYSTEM_OPERATOR)
+                    .set("update_time", new Date())
+                    .eq("status", WmsConstants.SYNC_RUN_STATUS_RUNNING)
+                    .lt("update_time", cutoff));
+            if (healed > 0) {
+                log.warn("自愈 {} 个超时未结束的对账批次（status=执行中 且 update_time < {}）", healed, cutoff);
+            }
+            return healed;
+        } catch (Exception e) {
+            log.error("自愈陈旧对账批次失败（不阻断本次建单）：{}", e.getMessage(), e);
+            return 0;
+        }
+    }
+
+    /** 显式补一条「创建对账批次」审计：批次号只有服务层才知道。 */
+    private void recordCreateAudit(WmsSyncRun run) {
+        String operator = operatorOf(run);
+        WmsAuditRecorder.record(auditLogService, new WmsAuditEvent()
+                .setBizType(WmsConstants.AUDIT_BIZ_SYNC)
+                .setBizNo(run.getRunNo())
+                .setAction(WmsConstants.AUDIT_ACTION_CREATE)
+                .setChannel(SYSTEM_OPERATOR.equals(operator)
+                        ? WmsConstants.AUDIT_CHANNEL_JOB : WmsConstants.AUDIT_CHANNEL_UI)
+                .setOperator(operator)
+                .setResult(WmsConstants.AUDIT_RESULT_SUCCESS));
     }
 
     // ================================================================ 执行
@@ -406,9 +473,12 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
         appendAll(rows, flowMapper.selectTransferRows(windowStart, windowEnd));
         appendAll(rows, flowMapper.selectStocktakeRows(windowStart, windowEnd));
 
+        // 指定仓库批次：库存已按所选仓库过滤，流水也必须过滤，否则「待推送包」会掺入未选仓库
+        Set<String> allowedWarehouses = allowedFlowWarehouses(run);
         Date created = new Date();
+        int inserted = 0;
         for (WmsSyncFlowRowVO vo : rows) {
-            if (vo == null) {
+            if (vo == null || !flowWarehouseAllowed(vo, allowedWarehouses)) {
                 continue;
             }
             WmsSyncFlow flow = new WmsSyncFlow()
@@ -424,8 +494,29 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
                     .setBizTime(vo.getBizTime());
             stampCreate(flow, operator, created);
             flowMapper.insert(flow);
+            inserted++;
         }
-        return rows.size();
+        return inserted;
+    }
+
+    /** 指定仓库批次返回所选仓库（小写 trim），其它范围返回 null 表示不过滤。 */
+    private static Set<String> allowedFlowWarehouses(WmsSyncRun run) {
+        if (!WmsConstants.SYNC_SCOPE_WAREHOUSE.equals(run.getScopeType())) {
+            return null;
+        }
+        Set<String> allowed = new LinkedHashSet<>();
+        for (String code : splitWarehouses(run.getWarehouseCodes())) {
+            allowed.add(code.toLowerCase(Locale.ROOT));
+        }
+        return allowed;
+    }
+
+    private static boolean flowWarehouseAllowed(WmsSyncFlowRowVO row, Set<String> allowed) {
+        if (allowed == null) {
+            return true;
+        }
+        String code = row.getWarehouseCode() == null ? "" : row.getWarehouseCode().trim().toLowerCase(Locale.ROOT);
+        return allowed.contains(code);
     }
 
     // ---------------------------------------------------------------- 金蝶查询
@@ -478,6 +569,11 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
 
             // 查询成功：成功日志**在 try 之外**写，日志库抖动不能被当成查询失败而重试/整批失败
             Map<String, BigDecimal> result = raw == null ? new LinkedHashMap<>() : raw;
+            if (result.isEmpty() && !snapshots.isEmpty()) {
+                // 金蝶静默返回空会导致整批「仅WMS」，是假差异的典型来源，必须留痕
+                log.warn("对账批次[{}]金蝶即时库存返回空，而 WMS 快照有 {} 行；将产出全量「仅WMS」差异，请核对查询条件",
+                        run.getRunNo(), snapshots.size());
+            }
             run.setRetryCount(attempt);
             safeSuccessLog(run, warehouseCodes, result, attempt, System.currentTimeMillis() - callStart);
             return result;
@@ -648,9 +744,28 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
         String operator = operatorOf(run);
         String error = truncate(messageOf(e), WmsConstants.SYNC_ERROR_MAX_LENGTH);
         int retries = run.getRetryCount() == null ? 0 : run.getRetryCount();
+        // 失败批次也要展示「已落库多少快照/流水」，否则页面显示 0/0 与实际不符
+        int snapshotCount = run.getSnapshotCount() == null ? 0 : run.getSnapshotCount();
+        int flowCount = run.getFlowCount() == null ? 0 : run.getFlowCount();
+        try {
+            Long count = snapshotMapper.selectCount(
+                    new QueryWrapper<WmsSyncSnapshot>().eq("run_id", run.getId()));
+            snapshotCount = count == null ? snapshotCount : count.intValue();
+        } catch (Exception countError) {
+            log.warn("对账批次[{}]回填快照行数失败：{}", run.getRunNo(), countError.getMessage());
+        }
+        try {
+            Long count = flowMapper.selectCount(
+                    new QueryWrapper<WmsSyncFlow>().eq("run_id", run.getId()));
+            flowCount = count == null ? flowCount : count.intValue();
+        } catch (Exception countError) {
+            log.warn("对账批次[{}]回填流水行数失败：{}", run.getRunNo(), countError.getMessage());
+        }
         run.setStatus(WmsConstants.SYNC_RUN_STATUS_FAILED)
                 .setErrorMessage(error)
                 .setRetryCount(retries)
+                .setSnapshotCount(snapshotCount)
+                .setFlowCount(flowCount)
                 .setCostMs(costMs(start))
                 .setUpdateBy(operator)
                 .setUpdateTime(new Date());

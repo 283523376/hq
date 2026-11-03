@@ -132,16 +132,20 @@ public class WmsSyncReconcileJob implements Job {
     /**
      * 水位线 = 最近一个成功批次的 {@code window_end}；没有成功批次则回落当天 00:00。
      *
-     * <p><b>必须限定 scope=FULL/TODAY</b>：页面手工发起的 WAREHOUSE 批次成功后也会写
-     * 「成功 + window_end」。若拿它当水位线，其他仓库当天早于该时刻的库存变动就再也不会
-     * 被任何批次覆盖——静默漏对账（审查 I-1）。
+     * <p><b>必须限定 scope=FULL/TODAY 且 operator=system</b>：页面手工发起的批次成功后同样写
+     * 「成功 + window_end」。WAREHOUSE 会污染其他仓库的窗口（审查 I-1）；手工 TODAY 的
+     * window_end=触发时刻，会把水位线推到「今天某个时点」，导致昨天 23:00 → 该时刻的变动
+     * 永久漏对（审查 C2）。只认定时批次才能保证水位线单调覆盖。
      *
      * <p>查库失败同样回落当天 00:00：窗口放宽只是多查一点数据，不会漏对账。
      */
     Date resolveWatermark() {
         try {
+            // 只认定时批次（operator=system）：手工 TODAY 的 window_end=触发时刻，会把水位线推高，
+            // 导致「昨天 23:00 → 手工触发」这段变动永久漏对（2026-11-03 评审 C2）
             WmsSyncRun latest = syncRunMapper.selectOne(Wrappers.<WmsSyncRun>query()
                     .eq("status", WmsConstants.SYNC_RUN_STATUS_SUCCESS)
+                    .eq("operator", JOB_OPERATOR)
                     .in("scope_type", WmsConstants.SYNC_SCOPE_FULL, WmsConstants.SYNC_SCOPE_TODAY)
                     .orderByDesc("window_end")
                     .last("limit 1"));
