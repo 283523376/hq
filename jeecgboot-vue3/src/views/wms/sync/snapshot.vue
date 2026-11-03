@@ -21,7 +21,7 @@
               preIcon="ant-design:search-outlined"
               :loading="loading"
               :disabled="!runId"
-              @click="fetchData"
+              @click="handleQuery"
             >
               查询
             </a-button>
@@ -74,10 +74,10 @@
 <script lang="ts" name="wms-sync-snapshot" setup>
   import { computed, onMounted, ref } from 'vue';
   import { useRoute } from 'vue-router';
-  import { useMessage } from '/@/hooks/web/useMessage';
   import { scaleScrollX, scaleTableColumns } from '/@/hooks/web/useFontScale';
   import { SYNC_SCOPE_LABEL, snapshotColumns } from './sync.data';
   import { exportSnapshot, pageRuns, pageSnapshots } from './sync.api';
+  import { useExportDownload } from './sync.export';
 
   interface RunOption {
     label: string;
@@ -87,7 +87,7 @@
 
   defineOptions({ name: 'WmsSyncSnapshot' });
 
-  const { createMessage } = useMessage();
+  const { handleExportResponse } = useExportDownload();
   const route = useRoute();
 
   const scaledColumns = computed(() => scaleTableColumns(snapshotColumns));
@@ -154,6 +154,11 @@
     }
   }
 
+  function handleQuery() {
+    pageNo.value = 1;
+    fetchData();
+  }
+
   function handleRunChange() {
     pageNo.value = 1;
     fetchData();
@@ -171,8 +176,8 @@
 
   // ---------------------------------------------------------------- 导出
   /**
-   * 后端导出失败时返回 HTTP 200 + JSON Result.error（无 Content-Disposition），
-   * 因此不能靠状态码判断：blob 是 JSON 就读文本提示，否则按文件落盘。
+   * 成功/失败只能靠 Content-Disposition 判断：成功导出 JSON 包时 Content-Type 也是
+   * application/json，和失败体一模一样。详见 `sync.export.ts`。
    */
   async function handleExport(format: 'xlsx' | 'json') {
     if (!runId.value) {
@@ -180,42 +185,14 @@
     }
     exporting.value = format;
     try {
-      const data: any = await exportSnapshot({ runId: runId.value, format });
+      const response: any = await exportSnapshot({ runId: runId.value, format });
       const baseName = selectedRun.value?.runNo || 'SB001-待推送包';
-      await saveBlob(data, `${baseName}-待推送包.${format}`);
+      await handleExportResponse(response, `${baseName}-待推送包.${format}`);
     } catch (e: any) {
-      // defHttp 已统一弹错误提示；导出失败体走下方 JSON 分支
+      // defHttp 已统一弹错误提示
     } finally {
       exporting.value = '';
     }
-  }
-
-  async function saveBlob(data: any, fileName: string) {
-    if (!(data instanceof Blob)) {
-      createMessage.error('导出失败：响应格式异常');
-      return;
-    }
-    if (data.type && data.type.toLowerCase().includes('json')) {
-      const text = await data.text();
-      let message = '导出失败';
-      try {
-        const body = JSON.parse(text);
-        message = body.message || body.msg || message;
-      } catch {
-        // 不是 JSON 就保留默认提示
-      }
-      createMessage.warning(message);
-      return;
-    }
-    const url = window.URL.createObjectURL(data);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-    createMessage.success(`已导出：${fileName}`);
   }
 
   onMounted(async () => {

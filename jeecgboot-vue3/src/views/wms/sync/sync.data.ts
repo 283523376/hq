@@ -76,11 +76,6 @@ export const SYNC_LOG_DIRECTION_LABEL: Record<string, string> = {
 export const SYNC_LOG_OBJECT_TYPE_OPTIONS = [
   { label: '生产工单', value: 'WORK_ORDER' },
   { label: '工序汇报', value: 'OPERATION_REPORT' },
-  { label: '销售订单', value: 'SALES_ORDER' },
-  { label: '入库单', value: 'INBOUND' },
-  { label: '出库单', value: 'OUTBOUND' },
-  { label: '调拨单', value: 'TRANSFER' },
-  { label: '库存', value: 'INVENTORY' },
   { label: '委外', value: 'SUBCONTRACT' },
   { label: '物料', value: 'MATERIAL' },
   { label: '物料分类', value: 'MATERIAL_CATEGORY' },

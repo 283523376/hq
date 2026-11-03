@@ -70,9 +70,30 @@
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'action'">
             <a-space>
-              <a-button type="link" size="small" @click="goPage('/wms/sync/snapshot', record)">待推送包</a-button>
-              <a-button type="link" size="small" @click="goPage('/wms/sync/diff', record)">差异</a-button>
-              <a-button type="link" size="small" @click="goPage('/wms/sync/flow', record)">流水</a-button>
+              <a-button
+                type="link"
+                size="small"
+                v-auth="'wms:sync:run'"
+                @click="goPage('/wms/sync/snapshot', record)"
+              >
+                待推送包
+              </a-button>
+              <a-button
+                type="link"
+                size="small"
+                v-auth="'wms:sync:diff:view'"
+                @click="goPage('/wms/sync/diff', record)"
+              >
+                差异
+              </a-button>
+              <a-button
+                type="link"
+                size="small"
+                v-auth="'wms:sync:run'"
+                @click="goPage('/wms/sync/flow', record)"
+              >
+                流水
+              </a-button>
             </a-space>
           </template>
         </template>

@@ -15,15 +15,26 @@
           />
         </a-form-item>
         <a-form-item>
-          <a-button
-            type="primary"
-            preIcon="ant-design:search-outlined"
-            :loading="loading"
-            :disabled="!runId"
-            @click="fetchData"
-          >
-            查询
-          </a-button>
+          <a-space>
+            <a-button
+              type="primary"
+              preIcon="ant-design:search-outlined"
+              :loading="loading"
+              :disabled="!runId"
+              @click="handleQuery"
+            >
+              查询
+            </a-button>
+            <a-button
+              preIcon="ant-design:file-excel-outlined"
+              v-auth="'wms:sync:run'"
+              :loading="exporting"
+              :disabled="!runId || exporting"
+              @click="handleExport"
+            >
+              导出 Excel
+            </a-button>
+          </a-space>
         </a-form-item>
       </a-form>
       <div class="tip">
@@ -55,15 +66,18 @@
   import { useRoute } from 'vue-router';
   import { scaleScrollX, scaleTableColumns } from '/@/hooks/web/useFontScale';
   import { SYNC_SCOPE_LABEL, flowColumns } from './sync.data';
-  import { pageFlows, pageRuns } from './sync.api';
+  import { exportFlow, pageFlows, pageRuns } from './sync.api';
+  import { useExportDownload } from './sync.export';
 
   interface RunOption {
     label: string;
     value: string;
+    runNo: string;
   }
 
   defineOptions({ name: 'WmsSyncFlow' });
 
+  const { handleExportResponse } = useExportDownload();
   const route = useRoute();
 
   const scaledColumns = computed(() => scaleTableColumns(flowColumns));
@@ -71,6 +85,7 @@
 
   const runOptions = ref<RunOption[]>([]);
   const runId = ref<string | undefined>(undefined);
+  const selectedRun = computed(() => runOptions.value.find((item) => item.value === runId.value));
 
   async function fetchRunOptions() {
     try {
@@ -78,6 +93,7 @@
       runOptions.value = (res.records || []).map((r: any) => ({
         label: `${r.runNo}（${SYNC_SCOPE_LABEL[r.scopeType] || r.scopeType} · ${r.status}）`,
         value: r.id,
+        runNo: r.runNo,
       }));
       const queryRunId = route.query.runId as string | undefined;
       if (queryRunId) {
@@ -126,9 +142,33 @@
     }
   }
 
+  function handleQuery() {
+    pageNo.value = 1;
+    fetchData();
+  }
+
   function handleRunChange() {
     pageNo.value = 1;
     fetchData();
+  }
+
+  // ---------------------------------------------------------------- 导出
+  const exporting = ref(false);
+
+  async function handleExport() {
+    if (!runId.value) {
+      return;
+    }
+    exporting.value = true;
+    try {
+      const response: any = await exportFlow({ runId: runId.value });
+      const baseName = selectedRun.value?.runNo || 'SB001';
+      await handleExportResponse(response, `${baseName}-同步流水.xlsx`);
+    } catch (e: any) {
+      // defHttp 已统一弹错误提示
+    } finally {
+      exporting.value = false;
+    }
   }
 
   function handleTableChange(pag: { current?: number; pageSize?: number }) {

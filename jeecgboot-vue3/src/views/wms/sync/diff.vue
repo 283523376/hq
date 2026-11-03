@@ -64,6 +64,16 @@
               查询
             </a-button>
             <a-button preIcon="ant-design:reload-outlined" @click="handleReset">重置</a-button>
+            <a-button
+              preIcon="ant-design:file-excel-outlined"
+              v-auth="'wms:sync:diff:view'"
+              :loading="exporting"
+              :disabled="!query.runId || exporting"
+              :title="!query.runId ? '导出需先选择对账批次' : undefined"
+              @click="handleExport"
+            >
+              导出 Excel
+            </a-button>
           </a-space>
         </a-form-item>
       </a-form>
@@ -171,22 +181,25 @@
   } from './sync.data';
   import {
     createStocktakeFromDiff,
+    exportDiff,
     handleDiff,
     listWarehouseOptions,
     pageDiffs,
     pageRuns,
   } from './sync.api';
+  import { useExportDownload } from './sync.export';
 
   defineOptions({ name: 'WmsSyncDiff' });
 
   const { createMessage } = useMessage();
+  const { handleExportResponse } = useExportDownload();
   const route = useRoute();
 
   const scaledColumns = computed(() => scaleTableColumns(diffColumns));
   const tableScrollX = computed(() => scaleScrollX(2000));
 
   // ---------------------------------------------------------------- 下拉
-  const runOptions = ref<{ label: string; value: string }[]>([]);
+  const runOptions = ref<{ label: string; value: string; runNo: string }[]>([]);
   const warehouseOptions = ref<{ label: string; value: string }[]>([]);
 
   async function fetchRunOptions() {
@@ -195,6 +208,7 @@
       runOptions.value = (res.records || []).map((r: any) => ({
         label: `${r.runNo}（${SYNC_SCOPE_LABEL[r.scopeType] || r.scopeType} · ${r.status}）`,
         value: r.id,
+        runNo: r.runNo,
       }));
     } catch (e: any) {
       // defHttp 已统一弹错误提示
@@ -227,6 +241,7 @@
   const total = ref(0);
   const pageNo = ref(1);
   const pageSize = ref(20);
+  const selectedRun = computed(() => runOptions.value.find((item) => item.value === query.runId));
 
   const pagination = computed(() => ({
     current: pageNo.value,
@@ -278,6 +293,32 @@
       pageNo.value = pag.current;
     }
     fetchData();
+  }
+
+  // ---------------------------------------------------------------- 导出
+  const exporting = ref(false);
+
+  /** 差异导出要求 runId（后端空批次直接拒绝），筛选条件一并带上。 */
+  async function handleExport() {
+    if (!query.runId) {
+      return;
+    }
+    exporting.value = true;
+    try {
+      const response: any = await exportDiff({
+        runId: query.runId,
+        warehouseCode: query.warehouseCode || undefined,
+        materialKeyword: query.materialKeyword || undefined,
+        status: query.status || undefined,
+        diffType: query.diffType || undefined,
+      });
+      const baseName = selectedRun.value?.runNo || query.runId;
+      await handleExportResponse(response, `${baseName}-差异清单.xlsx`);
+    } catch (e: any) {
+      // defHttp 已统一弹错误提示
+    } finally {
+      exporting.value = false;
+    }
   }
 
   // ---------------------------------------------------------------- 标记处理

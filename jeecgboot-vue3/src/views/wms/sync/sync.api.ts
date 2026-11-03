@@ -9,6 +9,7 @@ enum Api {
   flowPage = '/wms/sync/flow/page',
   flowExport = '/wms/sync/flow/export',
   diffPage = '/wms/sync/diff/page',
+  diffExport = '/wms/sync/diff/export',
   diffBase = '/wms/sync/diff',
   logPage = '/wms/sync/log/page',
   warehouseList = '/wms/warehouse/list',
@@ -47,20 +48,23 @@ export const pageLogs = (params) => defHttp.get({ url: Api.logPage, params });
 export const listWarehouseOptions = (params?) => defHttp.get({ url: Api.warehouseList, params });
 
 /**
- * 导出待推送包。
+ * 导出请求统一取原生响应。
  *
- * 后端导出失败时仍返回 HTTP 200 + `Result.error` JSON（无 Content-Disposition），
- * 所以这里拿原始 blob，由页面判断 `blob.type` 是否 JSON 再决定提示错误还是落盘。
+ * 后端导出成功与失败都是 HTTP 200，成功 xlsx 给 octet-stream、成功 JSON 包给 application/json，
+ * 失败体也是 application/json——只能靠 `Content-Disposition` 是否存在判断成功。
+ * 所以必须 `isReturnNativeResponse: true` 取回 headers，页面交给 `useExportDownload` 落盘/提示。
  */
-export const exportSnapshot = (params) =>
-  defHttp.get(
-    { url: Api.snapshotExport, params, responseType: 'blob', timeout: 120000 },
-    { isTransformResponse: false },
-  );
+const EXPORT_OPTIONS = { isTransformResponse: false, isReturnNativeResponse: true };
+const exportConfig = { responseType: 'blob', timeout: 120000 } as const;
 
-/** 导出同步流水（xlsx）。失败语义同 {@link exportSnapshot}。 */
+/** 导出待推送包（xlsx 默认 / json）。 */
+export const exportSnapshot = (params) =>
+  defHttp.get({ ...exportConfig, url: Api.snapshotExport, params }, EXPORT_OPTIONS);
+
+/** 导出同步流水（xlsx）。 */
 export const exportFlow = (params) =>
-  defHttp.get(
-    { url: Api.flowExport, params, responseType: 'blob', timeout: 120000 },
-    { isTransformResponse: false },
-  );
+  defHttp.get({ ...exportConfig, url: Api.flowExport, params }, EXPORT_OPTIONS);
+
+/** 导出差异清单（xlsx，runId 必填）。 */
+export const exportDiff = (params) =>
+  defHttp.get({ ...exportConfig, url: Api.diffExport, params }, EXPORT_OPTIONS);
