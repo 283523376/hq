@@ -150,7 +150,11 @@ public class WmsSyncRetentionJob implements Job {
     }
 
     /**
-     * 读保留期天数：配置缺失用枚举默认值；解析失败或 ≤0 视为非法（返回 -1，调用方跳过该组删除）。
+     * 读保留期天数：配置缺失/为空用枚举默认值（180/365/90）；解析失败或 ≤0 视为非法
+     * （返回 -1，调用方跳过该组删除）。
+     *
+     * <p>「缺失」与「写错」要分开：没配是常态（首次部署），按文档默认值清理即可；
+     * 显式写 0/负数/乱码才是用户意图不明，必须一条不删。
      */
     int resolveRetentionDays(WmsConfigKey key) {
         if (systemConfigService == null) {
@@ -158,8 +162,8 @@ public class WmsSyncRetentionJob implements Job {
         }
         String raw = systemConfigService.getString(key.getKey(), key.getDefaultValue());
         if (raw == null || raw.trim().isEmpty()) {
-            log.error("{}未配置（{}），本轮跳过该组清理", key.getLabel(), key.getKey());
-            return -1;
+            log.warn("{}未配置（{}），按默认 {} 天处理", key.getLabel(), key.getKey(), key.getDefaultValue());
+            return Integer.parseInt(key.getDefaultValue());
         }
         try {
             int days = Integer.parseInt(raw.trim());

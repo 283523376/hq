@@ -22,6 +22,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -116,6 +117,15 @@ class WmsSyncReconcileJobTest {
         WmsSyncRunCreateDTO dto = captureDto();
         assertEquals(WmsConstants.SYNC_SCOPE_TODAY, dto.getScopeType());
         assertEquals(watermark, dto.getWindowStart());
+
+        // 只断言返回值不够：漏写 status/scope/排序时用例仍会通过
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Wrapper<WmsSyncRun>> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(syncRunMapper).selectOne(wrapperCaptor.capture());
+        String sql = wrapperCaptor.getValue().getSqlSegment();
+        assertTrue(sql.contains("status"), "水位线未按批次状态过滤：" + sql);
+        assertTrue(sql.contains("scope_type"), "水位线未限定 FULL/TODAY，WAREHOUSE 会污染水位线：" + sql);
+        assertTrue(sql.contains("ORDER BY window_end DESC"), "水位线未按 window_end 倒序取最新：" + sql);
     }
 
     /** TODAY 且无历史成功批次：回落当天 00:00。 */

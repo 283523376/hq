@@ -104,11 +104,13 @@ class WmsSyncRetentionJobTest {
         @SuppressWarnings("unchecked")
         LambdaQueryWrapper<?> query = (LambdaQueryWrapper<?>) wrapper;
         // Lambda 列与参数值是惰性求值的：先触发生成 SQL 片段，paramNameValuePairs 才有值
-        query.getSqlSegment();
+        String sql = query.getSqlSegment();
+        assertTrue(sql.contains("create_time <"), "删除条件必须是「早于 cutoff」：" + sql);
+        assertTrue(!sql.contains("create_time >"), "删除条件写反了（gt 会删掉新数据）：" + sql);
         return (Date) query.getParamNameValuePairs().values().stream()
                 .filter(v -> v instanceof Date)
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("删除条件里没有时间参数：" + query.getSqlSegment()));
+                .orElseThrow(() -> new AssertionError("删除条件里没有时间参数：" + sql));
     }
 
     /**
@@ -180,6 +182,34 @@ class WmsSyncRetentionJobTest {
         verifyNoInteractions(snapshotMapper, flowMapper, runMapper);
         verify(diffMapper).delete(any());
         verify(syncLogMapper).delete(any());
+    }
+
+    /** 配置项缺失（首次部署）不是「写错」：按枚举默认值 180/365/90 正常清理。 */
+    @Test
+    void scan_missingConfig_usesEnumDefaults() {
+        when(systemConfigService.getString(anyString(), anyString())).thenReturn(null);
+
+        long before = System.currentTimeMillis();
+        job().scanForTest();
+        long after = System.currentTimeMillis();
+
+        assertCutoff(captureSnapshotCutoff(), before - 180 * DAY_MS, after - 180 * DAY_MS, "snapshot-default");
+        assertCutoff(captureDiffCutoff(), before - 365 * DAY_MS, after - 365 * DAY_MS, "diff-default");
+        assertCutoff(captureLogCutoff(), before - 90 * DAY_MS, after - 90 * DAY_MS, "log-default");
+    }
+
+    /** 空白值同样按默认值处理（与 getString 的「值为空回落 fallback」契约一致）。 */
+    @Test
+    void scan_blankConfig_usesEnumDefaults() {
+        when(systemConfigService.getString(anyString(), anyString())).thenReturn("  ");
+
+        long before = System.currentTimeMillis();
+        job().scanForTest();
+        long after = System.currentTimeMillis();
+
+        assertCutoff(captureSnapshotCutoff(), before - 180 * DAY_MS, after - 180 * DAY_MS, "snapshot-blank");
+        assertCutoff(captureDiffCutoff(), before - 365 * DAY_MS, after - 365 * DAY_MS, "diff-blank");
+        assertCutoff(captureLogCutoff(), before - 90 * DAY_MS, after - 90 * DAY_MS, "log-blank");
     }
 
     /** 分批删：每批删满继续，删不满即停。 */
