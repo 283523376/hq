@@ -34,6 +34,10 @@ PAIRS: list[tuple[str, str, str]] = [
     ("OUTBOUND_STATUS", "outbound/outbound.data.ts", "OUTBOUND_STATUS_OPTIONS"),
     ("TRANSFER_STATUS", "transfer/transfer.data.ts", "TRANSFER_STATUS_OPTIONS"),
     ("WORK_ORDER_STATUS", "workOrder/workOrder.data.ts", "WORK_ORDER_STATUS_OPTIONS"),
+    ("SYNC_RUN_STATUS", "sync/sync.data.ts", "SYNC_RUN_STATUS_OPTIONS"),
+    ("SNAPSHOT_MATCH", "sync/sync.data.ts", "SNAPSHOT_MATCH_STATUS_OPTIONS"),
+    ("DIFF_TYPE", "sync/sync.data.ts", "DIFF_TYPE_OPTIONS"),
+    ("DIFF_STATUS", "sync/sync.data.ts", "DIFF_STATUS_OPTIONS"),
 ]
 
 # 这些后缀是「同一状态域的不同取值」，归到同一个 base
