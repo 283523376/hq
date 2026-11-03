@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -112,14 +112,15 @@ class WmsSyncComparatorTest {
     @Test
     void apply_materialCodeBlank_forcesWmsOnlyAndSkipsErpLookup() {
         WmsSyncSnapshot row = snapshot("D.01", "", "L1", "6");
-        // 即便 ERP 侧恰好有同形 key（"D.01||L1"），无金蝶编码的物料也不得参与匹配
-        Map<String, BigDecimal> erp = erp("D.01||L1", "6");
+        // 即便 ERP 侧恰好有同形 key（"D.01||L1"），无金蝶编码的物料也不得参与匹配；
+        // ERP 值故意与 WMS 不同，一旦误匹配会算出「数量差异」而不是「仅WMS」
+        Map<String, BigDecimal> erp = erp("D.01||L1", "9");
 
         WmsSyncComparator.apply(list(row), erp, false);
 
         assertEquals(WmsConstants.SNAPSHOT_MATCH_WMS_ONLY, row.getMatchStatus());
-        assertNull(row.getErpQty(), "未参与 ERP 匹配的行不应编造 ERP 数量");
-        assertNull(row.getDiffQty());
+        assertEquals(0, row.getErpQty().compareTo(BigDecimal.ZERO), "仅WMS 统一记 0，不留 null");
+        assertEquals(0, row.getDiffQty().compareTo(new BigDecimal("6")));
     }
 
     @Test
@@ -129,7 +130,8 @@ class WmsSyncComparatorTest {
         WmsSyncComparator.apply(list(row), erp("D.01||", "6"), false);
 
         assertEquals(WmsConstants.SNAPSHOT_MATCH_WMS_ONLY, row.getMatchStatus());
-        assertNull(row.getErpQty());
+        assertEquals(0, row.getErpQty().compareTo(BigDecimal.ZERO));
+        assertEquals(0, row.getDiffQty().compareTo(new BigDecimal("6")));
     }
 
     @Test
@@ -147,15 +149,36 @@ class WmsSyncComparatorTest {
     }
 
     @Test
-    void apply_erpOnlyMarkerIgnoredWhenDetectErpOnlyDisabled() {
-        // javadoc 约束：detectErpOnly=false 时调用方不得塞 ERP 单边行；万一塞了也不能被当成「仅ERP」
+    void apply_erpOnlyMarkerWithDetectErpOnlyDisabled_throws() {
+        // 契约 fail-fast：detectErpOnly=false（TODAY 口径）时调用方不得塞 ERP 单边行
         WmsSyncSnapshot fakeErpOnly = snapshot("D.01", "WA.001", "L1", "0")
                 .setMatchStatus(WmsConstants.SNAPSHOT_MATCH_ERP_ONLY);
         Map<String, BigDecimal> erp = erp("D.01|WA.001|L1", "5");
 
-        WmsSyncComparator.apply(list(fakeErpOnly), erp, false);
+        assertThrows(IllegalArgumentException.class,
+                () -> WmsSyncComparator.apply(list(fakeErpOnly), erp, false));
+    }
 
-        assertEquals(WmsConstants.SNAPSHOT_MATCH_QTY_DIFF, fakeErpOnly.getMatchStatus());
+    @Test
+    void apply_erpOnlyMarkedRowWhoseKeyIsMissing_throws() {
+        // 契约 fail-fast：预置「仅ERP」但 key 在本次 ERP map 里找不到 → 调用方拼错 key，不能落成「仅WMS」
+        WmsSyncSnapshot wrongKey = snapshot("D.01", "WA.001", "L1", "0")
+                .setMatchStatus(WmsConstants.SNAPSHOT_MATCH_ERP_ONLY);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> WmsSyncComparator.apply(list(wrongKey), erp("D.01|WA.999|L1", "5"), true));
+    }
+
+    @Test
+    void apply_zeroWmsQtyWithoutMark_isQtyDiffNotErpOnly() {
+        // 回归：不能用 wmsQty==0 判断 ERP 单边行——WMS 真实零库存行必须算「数量差异」
+        WmsSyncSnapshot zeroWms = snapshot("D.01", "WA.001", "L1", "0");
+        Map<String, BigDecimal> erp = erp("D.01|WA.001|L1", "5");
+
+        WmsSyncComparator.apply(list(zeroWms), erp, true);
+
+        assertEquals(WmsConstants.SNAPSHOT_MATCH_QTY_DIFF, zeroWms.getMatchStatus());
+        assertEquals(0, zeroWms.getDiffQty().compareTo(new BigDecimal("-5")));
     }
 
     @Test
