@@ -18,6 +18,7 @@ import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.service.IWmsSyncReconcileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -26,6 +27,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -190,6 +192,48 @@ class WmsSyncControllerTest {
 
         assertTrue(result.isSuccess());
         verify(diffService).pageDiffs(2, 20, "R1", "D.01", "铜带", "待核对", "多账");
+    }
+
+    /** 分页大小硬上限 200：传 999 实际只给服务层 200，避免一次查询拖垮页面。 */
+    @Test
+    void diffPage_pageSizeCappedAt200() {
+        when(diffService.pageDiffs(1, 200, null, null, null, null, null)).thenReturn(new Page<>());
+
+        assertTrue(controller.diffPage(1, 999, null, null, null, null, null).isSuccess());
+        verify(diffService).pageDiffs(1, 200, null, null, null, null, null);
+    }
+
+    /**
+     * 评审 I-1：导出失败必须把异常抛出去（切面才能记 FAILED），
+     * 再由控制器异常处理器回写 Result.error，前端行为不变。
+     */
+    @Test
+    void exportFailure_propagatesAndHandlerWritesErrorBody() throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        doThrow(new RuntimeException("对账批次不存在：NOPE"))
+                .when(exportService).exportSnapshot(eq("NOPE"), any());
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> controller.exportSnapshot("NOPE", "xlsx", response));
+
+        controller.handleRuntimeFailure(ex, response);
+
+        String body = response.getContentAsString();
+        assertTrue(body.contains("\"success\":false"), body);
+        assertTrue(body.contains("对账批次不存在：NOPE"), body);
+    }
+
+    /** 批次 ID 为空同样走异常 → 异常处理器，错误体能被前端识别。 */
+    @Test
+    void exportSnapshot_blankRunId_throws() throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> controller.exportSnapshot("  ", "xlsx", response));
+        controller.handleRuntimeFailure(ex, response);
+
+        assertEquals("批次ID不能为空", ex.getMessage());
+        assertTrue(response.getContentAsString().contains("批次ID不能为空"));
     }
 
     /** 同步日志的时间区间参数必须能绑定 "yyyy-MM-dd HH:mm:ss"，否则查询页 400。 */

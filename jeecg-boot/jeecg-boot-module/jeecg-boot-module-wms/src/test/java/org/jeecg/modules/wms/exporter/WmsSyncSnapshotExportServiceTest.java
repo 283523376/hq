@@ -17,6 +17,8 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -61,8 +63,12 @@ class WmsSyncSnapshotExportServiceTest {
     /** JSON 包固定键：runNo/scopeType/windowStart/windowEnd/snapshot/flow。 */
     @Test
     void exportJson_containsPackageKeys() throws Exception {
+        SimpleDateFormat fmt = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        Date windowStart = fmt.parse("2026-11-03 00:00:00");
+        Date windowEnd = fmt.parse("2026-11-03 18:00:00");
         when(runMapper.selectById("R1")).thenReturn(new WmsSyncRun()
-                .setRunNo("SB20261103001").setScopeType("TODAY"));
+                .setRunNo("SB20261103001").setScopeType("TODAY")
+                .setWindowStart(windowStart).setWindowEnd(windowEnd));
         when(snapshotMapper.selectList(any())).thenReturn(List.of(new WmsSyncSnapshot()
                 .setRunId("R1").setWarehouseCode("D.01").setMaterialCode("M1")
                 .setWmsQty(new BigDecimal("10")).setErpQty(new BigDecimal("10"))
@@ -78,6 +84,10 @@ class WmsSyncSnapshotExportServiceTest {
         JSONObject json = JSON.parseObject(Files.readString(target.toPath(), StandardCharsets.UTF_8));
         assertEquals("SB20261103001", json.getString("runNo"));
         assertEquals("TODAY", json.getString("scopeType"));
+        assertTrue(json.containsKey("windowStart"), "JSON 包缺少 windowStart");
+        assertTrue(json.containsKey("windowEnd"), "JSON 包缺少 windowEnd");
+        assertEquals("2026-11-03 00:00:00", json.getString("windowStart"));
+        assertEquals("2026-11-03 18:00:00", json.getString("windowEnd"));
         assertEquals(1, json.getJSONArray("snapshot").size());
         assertEquals("M1", json.getJSONArray("snapshot").getJSONObject(0).getString("materialCode"));
         assertEquals(1, json.getJSONArray("flow").size());

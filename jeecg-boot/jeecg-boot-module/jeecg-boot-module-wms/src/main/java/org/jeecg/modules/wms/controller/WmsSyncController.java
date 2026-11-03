@@ -30,6 +30,7 @@ import org.jeecg.modules.wms.service.IWmsSyncDiffService;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.service.IWmsSyncReconcileService;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -189,8 +190,8 @@ public class WmsSyncController {
 
     private void export(String runId, String format, HttpServletResponse response, boolean snapshot) {
         if (isBlank(runId)) {
-            writeJsonError(response, "批次ID不能为空");
-            return;
+            // 失败必须抛出去：@WmsAudit 切面靠异常记「失败」，吞掉会被记成成功（评审 I-1）
+            throw new RuntimeException("批次ID不能为空");
         }
         String id = runId.trim();
         boolean asJson = snapshot && EXPORT_FORMAT_JSON.equalsIgnoreCase(
@@ -208,12 +209,28 @@ public class WmsSyncController {
             } else {
                 FileDownloadUtils.downloadFile(response, exported.file().getAbsolutePath(), exported.fileName());
             }
+        } catch (RuntimeException e) {
+            log.warn("对待推送包导出失败：runId={}, format={}", id, format, e);
+            throw e;
         } catch (Exception e) {
             log.warn("对待推送包导出失败：runId={}, format={}", id, format, e);
-            writeJsonError(response, e.getMessage());
+            throw new RuntimeException(e.getMessage(), e);
         } finally {
             deleteQuietly(temp);
         }
+    }
+
+    /**
+     * 导出失败统一回写 {@code Result.error} JSON。
+     *
+     * <p>导出端点是流式响应，不能返回 {@code Result<T>}；抛出的异常交给本处理器，
+     * 由 {@code WmsAuditAspect} 的 catch 分支记「失败」，这里只负责保持前端拿到的错误体格式。
+     * 切面只通知控制器方法本身，本方法没有 {@code @WmsAudit}，不会重复写审计。
+     */
+    @ExceptionHandler(RuntimeException.class)
+    public void handleRuntimeFailure(RuntimeException e, HttpServletResponse response) {
+        log.warn("对账接口处理失败：{}", e.getMessage());
+        writeJsonError(response, e.getMessage());
     }
 
     // ================================================================ 差异
@@ -323,7 +340,8 @@ public class WmsSyncController {
             response.setStatus(HttpServletResponse.SC_OK);
             response.setContentType(JSON_UTF8);
             response.getWriter().write(JSON.toJSONString(Result.error(message)));
-        } catch (IOException e) {
+        } catch (Exception e) {
+            // getWriter 在 response 已提交时会抛 IllegalStateException，不能让回写错误再逃逸
             log.warn("导出失败时回写错误信息也失败了：{}", e.getMessage());
         }
     }
