@@ -237,4 +237,25 @@
                   m.material_code, m.material_name, m.unit, COALESCE(i.batch_no,'')
     </select>
 
+    <!--
+      SB-001 由差异发起盘点：反查库位（spec §2.8）。
+      仓库键与 selectReconcileAggregate 完全同口径（COALESCE(erp_stock_code, warehouse_code)），
+      物料按 kingdee_code 匹配（差异行的 material_code 就是聚合里的 erp_material_code）。
+      批次必须精确比较：空批次行以 '' 落库，`= #{batchNo}` 而不是 LIKE/忽略，
+      否则同物料不同批次会被一并拉进盘点范围。
+      deleted_at 同样不过滤——见对账聚合的注释（要的是库存行现在挂在哪儿）。
+    -->
+    <select id="selectLocationIdsForDiff" resultType="java.lang.String">
+        SELECT DISTINCT i.location_id
+          FROM wms_inventory i
+          JOIN wms_location  l ON l.id = i.location_id
+          JOIN wms_warehouse w ON w.id = l.warehouse_id
+          JOIN wms_material  m ON m.id = i.material_id
+         WHERE COALESCE(NULLIF(w.erp_stock_code,''), w.warehouse_code) = #{warehouseCode}
+           AND m.kingdee_code = #{materialCode}
+           AND COALESCE(i.batch_no,'') = #{batchNo}
+           AND (i.quantity &gt; 0 OR i.locked_qty &gt; 0)
+         ORDER BY i.location_id
+    </select>
+
 </mapper>

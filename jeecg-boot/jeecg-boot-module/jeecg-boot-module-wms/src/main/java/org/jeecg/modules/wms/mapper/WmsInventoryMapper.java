@@ -112,4 +112,22 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
      */
     List<WmsSyncAggregateVO> selectReconcileAggregate(@Param("windowStart") Date windowStart,
                                                       @Param("warehouseCodes") List<String> warehouseCodes);
+
+    /**
+     * SB-001 由差异发起盘点：反查 仓库+物料(ERP 编码)+批次 命中的库位（spec 2026-11-03 §2.8）。
+     *
+     * <p>仓库键与对账聚合同口径（{@code COALESCE(erp_stock_code, warehouse_code)}），物料按
+     * {@code wms_material.kingdee_code} 匹配；只取 {@code quantity > 0} 或 {@code locked_qty > 0}
+     * 的行——账面已归零的物料没有可盘的实物，调用方应拒绝发起。
+     *
+     * <p>与对账聚合一样**不**过滤主数据 {@code deleted_at}：要的是「库存行现在挂在哪个仓库上」。
+     *
+     * @param warehouseCode 差异行的仓库键（ERP 仓库编码，或与金蝶 1:1 的 WMS 编码）
+     * @param materialCode  差异行的物料编码（ERP/kingdee_code）
+     * @param batchNo       批次号；差异行空批次已归一为空串，调用方传空串表示只匹配无批次行
+     * @return 去重后的库位ID；无命中返回空列表
+     */
+    List<String> selectLocationIdsForDiff(@Param("warehouseCode") String warehouseCode,
+                                          @Param("materialCode") String materialCode,
+                                          @Param("batchNo") String batchNo);
 }
