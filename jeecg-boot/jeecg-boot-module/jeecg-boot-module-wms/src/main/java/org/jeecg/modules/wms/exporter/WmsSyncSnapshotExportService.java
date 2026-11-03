@@ -7,9 +7,11 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.entity.WmsSyncDiff;
 import org.jeecg.modules.wms.entity.WmsSyncFlow;
 import org.jeecg.modules.wms.entity.WmsSyncRun;
 import org.jeecg.modules.wms.entity.WmsSyncSnapshot;
+import org.jeecg.modules.wms.mapper.WmsSyncDiffMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncFlowMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncRunMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncSnapshotMapper;
@@ -50,24 +52,29 @@ public class WmsSyncSnapshotExportService {
 
     private static final String SHEET_SNAPSHOT = "库存快照";
     private static final String SHEET_FLOW = "同步流水";
+    private static final String SHEET_DIFF = "对账差异";
     private static final String SECOND_TITLE = "永鑫WMS";
     private static final String SNAPSHOT_FILE_PREFIX = "待推送包_";
     private static final String FLOW_FILE_PREFIX = "同步流水_";
+    private static final String DIFF_FILE_PREFIX = "对账差异_";
     private static final String FILE_NAME_TIME_PATTERN = "yyyyMMddHHmmss";
     private static final String JSON_DATE_PATTERN = "yyyy-MM-dd HH:mm:ss";
 
     private final WmsSyncRunMapper runMapper;
     private final WmsSyncSnapshotMapper snapshotMapper;
     private final WmsSyncFlowMapper flowMapper;
+    private final WmsSyncDiffMapper diffMapper;
     private final WmsExcelWriter excelWriter;
 
     public WmsSyncSnapshotExportService(WmsSyncRunMapper runMapper,
                                         WmsSyncSnapshotMapper snapshotMapper,
                                         WmsSyncFlowMapper flowMapper,
+                                        WmsSyncDiffMapper diffMapper,
                                         WmsExcelWriter excelWriter) {
         this.runMapper = runMapper;
         this.snapshotMapper = snapshotMapper;
         this.flowMapper = flowMapper;
+        this.diffMapper = diffMapper;
         this.excelWriter = excelWriter;
     }
 
@@ -120,6 +127,60 @@ public class WmsSyncSnapshotExportService {
                         WmsConstants.INVENTORY_LEDGER_EXCEL_MAX_ROWS),
                 null, target);
         return new SyncExportFile(target, fileName(FLOW_FILE_PREFIX, run.getRunNo(), "xlsx"));
+    }
+
+    /**
+     * 差异清单单 sheet xlsx（spec §2.8「支持导出 Excel」）。
+     *
+     * <p>筛选口径与页面 {@code GET /wms/sync/diff/page} 一致；导出文件是处理留痕的一部分，
+     * 列直接取 {@link WmsSyncDiff} 上的 {@code @Excel} 定义。
+     *
+     * @throws RuntimeException 批次不存在 / 没有符合条件的差异数据
+     */
+    public SyncExportFile exportDiff(String runId, String warehouseCode, String materialKeyword,
+                                     String status, String diffType, File target) throws IOException {
+        WmsSyncRun run = requireRun(runId);
+        Long total = diffMapper.selectCount(diffQuery(runId, warehouseCode, materialKeyword, status, diffType));
+        if (total == null || total == 0) {
+            throw new RuntimeException("没有符合条件的差异数据，未生成文件");
+        }
+        ExportParams params = new ExportParams(
+                "对账差异（批次 " + run.getRunNo() + "）", SECOND_TITLE, SHEET_DIFF, ExcelType.XSSF);
+        params.setMaxNum(WmsConstants.INVENTORY_LEDGER_SHEET_PHYSICAL_MAX);
+        excelWriter.write(params, WmsSyncDiff.class,
+                new IdCursorPageSource<>(diffMapper,
+                        () -> diffQuery(runId, warehouseCode, materialKeyword, status, diffType),
+                        WmsSyncDiff::getId,
+                        WmsConstants.AUDIT_EXPORT_BATCH_SIZE,
+                        WmsConstants.INVENTORY_LEDGER_EXCEL_MAX_ROWS),
+                null, target);
+        return new SyncExportFile(target, fileName(DIFF_FILE_PREFIX, run.getRunNo(), "xlsx"));
+    }
+
+    /** 差异筛选条件：与 {@code WmsSyncDiffServiceImpl.pageDiffs} 保持同一口径。 */
+    private static QueryWrapper<WmsSyncDiff> diffQuery(String runId, String warehouseCode,
+                                                       String materialKeyword, String status,
+                                                       String diffType) {
+        QueryWrapper<WmsSyncDiff> wrapper = new QueryWrapper<>();
+        wrapper.eq("run_id", runId);
+        if (!isBlank(warehouseCode)) {
+            wrapper.eq("warehouse_code", warehouseCode.trim());
+        }
+        if (!isBlank(status)) {
+            wrapper.eq("status", status.trim());
+        }
+        if (!isBlank(diffType)) {
+            wrapper.eq("diff_type", diffType.trim());
+        }
+        if (!isBlank(materialKeyword)) {
+            String keyword = materialKeyword.trim();
+            wrapper.and(w -> w.like("material_code", keyword).or().like("material_name", keyword));
+        }
+        return wrapper;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     /**

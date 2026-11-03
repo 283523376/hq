@@ -252,6 +252,36 @@ public class WmsSyncController {
                 runId, warehouseCode, materialKeyword, status, diffType));
     }
 
+    @Operation(summary = "对账-差异清单导出（xlsx）")
+    @GetMapping(value = "/diff/export")
+    @RequiresPermissions(PERM_DIFF_VIEW)
+    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_SYNC, action = WmsConstants.AUDIT_ACTION_EXPORT,
+            bizNoSpEL = "#runId")
+    public void exportDiff(@RequestParam(name = "runId", required = false) String runId,
+                           @RequestParam(name = "warehouseCode", required = false) String warehouseCode,
+                           @RequestParam(name = "materialKeyword", required = false) String materialKeyword,
+                           @RequestParam(name = "status", required = false) String status,
+                           @RequestParam(name = "diffType", required = false) String diffType,
+                           HttpServletResponse response) {
+        if (isBlank(runId)) {
+            throw new WmsSyncExportException("批次ID不能为空");
+        }
+        String id = runId.trim();
+        File temp = null;
+        try {
+            temp = Files.createTempFile("wms-sync-diff-", ".xlsx").toFile();
+            SyncExportFile exported = exportService.exportDiff(
+                    id, warehouseCode, materialKeyword, status, diffType, temp);
+            FileDownloadUtils.downloadFile(response, exported.file().getAbsolutePath(), exported.fileName());
+        } catch (Exception e) {
+            log.warn("对账差异导出失败：runId={}", id, e);
+            throw e instanceof WmsSyncExportException ? (WmsSyncExportException) e
+                    : new WmsSyncExportException(e.getMessage(), e);
+        } finally {
+            deleteQuietly(temp);
+        }
+    }
+
     @Operation(summary = "对账-差异标记处理（已核对/已忽略，备注必填）")
     @PostMapping(value = "/diff/{id}/handle")
     @RequiresPermissions(PERM_DIFF_HANDLE)

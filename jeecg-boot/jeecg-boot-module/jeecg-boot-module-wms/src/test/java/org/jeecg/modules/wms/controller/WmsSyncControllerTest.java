@@ -19,11 +19,15 @@ import org.jeecg.modules.wms.service.IWmsSyncLogService;
 import org.jeecg.modules.wms.service.IWmsSyncReconcileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
+import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -49,6 +53,9 @@ import static org.mockito.Mockito.when;
  * @Date: 2026-11-03
  */
 class WmsSyncControllerTest {
+
+    @TempDir
+    Path tempDir;
 
     private IWmsSyncReconcileService reconcileService;
     private IWmsSyncDiffService diffService;
@@ -82,6 +89,7 @@ class WmsSyncControllerTest {
                 Map.entry("exportSnapshot", "wms:sync:run"),
                 Map.entry("exportFlow", "wms:sync:run"),
                 Map.entry("diffPage", "wms:sync:diff:view"),
+                Map.entry("exportDiff", "wms:sync:diff:view"),
                 Map.entry("handle", "wms:sync:diff:handle"),
                 Map.entry("createStocktake", "wms:sync:diff:stocktake"),
                 Map.entry("logPage", "wms:sync:log:view"));
@@ -102,6 +110,7 @@ class WmsSyncControllerTest {
         assertAudit("createStocktake", WmsConstants.AUDIT_ACTION_CREATE, "#id");
         assertAudit("exportSnapshot", WmsConstants.AUDIT_ACTION_EXPORT, "#runId");
         assertAudit("exportFlow", WmsConstants.AUDIT_ACTION_EXPORT, "#runId");
+        assertAudit("exportDiff", WmsConstants.AUDIT_ACTION_EXPORT, "#runId");
     }
 
     /** create-run 必须把服务层生成的批次 ID 原样回给前端，前端靠它轮询状态。 */
@@ -237,6 +246,41 @@ class WmsSyncControllerTest {
 
         assertEquals("批次ID不能为空", ex.getMessage());
         assertTrue(response.getContentAsString().contains("批次ID不能为空"));
+    }
+
+    /** 差异导出：xlsx 分支必须调到专用导出服务并把文件回写前端。 */
+    @Test
+    void exportDiff_writesXlsxThroughService() throws Exception {
+        File file = tempDir.resolve("diff.xlsx").toFile();
+        Files.writeString(file.toPath(), "xlsx-bytes");
+        when(exportService.exportDiff(eq("R1"), eq("D.01"), eq("铜"), eq("待核对"), eq("多账"), any()))
+                .thenReturn(new WmsSyncSnapshotExportService.SyncExportFile(file, "对账差异_SB1.xlsx"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        controller.exportDiff("R1", "D.01", "铜", "待核对", "多账", response);
+
+        verify(exportService).exportDiff(eq("R1"), eq("D.01"), eq("铜"), eq("待核对"), eq("多账"), any());
+        assertEquals("xlsx-bytes".length(), response.getContentAsByteArray().length);
+    }
+
+    /** 差异导出没数据时抛专用异常，由控制器处理器回写 Result.error。 */
+    @Test
+    void exportDiff_noData_throwsExportException() throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        doThrow(new RuntimeException("没有符合条件的差异数据，未生成文件"))
+                .when(exportService).exportDiff(eq("R1"), any(), any(), any(), any(), any());
+
+        WmsSyncExportException ex = assertThrows(WmsSyncExportException.class,
+                () -> controller.exportDiff("R1", null, null, null, null, response));
+
+        assertEquals("没有符合条件的差异数据，未生成文件", ex.getMessage());
+    }
+
+    /** 差异导出的 runId 同样必填，空值走专用异常。 */
+    @Test
+    void exportDiff_blankRunId_throwsExportException() {
+        assertThrows(WmsSyncExportException.class,
+                () -> controller.exportDiff("  ", null, null, null, null, new MockHttpServletResponse()));
     }
 
     /**

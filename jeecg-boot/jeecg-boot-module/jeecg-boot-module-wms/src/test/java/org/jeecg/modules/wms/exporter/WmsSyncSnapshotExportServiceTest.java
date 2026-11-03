@@ -2,9 +2,11 @@ package org.jeecg.modules.wms.exporter;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.jeecg.modules.wms.entity.WmsSyncDiff;
 import org.jeecg.modules.wms.entity.WmsSyncFlow;
 import org.jeecg.modules.wms.entity.WmsSyncRun;
 import org.jeecg.modules.wms.entity.WmsSyncSnapshot;
+import org.jeecg.modules.wms.mapper.WmsSyncDiffMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncFlowMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncRunMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncSnapshotMapper;
@@ -48,6 +50,7 @@ class WmsSyncSnapshotExportServiceTest {
     private WmsSyncRunMapper runMapper;
     private WmsSyncSnapshotMapper snapshotMapper;
     private WmsSyncFlowMapper flowMapper;
+    private WmsSyncDiffMapper diffMapper;
     private WmsExcelWriter excelWriter;
     private WmsSyncSnapshotExportService service;
 
@@ -56,8 +59,10 @@ class WmsSyncSnapshotExportServiceTest {
         runMapper = mock(WmsSyncRunMapper.class);
         snapshotMapper = mock(WmsSyncSnapshotMapper.class);
         flowMapper = mock(WmsSyncFlowMapper.class);
+        diffMapper = mock(WmsSyncDiffMapper.class);
         excelWriter = mock(WmsExcelWriter.class);
-        service = new WmsSyncSnapshotExportService(runMapper, snapshotMapper, flowMapper, excelWriter);
+        service = new WmsSyncSnapshotExportService(runMapper, snapshotMapper, flowMapper,
+                diffMapper, excelWriter);
     }
 
     /** JSON 包固定键：runNo/scopeType/windowStart/windowEnd/snapshot/flow。 */
@@ -116,6 +121,33 @@ class WmsSyncSnapshotExportServiceTest {
         assertEquals(target, exported.file());
         assertTrue(exported.fileName().startsWith("待推送包_SB1_"));
         verify(excelWriter).write(any(), eq(WmsSyncSnapshot.class), any(), isNull(), eq(target));
+    }
+
+    /** 差异导出：没有符合筛选条件的行时拒绝生成空文件。 */
+    @Test
+    void exportDiff_emptyDiff_rejected() {
+        when(runMapper.selectById("R1")).thenReturn(new WmsSyncRun().setRunNo("SB1"));
+        when(diffMapper.selectCount(any())).thenReturn(0L);
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.exportDiff("R1", null, null, null, null,
+                        tempDir.resolve("diff.xlsx").toFile()));
+        assertTrue(ex.getMessage().contains("没有符合条件的差异数据"));
+    }
+
+    /** 差异导出：列定义来自 WmsSyncDiff，按 id 游标取数并交给 Excel 写入器。 */
+    @Test
+    void exportDiff_writesThroughExcelWriter() throws Exception {
+        when(runMapper.selectById("R1")).thenReturn(new WmsSyncRun().setRunNo("SB1"));
+        when(diffMapper.selectCount(any())).thenReturn(2L);
+        File target = tempDir.resolve("diff.xlsx").toFile();
+
+        WmsSyncSnapshotExportService.SyncExportFile exported =
+                service.exportDiff("R1", "D.01", "铜", "待核对", "多账", target);
+
+        assertEquals(target, exported.file());
+        assertTrue(exported.fileName().startsWith("对账差异_SB1_"));
+        verify(excelWriter).write(any(), eq(WmsSyncDiff.class), any(), isNull(), eq(target));
     }
 
     /** 批次不存在时明确报错，不能生成一份空包让人误判。 */
