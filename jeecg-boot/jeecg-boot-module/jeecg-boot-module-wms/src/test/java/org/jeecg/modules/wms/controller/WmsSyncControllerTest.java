@@ -10,6 +10,7 @@ import org.jeecg.modules.wms.dto.WmsSyncRunCreateDTO;
 import org.jeecg.modules.wms.entity.WmsStocktakeOrder;
 import org.jeecg.modules.wms.entity.WmsSyncDiff;
 import org.jeecg.modules.wms.entity.WmsSyncRun;
+import org.jeecg.modules.wms.exception.WmsSyncExportException;
 import org.jeecg.modules.wms.exporter.WmsSyncSnapshotExportService;
 import org.jeecg.modules.wms.mapper.WmsSyncFlowMapper;
 import org.jeecg.modules.wms.mapper.WmsSyncSnapshotMapper;
@@ -19,11 +20,13 @@ import org.jeecg.modules.wms.service.IWmsSyncReconcileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -213,27 +216,49 @@ class WmsSyncControllerTest {
         doThrow(new RuntimeException("对账批次不存在：NOPE"))
                 .when(exportService).exportSnapshot(eq("NOPE"), any());
 
-        RuntimeException ex = assertThrows(RuntimeException.class,
+        WmsSyncExportException ex = assertThrows(WmsSyncExportException.class,
                 () -> controller.exportSnapshot("NOPE", "xlsx", response));
 
-        controller.handleRuntimeFailure(ex, response);
+        controller.handleExportFailure(ex, response);
 
         String body = response.getContentAsString();
         assertTrue(body.contains("\"success\":false"), body);
         assertTrue(body.contains("对账批次不存在：NOPE"), body);
     }
 
-    /** 批次 ID 为空同样走异常 → 异常处理器，错误体能被前端识别。 */
+    /** 批次 ID 为空同样走专用异常 → 异常处理器，错误体能被前端识别。 */
     @Test
     void exportSnapshot_blankRunId_throws() throws Exception {
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        RuntimeException ex = assertThrows(RuntimeException.class,
+        WmsSyncExportException ex = assertThrows(WmsSyncExportException.class,
                 () -> controller.exportSnapshot("  ", "xlsx", response));
-        controller.handleRuntimeFailure(ex, response);
+        controller.handleExportFailure(ex, response);
 
         assertEquals("批次ID不能为空", ex.getMessage());
         assertTrue(response.getContentAsString().contains("批次ID不能为空"));
+    }
+
+    /**
+     * 复审 Important：异常处理器必须只认 {@link WmsSyncExportException}。
+     * 若写成 {@code RuntimeException}，会接管 Shiro 权限异常与其它端点的底层异常，
+     * 导致平台统一的 510 未授权响应与 sys_log 全部失效。
+     */
+    @Test
+    void exportExceptionHandler_onlyHandlesExportException() {
+        Method handler = null;
+        for (Method method : WmsSyncController.class.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(ExceptionHandler.class)) {
+                handler = method;
+            }
+        }
+        assertNotNull(handler, "缺少导出异常处理器");
+
+        ExceptionHandler annotation = handler.getAnnotation(ExceptionHandler.class);
+        assertArrayEquals(new Class<?>[]{WmsSyncExportException.class}, annotation.value(),
+                "异常处理器范围过宽，会接管权限异常");
+        assertEquals(WmsSyncExportException.class, handler.getParameterTypes()[0]);
+        assertFalse(RuntimeException.class.equals(handler.getParameterTypes()[0]));
     }
 
     /** 同步日志的时间区间参数必须能绑定 "yyyy-MM-dd HH:mm:ss"，否则查询页 400。 */

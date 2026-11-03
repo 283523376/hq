@@ -22,6 +22,7 @@ import org.jeecg.modules.wms.entity.WmsSyncFlow;
 import org.jeecg.modules.wms.entity.WmsSyncLog;
 import org.jeecg.modules.wms.entity.WmsSyncRun;
 import org.jeecg.modules.wms.entity.WmsSyncSnapshot;
+import org.jeecg.modules.wms.exception.WmsSyncExportException;
 import org.jeecg.modules.wms.exporter.WmsSyncSnapshotExportService;
 import org.jeecg.modules.wms.exporter.WmsSyncSnapshotExportService.SyncExportFile;
 import org.jeecg.modules.wms.mapper.WmsSyncFlowMapper;
@@ -191,7 +192,7 @@ public class WmsSyncController {
     private void export(String runId, String format, HttpServletResponse response, boolean snapshot) {
         if (isBlank(runId)) {
             // 失败必须抛出去：@WmsAudit 切面靠异常记「失败」，吞掉会被记成成功（评审 I-1）
-            throw new RuntimeException("批次ID不能为空");
+            throw new WmsSyncExportException("批次ID不能为空");
         }
         String id = runId.trim();
         boolean asJson = snapshot && EXPORT_FORMAT_JSON.equalsIgnoreCase(
@@ -209,12 +210,11 @@ public class WmsSyncController {
             } else {
                 FileDownloadUtils.downloadFile(response, exported.file().getAbsolutePath(), exported.fileName());
             }
-        } catch (RuntimeException e) {
-            log.warn("对待推送包导出失败：runId={}, format={}", id, format, e);
-            throw e;
         } catch (Exception e) {
             log.warn("对待推送包导出失败：runId={}, format={}", id, format, e);
-            throw new RuntimeException(e.getMessage(), e);
+            // 统一收敛成专用异常：异常处理器只认它，不会接管权限异常和其它端点的底层异常
+            throw e instanceof WmsSyncExportException ? (WmsSyncExportException) e
+                    : new WmsSyncExportException(e.getMessage(), e);
         } finally {
             deleteQuietly(temp);
         }
@@ -223,13 +223,15 @@ public class WmsSyncController {
     /**
      * 导出失败统一回写 {@code Result.error} JSON。
      *
-     * <p>导出端点是流式响应，不能返回 {@code Result<T>}；抛出的异常交给本处理器，
-     * 由 {@code WmsAuditAspect} 的 catch 分支记「失败」，这里只负责保持前端拿到的错误体格式。
-     * 切面只通知控制器方法本身，本方法没有 {@code @WmsAudit}，不会重复写审计。
+     * <p>只处理 {@link WmsSyncExportException}：范围收窄后，Shiro 的
+     * {@code AuthorizationException}、其它端点的底层异常仍交给全局
+     * {@code JeecgBootExceptionHandler}（保留 510 未授权响应与 sys_log）。
+     *
+     * <p>切面只通知控制器方法本身，本方法没有 {@code @WmsAudit}，不会重复写审计。
      */
-    @ExceptionHandler(RuntimeException.class)
-    public void handleRuntimeFailure(RuntimeException e, HttpServletResponse response) {
-        log.warn("对账接口处理失败：{}", e.getMessage());
+    @ExceptionHandler(WmsSyncExportException.class)
+    public void handleExportFailure(WmsSyncExportException e, HttpServletResponse response) {
+        log.warn("对待推送包导出失败：{}", e.getMessage());
         writeJsonError(response, e.getMessage());
     }
 
