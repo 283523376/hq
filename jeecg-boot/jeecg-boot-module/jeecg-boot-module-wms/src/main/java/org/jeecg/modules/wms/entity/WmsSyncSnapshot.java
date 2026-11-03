@@ -71,7 +71,7 @@ public class WmsSyncSnapshot extends JeecgEntity {
     @Excel(name = "WMS数量", width = 14)
     private BigDecimal wmsQty;
 
-    /** 金蝶即时库存数量（FBaseQty；未比对为 NULL） */
+    /** 金蝶即时库存数量（FBaseQty；仅WMS 记 0，未比对为 NULL） */
     @Schema(description = "金蝶数量")
     @Excel(name = "金蝶数量", width = 14)
     private BigDecimal erpQty;

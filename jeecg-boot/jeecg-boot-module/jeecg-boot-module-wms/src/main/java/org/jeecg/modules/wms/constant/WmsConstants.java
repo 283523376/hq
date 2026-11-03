@@ -855,6 +855,8 @@ public final class WmsConstants {
 
     /** 同步日志对象类型：库存预警扫描。 */
     public static final String SYNC_LOG_TYPE_INVENTORY_WARNING = "INVENTORY_WARNING";
+    /** 同步日志方向：WMS → ERP（SB-001 对账查询金蝶即时库存）。 */
+    public static final String SYNC_LOG_DIRECTION_WMS_TO_ERP = "WMS_TO_ERP";
     /** 同步日志方向：WMS 内部计算（非 ERP 交互）。 */
     public static final String SYNC_LOG_DIRECTION_WMS_INTERNAL = "WMS_INTERNAL";
     /** 同步日志对端：WMS 自身。 */
