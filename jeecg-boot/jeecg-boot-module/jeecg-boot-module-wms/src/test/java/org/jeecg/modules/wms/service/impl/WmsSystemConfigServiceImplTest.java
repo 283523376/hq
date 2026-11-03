@@ -8,6 +8,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsKingdeeSyncScope;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
@@ -577,14 +578,47 @@ class WmsSystemConfigServiceImplTest {
 
         String first = WmsKingdeeSyncScope.labels().get(0);
         String second = WmsKingdeeSyncScope.labels().get(1);
+        // SYNC 组保存是全组提交，缺项会被校验器判冲突（SB-001 新增 4 个 sync.* 配置项后必须补齐）
         service.saveGroup(saveDto("sync",
-                "sync.scope", first + " , " + second, "sync.auto", "true"));
+                "sync.scope", first + " , " + second, "sync.auto", "true",
+                "sync.auto.scope", WmsConfigKey.SYNC_AUTO_SCOPE.getDefaultValue(),
+                "sync.log.retention.days", WmsConfigKey.SYNC_LOG_RETENTION_DAYS.getDefaultValue(),
+                "sync.retention.days", WmsConfigKey.SYNC_RETENTION_DAYS.getDefaultValue(),
+                "sync.retention.diff-days", WmsConfigKey.SYNC_RETENTION_DIFF_DAYS.getDefaultValue()));
 
         ArgumentCaptor<WmsSystemConfig> captor = ArgumentCaptor.forClass(WmsSystemConfig.class);
-        verify(service, times(2)).save(captor.capture());
+        verify(service, times(6)).save(captor.capture());
         WmsSystemConfig scopeRow = captor.getAllValues().stream()
                 .filter(r -> "sync.scope".equals(r.getConfigKey())).findFirst().orElseThrow();
         assertEquals(first + "," + second, scopeRow.getConfigValue(), "段内空格必须被规范化掉");
+    }
+
+    /**
+     * SB-001：sync.auto.scope 是静态候选的 SELECT。
+     * 非法值必须按「候选范围」报冲突——不能沿用不良品默认仓那套动态库区校验（否则存 "TODAY" 会被判「库区不存在」）。
+     */
+    @Test
+    void saveGroup_shouldValidateStaticSelectOptionsForSyncAutoScope() {
+        WmsSystemConfigServiceImpl service = spy(new WmsSystemConfigServiceImpl());
+        WmsSystemConfigHistoryMapper historyMapper = mock(WmsSystemConfigHistoryMapper.class);
+        WmsTestSupport.inject(service, "wmsSystemConfigHistoryMapper", historyMapper);
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+        doReturn(true).when(service).save(any(WmsSystemConfig.class));
+        doReturn(java.util.Collections.<String, Integer>emptyMap()).when(service).latestVersionNoMap(any());
+
+        WmsConfigConflictException e = assertThrows(WmsConfigConflictException.class,
+                () -> service.saveGroup(saveDto("sync",
+                        "sync.scope", WmsKingdeeSyncScope.labels().get(0), "sync.auto", "true",
+                        "sync.auto.scope", "BAD_SCOPE",
+                        "sync.log.retention.days", "90",
+                        "sync.retention.days", "180",
+                        "sync.retention.diff-days", "365")));
+
+        assertTrue(e.getConflicts().get(0).getReason().contains("BAD_SCOPE"),
+                "冲突文案要带出用户填的值，实际：" + e.getConflicts().get(0).getReason());
+        assertTrue(e.getConflicts().get(0).getReason().contains("候选范围"),
+                "静态 SELECT 必须按候选值校验，不得误入库区校验，实际：" + e.getConflicts().get(0).getReason());
+        verify(service, never()).save(any(WmsSystemConfig.class));
     }
 
     // ------------------------------------------------- 不良品默认仓：单选候选项（2026-10-27）

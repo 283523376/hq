@@ -446,13 +446,23 @@ public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMappe
                 // 留空 = 沿用废品仓默认位，是合法取值
                 continue;
             }
-            boolean exists = defectWarehouseOptions().stream()
-                    .anyMatch(option -> value.equals(option.getValue())
-                            && !Boolean.TRUE.equals(option.getDisabled()));
-            if (!exists) {
+            if (meta == WmsConfigKey.DEFECT_WAREHOUSE_CODE) {
+                // 候选集是动态的（启用仓区 + 默认库位），只能在这里查库校验
+                boolean exists = defectWarehouseOptions().stream()
+                        .anyMatch(option -> value.equals(option.getValue())
+                                && !Boolean.TRUE.equals(option.getDisabled()));
+                if (!exists) {
+                    conflicts.add(new WmsConfigConflict(meta.getKey(), meta.getLabel(),
+                            "库区不存在、已停用或缺少 " + WmsConstants.LOCATION_CODE_SCRAP_DEFAULT
+                                    + " 默认库位，实际：" + value));
+                }
+                continue;
+            }
+            // 其余 SELECT 候选集是静态的（元数据自带），按候选值校验
+            List<String> options = meta.getOptions();
+            if (options != null && !options.contains(value)) {
                 conflicts.add(new WmsConfigConflict(meta.getKey(), meta.getLabel(),
-                        "库区不存在、已停用或缺少 " + WmsConstants.LOCATION_CODE_SCRAP_DEFAULT
-                                + " 默认库位，实际：" + value));
+                        "取值不在候选范围（" + String.join("/", options) + "），实际：" + value));
             }
         }
         return conflicts;

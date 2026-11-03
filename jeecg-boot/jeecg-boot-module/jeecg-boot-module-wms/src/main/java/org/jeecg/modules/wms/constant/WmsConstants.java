@@ -859,4 +859,62 @@ public final class WmsConstants {
     public static final String SYNC_LOG_DIRECTION_WMS_INTERNAL = "WMS_INTERNAL";
     /** 同步日志对端：WMS 自身。 */
     public static final String SYNC_LOG_TARGET_WMS = "WMS";
+
+    // ==================== SB-001 上位系统同步对账 ====================
+
+    /** 对账批次状态-执行中（spec §2.5 wms_sync_run.status）。 */
+    public static final String SYNC_RUN_STATUS_RUNNING = "执行中";
+    /** 对账批次状态-成功（spec §2.5）。 */
+    public static final String SYNC_RUN_STATUS_SUCCESS = "成功";
+    /** 对账批次状态-失败（3 次重试仍失败后的终态，spec §2.6/§2.5）。 */
+    public static final String SYNC_RUN_STATUS_FAILED = "失败";
+
+    /** 对账范围-全量库存：101 全组织，产生「仅ERP」（spec §2.2/§2.4）。 */
+    public static final String SYNC_SCOPE_FULL = "FULL";
+    /** 对账范围-今日变动：比对域 = WMS 快照 key 集合，不产生「仅ERP」（spec §2.2/§2.4）。 */
+    public static final String SYNC_SCOPE_TODAY = "TODAY";
+    /** 对账范围-指定仓库：所选仓库内全部 key，产生「仅ERP」（spec §2.2/§2.4）。 */
+    public static final String SYNC_SCOPE_WAREHOUSE = "WAREHOUSE";
+
+    /** 快照匹配-一致：两边都有且数量相等，不入差异清单（spec §2.4）。 */
+    public static final String SNAPSHOT_MATCH_EQUAL = "一致";
+    /** 快照匹配-数量差异：两边都有但数量不等，diff_type 细分多账/少账（spec §2.4）。 */
+    public static final String SNAPSHOT_MATCH_QTY_DIFF = "数量差异";
+    /** 快照匹配-仅WMS：WMS 有 ERP 无；diff_type 复用本值（spec §2.4）。 */
+    public static final String SNAPSHOT_MATCH_WMS_ONLY = "仅WMS";
+    /** 快照匹配-仅ERP：ERP 有 WMS 无；diff_type 复用本值（spec §2.4）。 */
+    public static final String SNAPSHOT_MATCH_ERP_ONLY = "仅ERP";
+
+    /** 差异类型-多账：WMS > ERP，diff = wms - erp（spec §2.4）。 */
+    public static final String DIFF_TYPE_MORE = "多账";
+    /** 差异类型-少账：WMS < ERP，diff = wms - erp（负数）（spec §2.4）。 */
+    public static final String DIFF_TYPE_LESS = "少账";
+
+    /** 差异状态-待核对：差异清单行的初始状态（spec §2.5/§2.8）。 */
+    public static final String DIFF_STATUS_PENDING = "待核对";
+    /** 差异状态-已核对：待核对后的人工处理终态之一（spec §2.8）。 */
+    public static final String DIFF_STATUS_CHECKED = "已核对";
+    /** 差异状态-已忽略：待核对后的人工处理终态之二（spec §2.8）。 */
+    public static final String DIFF_STATUS_IGNORED = "已忽略";
+
+    /** 同步日志对象类型：库存对账批次（objectNo=run_no，spec §2.9）。 */
+    public static final String SYNC_LOG_TYPE_RECONCILE = "INVENTORY_RECONCILE";
+
+    /** 对账失败告警标题（spec §2.7）。 */
+    public static final String RECONCILE_ALERT_TITLE = "SB-001 上位系统对账失败告警";
+
+    /**
+     * 对账任务 JobKey（spec §2.2）：每日 23:00 定时对账，沿用 {@link #AUDIT_CLEAN_JOB_ID}
+     * 的字符串 JobKey 风格（非 sys_quartz_job 数字种子行模式）。
+     */
+    public static final String SYNC_RECONCILE_JOB_ID = "wmsSyncReconcileJob";
+    /** 对账任务 cron：每日 23:00（spec §2.2）。 */
+    public static final String SYNC_RECONCILE_JOB_CRON = "0 0 23 * * ?";
+    /** 同步数据清理任务 JobKey（spec §2.9.1），字符串 JobKey 风格。 */
+    public static final String SYNC_RETENTION_JOB_ID = "wmsSyncRetentionJob";
+    /** 清理任务 cron：每日 03:20，与审计清理（03:30）、导出清理（03:00）错峰（spec §2.9.1）。 */
+    public static final String SYNC_RETENTION_JOB_CRON = "0 20 3 * * ?";
+
+    /** 审计业务类型：上位系统同步（差异标记/发起盘点等，spec §2.9）。 */
+    public static final String AUDIT_BIZ_SYNC = "上位同步";
 }

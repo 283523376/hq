@@ -142,8 +142,9 @@ public final class WmsConfigValidator {
             case TEXT:
                 return null;
             case SELECT: {
-                // 候选集是动态的（库区表），纯函数里查不到；这里只挡列宽，
-                // 「该库区是否存在/启用/有默认库位」由服务层保存时校验
+                // 候选集可能是动态的（如不良品默认仓的库区表），纯函数里查不到；这里只挡列宽。
+                // 动态校验（库区是否存在/启用/有默认库位）与静态候选校验（元数据自带 options，
+                // 如 SB-001 的 sync.auto.scope）都由服务层保存时（validateSelectValues）做
                 if (value.length() > CODE_MAX_LENGTH) {
                     return "长度不能超过 " + CODE_MAX_LENGTH + " 字符，实际：" + value.length();
                 }

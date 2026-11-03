@@ -26,6 +26,18 @@ class WmsConfigValidatorTest {
         return m;
     }
 
+    /** SYNC 组全组合法值（校验器按「保存 = 全组提交」检查缺项，夹具必须放满组内全部 key）。 */
+    private static Map<String, String> syncGroup() {
+        Map<String, String> m = new HashMap<>();
+        m.put("sync.scope", WmsKingdeeSyncScope.labels().get(0));
+        m.put("sync.auto", "true");
+        m.put("sync.auto.scope", WmsConfigKey.SYNC_AUTO_SCOPE.getDefaultValue());
+        m.put("sync.log.retention.days", WmsConfigKey.SYNC_LOG_RETENTION_DAYS.getDefaultValue());
+        m.put("sync.retention.days", WmsConfigKey.SYNC_RETENTION_DAYS.getDefaultValue());
+        m.put("sync.retention.diff-days", WmsConfigKey.SYNC_RETENTION_DIFF_DAYS.getDefaultValue());
+        return m;
+    }
+
     // ------------------------------------------------------------ 库存三项的自洽
 
     /** 正常区间必须通过：0 ≤ 10 ≤ 50 ≤ 200。 */
@@ -93,8 +105,7 @@ class WmsConfigValidatorTest {
     /** bool 只接受 true/false 两个值。 */
     @Test
     void shouldRejectNonBooleanValue() {
-        Map<String, String> m = new HashMap<>();
-        m.put("sync.scope", WmsKingdeeSyncScope.labels().get(0));
+        Map<String, String> m = syncGroup();
         m.put("sync.auto", "yes");
         List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("sync", m);
         assertEquals(1, conflicts.size());
@@ -104,8 +115,7 @@ class WmsConfigValidatorTest {
     /** 多选项中出现未声明的取值必须判为冲突。 */
     @Test
     void shouldRejectUnknownMultiOption() {
-        Map<String, String> m = new HashMap<>();
-        m.put("sync.auto", "true");
+        Map<String, String> m = syncGroup();
         m.put("sync.scope", WmsKingdeeSyncScope.labels().get(0) + ",不存在的选项");
         List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("sync", m);
         assertEquals(1, conflicts.size());
@@ -115,8 +125,7 @@ class WmsConfigValidatorTest {
     /** 多选项为空必须判为冲突。 */
     @Test
     void shouldRejectEmptyMultiValue() {
-        Map<String, String> m = new HashMap<>();
-        m.put("sync.auto", "true");
+        Map<String, String> m = syncGroup();
         m.put("sync.scope", "  ");
         assertEquals(1, WmsConfigValidator.validate("sync", m).size());
     }
@@ -221,8 +230,7 @@ class WmsConfigValidatorTest {
     /** 多选项里的空段（多打一个逗号）必须判冲突——它几乎总是手误，静默丢弃会存下与页面不一致的值（M6）。 */
     @Test
     void shouldRejectEmptyMultiSegment() {
-        Map<String, String> m = new HashMap<>();
-        m.put("sync.auto", "true");
+        Map<String, String> m = syncGroup();
         m.put("sync.scope", WmsKingdeeSyncScope.labels().get(0) + ",," + WmsKingdeeSyncScope.labels().get(1));
 
         List<WmsConfigConflict> conflicts = WmsConfigValidator.validate("sync", m);
@@ -234,8 +242,7 @@ class WmsConfigValidatorTest {
     /** 段内前后空格不算错（服务层会规范化后落库），但整串只有逗号必须拒。 */
     @Test
     void shouldRejectMultiValueMadeOfCommasOnly() {
-        Map<String, String> m = new HashMap<>();
-        m.put("sync.auto", "true");
+        Map<String, String> m = syncGroup();
         m.put("sync.scope", ",,,");
         assertEquals(1, WmsConfigValidator.validate("sync", m).size());
     }

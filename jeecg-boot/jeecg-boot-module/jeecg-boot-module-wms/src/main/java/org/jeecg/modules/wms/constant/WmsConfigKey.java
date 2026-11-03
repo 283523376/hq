@@ -27,6 +27,21 @@ public enum WmsConfigKey {
     SYNC_SCOPE("sync.scope", "同步范围", WmsConfigGroup.SYNC, WmsConfigType.MULTI,
             WmsKingdeeSyncScope.defaultValue(), WmsKingdeeSyncScope.labels()),
     SYNC_AUTO("sync.auto", "自动同步", WmsConfigGroup.SYNC, WmsConfigType.BOOL, "true", null),
+    /**
+     * 自动对账范围（SB-001 spec §2.2）：定时任务每天 23:00 按该项取范围建批次；
+     * 候选值与 {@link WmsConstants#SYNC_SCOPE_FULL} 等三个常量逐字同源。
+     */
+    SYNC_AUTO_SCOPE("sync.auto.scope", "自动对账范围", WmsConfigGroup.SYNC, WmsConfigType.SELECT,
+            "TODAY", List.of("FULL", "TODAY", "WAREHOUSE")),
+    /** 同步日志保留天数（SB-001 spec §2.9.1）：wms_sync_log 清理依据。 */
+    SYNC_LOG_RETENTION_DAYS("sync.log.retention.days", "同步日志保留天数", WmsConfigGroup.SYNC,
+            WmsConfigType.INT, "90", null),
+    /** 对账快照保留天数（SB-001 spec §2.9.1）：run/snapshot/flow 随批次一起删。 */
+    SYNC_RETENTION_DAYS("sync.retention.days", "对账快照保留天数", WmsConfigGroup.SYNC,
+            WmsConfigType.INT, "180", null),
+    /** 差异清单保留天数（SB-001 spec §2.9.1）：对账证据，留久一点。 */
+    SYNC_RETENTION_DIFF_DAYS("sync.retention.diff-days", "差异清单保留天数", WmsConfigGroup.SYNC,
+            WmsConfigType.INT, "365", null),
 
     // 「不良品是否入线边柜」已随方案 A（线边柜）移出范围，2026-10-27 移除该项
     AUDIT_RETENTION_DAYS("audit.retention.days", "审计日志保留天数", WmsConfigGroup.AUDIT,
