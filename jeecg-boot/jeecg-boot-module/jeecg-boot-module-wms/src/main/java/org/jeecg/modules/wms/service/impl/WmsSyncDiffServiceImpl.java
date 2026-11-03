@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +50,9 @@ public class WmsSyncDiffServiceImpl extends JeecgServiceImpl<WmsSyncDiffMapper, 
 
     /** WMS 无账面时的统一提示，前端逐字展示，不要改口径。 */
     static final String NO_STOCK_MESSAGE = "WMS 无账面库存，无法盘点；请走生产入库或其他入库修正";
+
+    /** 物料未绑金蝶编码：与「无账面」是两回事，不能混用文案（M-1）。 */
+    static final String MATERIAL_UNBOUND_MESSAGE = "物料未绑定金蝶编码，无法发起盘点，请先完成物料主数据同步";
 
     private final WmsInventoryMapper inventoryMapper;
     private final WmsSyncRunMapper runMapper;
@@ -120,7 +124,7 @@ public class WmsSyncDiffServiceImpl extends JeecgServiceImpl<WmsSyncDiffMapper, 
         baseMapper.updateById(diff);
 
         // 日志失败只降级 WARN：日志库抖动不能把已经生效的标记回滚
-        safeLogSync(diff, "标记为" + targetStatus + "：" + trimmedRemark, true, null);
+        safeLogSync(diff, resolveRunNo(diff), "标记为" + targetStatus + "：" + trimmedRemark, true, null);
     }
 
     // ================================================================ 发起盘点
@@ -129,10 +133,21 @@ public class WmsSyncDiffServiceImpl extends JeecgServiceImpl<WmsSyncDiffMapper, 
     @Transactional(rollbackFor = Exception.class)
     public WmsStocktakeOrder createStocktake(String id, String operator) {
         WmsSyncDiff diff = requireDiff(id);
+        // 盘点单没有删除/作废入口：重复建单会让两张单都走 adjust+writeback 向金蝶双发 QTRK/QTCK，
+        // 且回填会冲掉第一张单的引用。前端双击就能触发，必须在服务端兜住。
+        if (!isBlank(diff.getStocktakeId())) {
+            throw new RuntimeException(alreadyStocktakeMessage(diff.getStocktakeNo()));
+        }
+        if (!WmsConstants.DIFF_STATUS_PENDING.equals(diff.getStatus())) {
+            throw new RuntimeException("只有「待核对」的差异可以发起盘点，当前状态：" + diff.getStatus());
+        }
+        // 物料未绑金蝶编码与「无账面」是两回事，不能复用同一句提示（审查 M-1）
+        if (isBlank(diff.getMaterialCode())) {
+            throw new RuntimeException(MATERIAL_UNBOUND_MESSAGE);
+        }
         if (WmsConstants.SNAPSHOT_MATCH_ERP_ONLY.equals(diff.getDiffType())
                 || diff.getWmsQty() == null
-                || diff.getWmsQty().compareTo(BigDecimal.ZERO) <= 0
-                || isBlank(diff.getMaterialCode())) {
+                || diff.getWmsQty().compareTo(BigDecimal.ZERO) <= 0) {
             throw new RuntimeException(NO_STOCK_MESSAGE);
         }
 
@@ -154,13 +169,23 @@ public class WmsSyncDiffServiceImpl extends JeecgServiceImpl<WmsSyncDiffMapper, 
             throw new RuntimeException("盘点单创建失败");
         }
 
-        diff.setStocktakeId(order.getId())
-                .setStocktakeNo(order.getStocktakeNo())
-                .setHandleBy(operator)
-                .setHandleTime(new Date());
-        baseMapper.updateById(diff);
+        // 条件更新堵住并发窗口：两个请求都通过了上面的存在性检查时，只有一个能写进去；
+        // 落败方 affected=0 抛异常，@Transactional 把刚建好的盘点单一起回滚。
+        int affected = baseMapper.update(null, new LambdaUpdateWrapper<WmsSyncDiff>()
+                .eq(WmsSyncDiff::getId, id)
+                .isNull(WmsSyncDiff::getStocktakeId)
+                .set(WmsSyncDiff::getStocktakeId, order.getId())
+                .set(WmsSyncDiff::getStocktakeNo, order.getStocktakeNo())
+                .set(WmsSyncDiff::getHandleBy, operator)
+                .set(WmsSyncDiff::getHandleTime, new Date()));
+        if (affected == 0) {
+            WmsSyncDiff latest = baseMapper.selectById(id);
+            String no = latest != null && !isBlank(latest.getStocktakeNo())
+                    ? latest.getStocktakeNo() : diff.getStocktakeNo();
+            throw new RuntimeException(alreadyStocktakeMessage(no));
+        }
 
-        safeLogSync(diff, "发起盘点：" + order.getStocktakeNo() + "（库位数 " + locationIds.size() + "）",
+        safeLogSync(diff, runNo, "发起盘点：" + order.getStocktakeNo() + "（库位数 " + locationIds.size() + "）",
                 true, null);
         return order;
     }
@@ -191,11 +216,14 @@ public class WmsSyncDiffServiceImpl extends JeecgServiceImpl<WmsSyncDiffMapper, 
     /**
      * 对账类日志统一挂在「批次号」上（objectNo=run_no，objectType=INVENTORY_RECONCILE，target=KINGDEE），
      * 与对账执行服务同口径，便于按批次串起整条链路。
+     *
+     * <p>{@code runNo} 由调用方解析后传入，避免同一方法里重复查批次表（审查 M-4）。
      */
-    private void safeLogSync(WmsSyncDiff diff, String detail, boolean success, String errorMessage) {
+    private void safeLogSync(WmsSyncDiff diff, String runNo, String detail, boolean success,
+                             String errorMessage) {
         try {
             syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_WMS_TO_ERP,
-                    WmsConstants.SYNC_LOG_TYPE_RECONCILE, resolveRunNo(diff),
+                    WmsConstants.SYNC_LOG_TYPE_RECONCILE, runNo,
                     WmsConstants.SYNC_LOG_TARGET_KINGDEE, success, 0,
                     detail + "；差异=" + nvl(diff.getDiffType()) + "/" + nvl(diff.getMaterialCode())
                             + "/" + nvl(diff.getBatchNo()),
@@ -203,6 +231,10 @@ public class WmsSyncDiffServiceImpl extends JeecgServiceImpl<WmsSyncDiffMapper, 
         } catch (Exception e) {
             log.warn("差异[{}]同步日志写入失败（不影响业务）：{}", diff.getId(), e.getMessage());
         }
+    }
+
+    private static String alreadyStocktakeMessage(String stocktakeNo) {
+        return "该差异已发起盘点单" + (isBlank(stocktakeNo) ? "" : " " + stocktakeNo) + "，请勿重复发起";
     }
 
     private static boolean isBlank(String value) {
