@@ -210,4 +210,31 @@
          LIMIT #{limit}
     </select>
 
+    <!-- ============================================================
+         SB-001 库存对账聚合（spec 2026-11-03 §2.3，SQL 口径照抄 spec）
+         仓库键 = COALESCE(erp_stock_code, warehouse_code)，物料键 = kingdee_code（空=非ERP物料）。
+         locked_qty 只附带展示，不参与比对。GROUP BY 里 COALESCE(i.batch_no,'') 不能简写成
+         别名/裸列：ONLY_FULL_GROUP_BY 下选中的 COALESCE 表达式必须在 GROUP BY 里原样出现。
+         注意：与台账查询不同，这里有意不过滤 master 数据的 deleted_at——对账要的是
+         「库存行现在挂在哪个仓库编码上」，仓库/物料被逻辑删除不影响账实对齐。
+         -->
+    <select id="selectReconcileAggregate" resultType="org.jeecg.modules.wms.vo.WmsSyncAggregateVO">
+        SELECT COALESCE(NULLIF(w.erp_stock_code,''), w.warehouse_code) AS erp_warehouse_code,
+               w.warehouse_code,
+               COALESCE(NULLIF(m.kingdee_code,''), '')  AS erp_material_code,
+               m.material_code, m.material_name, m.unit,
+               COALESCE(i.batch_no, '') AS batch_no,
+               SUM(i.quantity) AS qty, SUM(i.locked_qty) AS locked_qty
+          FROM wms_inventory i
+          JOIN wms_location  l ON l.id = i.location_id
+          JOIN wms_warehouse w ON w.id = l.warehouse_id
+          JOIN wms_material  m ON m.id = i.material_id
+         WHERE i.quantity &lt;&gt; 0
+          <if test="windowStart != null">AND i.update_time &gt;= #{windowStart}</if>
+          <if test="warehouseCodes != null">AND w.warehouse_code IN
+            <foreach collection="warehouseCodes" item="c" open="(" separator="," close=")">#{c}</foreach></if>
+         GROUP BY erp_warehouse_code, w.warehouse_code, erp_material_code,
+                  m.material_code, m.material_name, m.unit, COALESCE(i.batch_no,'')
+    </select>
+
 </mapper>

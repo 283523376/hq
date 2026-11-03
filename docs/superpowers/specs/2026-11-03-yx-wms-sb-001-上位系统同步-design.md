@@ -208,7 +208,7 @@ GROUP BY erp_warehouse_code, w.warehouse_code, erp_material_code,
 | id / run_id | varchar(36) | |
 | warehouse_code | varchar(64) | 金蝶 `FStockId.FNumber`，WMS 与金蝶 1:1 |
 | material_code / material_name / unit | varchar | |
-| batch_no | varchar(64) | 可空 |
+| batch_no | varchar(64) | **NOT NULL DEFAULT ''**（2026-11-03 实现，按 §2.4 空批归一化口径：schema 层杜绝 NULL/空串分裂成两个 key 产生伪差异） |
 | wms_qty / erp_qty / diff_qty | decimal(20,6) | |
 | match_status | varchar(16) | 一致 / 数量差异 / 仅WMS / 仅ERP |
 | snapshot_time | datetime | |

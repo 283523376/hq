@@ -8,8 +8,10 @@ import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.entity.WmsInventory;
 import org.jeecg.modules.wms.vo.WmsInventoryAvailableVO;
 import org.jeecg.modules.wms.vo.WmsInventoryLedgerVO;
+import org.jeecg.modules.wms.vo.WmsSyncAggregateVO;
 
 import java.math.BigDecimal;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -98,4 +100,16 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
                                                   @Param("lastBatchNo") String lastBatchNo,
                                                   @Param("lastContainerCode") String lastContainerCode,
                                                   @Param("limit") int limit);
+
+    /**
+     * SB-001 库存对账聚合：按 仓库+物料+批次 汇总（spec 2026-11-03 §2.3）。
+     *
+     * <p>仓库键 = COALESCE(erp_stock_code, warehouse_code)，物料键 = COALESCE(kingdee_code, '')；
+     * 空批归一为空串；库位/容器聚合掉（101 未启用仓位管理）。lockedQty 仅附带展示，不参与比对。
+     *
+     * @param windowStart    「今日变动」起点；null 即取全量
+     * @param warehouseCodes 指定仓库范围；null 即不限（注意：空集合会拼出 `IN ()`，调用方传 null 或非空）
+     */
+    List<WmsSyncAggregateVO> selectReconcileAggregate(@Param("windowStart") Date windowStart,
+                                                      @Param("warehouseCodes") List<String> warehouseCodes);
 }
