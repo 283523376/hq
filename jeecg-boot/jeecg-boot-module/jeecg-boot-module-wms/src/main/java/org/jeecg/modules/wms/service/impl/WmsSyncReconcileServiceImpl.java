@@ -439,6 +439,14 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
      */
     private Map<String, BigDecimal> queryErp(WmsSyncRun run, List<WmsSyncSnapshot> snapshots,
                                              ExecutionContext context) {
+        // 对账域 = WMS 实际有库存行的仓库（spec §2.2.1）：FULL/TODAY 快照为空时查整个组织
+        // 会把全部金蝶库存判成「仅ERP」（成千上万条伪差异），必须短路跳过。
+        // WAREHOUSE 例外：用户显式选了仓库，仍按所选仓库查，用于发现「WMS 无账、ERP 有账」。
+        if (snapshots.isEmpty() && !WmsConstants.SYNC_SCOPE_WAREHOUSE.equals(run.getScopeType())) {
+            log.info("对账批次[{}]范围={} 的 WMS 快照为空，按「对账域=WMS 实际有库存行的仓库」跳过金蝶查询",
+                    run.getRunNo(), run.getScopeType());
+            return new LinkedHashMap<>();
+        }
         if (kingdeeProperties == null || !kingdeeProperties.isEnabled()) {
             throw new IllegalStateException("金蝶同步未启用（wms.sync.erp.kingdee.enabled=false），无法执行对账");
         }

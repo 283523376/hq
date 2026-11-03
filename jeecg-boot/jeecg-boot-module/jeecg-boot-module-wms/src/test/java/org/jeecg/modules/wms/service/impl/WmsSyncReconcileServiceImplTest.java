@@ -359,6 +359,50 @@ class WmsSyncReconcileServiceImplTest {
         assertEquals(now, endCap.getValue());
     }
 
+    // ================================================================ 空快照短路
+
+    @Test
+    void executeRun_fullWithEmptySnapshots_skipsErpQuery() {
+        Date now = new Date();
+        when(runMapper.selectById(RUN_ID)).thenReturn(run(WmsConstants.SYNC_SCOPE_FULL, now, now));
+        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of());
+
+        service.executeRunForTest(RUN_ID);
+
+        // 对账域 = WMS 有库存行的仓库：快照为空时不得查整个 101 组织（否则刷出上万条伪「仅ERP」）
+        verify(inventoryReader, never()).queryInventory(any());
+        verify(diffMapper, never()).insert(any(WmsSyncDiff.class));
+
+        WmsSyncRun finished = lastRunUpdate();
+        assertEquals(WmsConstants.SYNC_RUN_STATUS_SUCCESS, finished.getStatus());
+        assertEquals(0, finished.getSnapshotCount().intValue());
+        assertEquals(0, finished.getDiffCount().intValue());
+    }
+
+    @Test
+    void executeRun_warehouseWithEmptySnapshots_stillQueriesSelectedWarehouses() {
+        Date now = new Date();
+        WmsSyncRun run = run(WmsConstants.SYNC_SCOPE_WAREHOUSE, now, now);
+        run.setWarehouseCodes("D.05");
+        when(runMapper.selectById(RUN_ID)).thenReturn(run);
+        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of());
+        when(inventoryReader.queryInventory(any())).thenReturn(map("D.05|M1|L1", "5"));
+
+        service.executeRunForTest(RUN_ID);
+
+        // 用户显式选了仓库：仍按所选仓库查，以便发现「WMS 无账、ERP 有账」
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> warehouses = ArgumentCaptor.forClass(List.class);
+        verify(inventoryReader).queryInventory(warehouses.capture());
+        assertEquals(List.of("D.05"), warehouses.getValue());
+
+        ArgumentCaptor<WmsSyncDiff> diffCap = ArgumentCaptor.forClass(WmsSyncDiff.class);
+        verify(diffMapper).insert(diffCap.capture());
+        assertEquals(WmsConstants.SNAPSHOT_MATCH_ERP_ONLY, diffCap.getValue().getDiffType());
+        assertEquals(0, diffCap.getValue().getWmsQty().compareTo(BigDecimal.ZERO));
+        assertEquals(1, lastRunUpdate().getDiffCount().intValue());
+    }
+
     // ================================================================ 建批次
 
     @Test
