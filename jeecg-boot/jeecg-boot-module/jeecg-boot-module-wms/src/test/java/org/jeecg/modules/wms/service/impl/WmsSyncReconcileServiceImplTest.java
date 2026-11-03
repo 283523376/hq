@@ -4,6 +4,7 @@ import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsSyncRunCreateDTO;
 import org.jeecg.modules.wms.entity.WmsSyncDiff;
+import org.jeecg.modules.wms.entity.WmsSyncFlow;
 import org.jeecg.modules.wms.entity.WmsSyncRun;
 import org.jeecg.modules.wms.entity.WmsSyncSnapshot;
 import org.jeecg.modules.wms.mapper.WmsInventoryMapper;
@@ -17,6 +18,7 @@ import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.sync.IWmsKingdeeInventoryReader;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.vo.WmsSyncAggregateVO;
+import org.jeecg.modules.wms.vo.WmsSyncFlowRowVO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -239,9 +241,15 @@ class WmsSyncReconcileServiceImplTest {
         verify(inventoryReader, times(4)).queryInventory(any());
 
         ArgumentCaptor<Integer> retryCap = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<String> payloadCap = ArgumentCaptor.forClass(String.class);
         verify(syncLogService, times(3)).logSync(anyString(), anyString(), anyString(), anyString(),
-                eq(false), retryCap.capture(), any(), any(), any(), anyLong());
+                eq(false), retryCap.capture(), payloadCap.capture(), any(), any(), anyLong());
         assertEquals(List.of(1, 2, 3), retryCap.getAllValues());
+        // 失败日志的仓库摘要必须是实际查询的仓库，不能写「全部」
+        for (String payload : payloadCap.getAllValues()) {
+            assertTrue(payload.contains("仓库=D.01"), payload);
+            assertFalse(payload.contains("仓库=全部"), payload);
+        }
 
         // 快照先落库，查询失败也保留证据
         verify(snapshotMapper, times(2)).insert(any(WmsSyncSnapshot.class));
@@ -301,6 +309,56 @@ class WmsSyncReconcileServiceImplTest {
         assertNull(aggregateWarehouses.getValue());
     }
 
+    // ================================================================ 流水窗口 / 落库
+
+    @Test
+    void executeRun_fullManualUsesTodayWindowForFlow() {
+        Date now = new Date();
+        when(runMapper.selectById(RUN_ID)).thenReturn(run(WmsConstants.SYNC_SCOPE_FULL, now, now));
+        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of(
+                aggregate("D.01", "WMS-A", "M1", "L1", "10")));
+        when(inventoryReader.queryInventory(any())).thenReturn(map("D.01|M1|L1", "10"));
+        when(flowMapper.selectOutboundRows(any(), any())).thenReturn(List.of(flowRow()));
+
+        service.executeRunForTest(RUN_ID);
+
+        // FULL 手工：流水窗口 = 当天 00:00 → 当前（不能退化成 now→now）
+        ArgumentCaptor<Date> startCap = ArgumentCaptor.forClass(Date.class);
+        ArgumentCaptor<Date> endCap = ArgumentCaptor.forClass(Date.class);
+        verify(flowMapper).selectOutboundRows(startCap.capture(), endCap.capture());
+        assertEquals(startOfDay(now), startCap.getValue());
+        assertEquals(now, endCap.getValue());
+
+        ArgumentCaptor<WmsSyncFlow> flowCap = ArgumentCaptor.forClass(WmsSyncFlow.class);
+        verify(flowMapper).insert(flowCap.capture());
+        WmsSyncFlow saved = flowCap.getValue();
+        assertEquals(RUN_ID, saved.getRunId());
+        assertEquals("出库", saved.getFlowType());
+        assertEquals("CK001", saved.getBillNo());
+        assertEquals("D.01", saved.getWarehouseCode());
+        assertEquals(OPERATOR, saved.getCreateBy());
+        assertEquals(OPERATOR, saved.getUpdateBy());
+        assertEquals(1, lastRunUpdate().getFlowCount().intValue());
+    }
+
+    @Test
+    void executeRun_todayScheduledUsesWatermarkForFlow() {
+        Date now = new Date();
+        Date watermark = new Date(now.getTime() - 3600_000L);
+        when(runMapper.selectById(RUN_ID)).thenReturn(run(WmsConstants.SYNC_SCOPE_TODAY, watermark, now));
+        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of());
+        when(inventoryReader.queryInventory(any())).thenReturn(new LinkedHashMap<>());
+
+        service.executeRunForTest(RUN_ID);
+
+        // TODAY 定时：流水窗口 = 水位线 → 当前
+        ArgumentCaptor<Date> startCap = ArgumentCaptor.forClass(Date.class);
+        ArgumentCaptor<Date> endCap = ArgumentCaptor.forClass(Date.class);
+        verify(flowMapper).selectOutboundRows(startCap.capture(), endCap.capture());
+        assertEquals(watermark, startCap.getValue());
+        assertEquals(now, endCap.getValue());
+    }
+
     // ================================================================ 建批次
 
     @Test
@@ -328,12 +386,12 @@ class WmsSyncReconcileServiceImplTest {
     }
 
     @Test
-    void createRun_usesProvidedWindowStartAndPersistsOperator() {
+    void createRun_todayWithWindowStart_usesThatWindow() {
         when(runMapper.selectCount(any())).thenReturn(0L);
         when(runMapper.selectById(anyString())).thenReturn(null);
         Date watermark = new Date(System.currentTimeMillis() - 3600_000L);
         WmsSyncRunCreateDTO dto = new WmsSyncRunCreateDTO();
-        dto.setScopeType(WmsConstants.SYNC_SCOPE_FULL);
+        dto.setScopeType(WmsConstants.SYNC_SCOPE_TODAY);
         dto.setWindowStart(watermark);
 
         String runId = service.createRun(dto, OPERATOR);
@@ -346,12 +404,28 @@ class WmsSyncReconcileServiceImplTest {
         assertTrue(saved.getRunNo().startsWith("SB"));
         assertEquals(19, saved.getRunNo().length(), "批次号 = SB + 14 位时间 + 3 位随机");
         assertEquals(WmsConstants.SYNC_RUN_STATUS_RUNNING, saved.getStatus());
-        assertEquals(WmsConstants.SYNC_SCOPE_FULL, saved.getScopeType());
-        assertEquals(watermark, saved.getWindowStart());
+        assertEquals(WmsConstants.SYNC_SCOPE_TODAY, saved.getScopeType());
+        assertEquals(watermark, saved.getWindowStart(), "TODAY 定时任务必须采用传入的水位线");
         assertNotNull(saved.getWindowEnd());
         assertEquals(OPERATOR, saved.getOperator());
         assertEquals(OPERATOR, saved.getCreateBy());
         assertNull(saved.getWarehouseCodes());
+    }
+
+    @Test
+    void createRun_nonTodayWithWindowStart_isRejected() {
+        for (String scope : List.of(WmsConstants.SYNC_SCOPE_FULL, WmsConstants.SYNC_SCOPE_WAREHOUSE)) {
+            WmsSyncRunCreateDTO dto = new WmsSyncRunCreateDTO();
+            dto.setScopeType(scope);
+            dto.setWarehouseCodes(List.of("D.01"));
+            dto.setWindowStart(new Date(System.currentTimeMillis() - 3600_000L));
+
+            IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> service.createRun(dto, OPERATOR), scope + " 不接受增量窗口");
+            assertTrue(e.getMessage().contains("今日变动"));
+        }
+        verify(runMapper, never()).insert(any(WmsSyncRun.class));
+        verify(runMapper, never()).selectCount(any());
     }
 
     @Test
@@ -395,6 +469,20 @@ class WmsSyncReconcileServiceImplTest {
         vo.setQty(new BigDecimal(qty));
         vo.setLockedQty(BigDecimal.ZERO);
         return vo;
+    }
+
+    private WmsSyncFlowRowVO flowRow() {
+        WmsSyncFlowRowVO row = new WmsSyncFlowRowVO();
+        row.setFlowType("出库");
+        row.setDirection("OUT");
+        row.setBillNo("CK001");
+        row.setWarehouseCode("D.01");
+        row.setMaterialCode("M1");
+        row.setMaterialName("物料M1");
+        row.setBatchNo("L1");
+        row.setQty(BigDecimal.ONE);
+        row.setBizTime(new Date());
+        return row;
     }
 
     private Map<String, BigDecimal> map(String... keyValues) {

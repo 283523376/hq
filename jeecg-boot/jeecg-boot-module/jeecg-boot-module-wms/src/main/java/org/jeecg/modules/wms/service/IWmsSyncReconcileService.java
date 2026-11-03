@@ -23,6 +23,7 @@ public interface IWmsSyncReconcileService extends JeecgService<WmsSyncRun> {
      * @param operator 操作人（异步线程无 Shiro 上下文，必须显式传入并落库）
      * @return 批次 ID
      * @throws RuntimeException 范围非法 / WAREHOUSE 缺仓库 / 已有执行中批次
+     * @throws IllegalArgumentException 非 TODAY 范围传了 windowStart（FULL/WAREHOUSE 不接受增量窗口）
      */
     String createRun(WmsSyncRunCreateDTO dto, String operator);
 

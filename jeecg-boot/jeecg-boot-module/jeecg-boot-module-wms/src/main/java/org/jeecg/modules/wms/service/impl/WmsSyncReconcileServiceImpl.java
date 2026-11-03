@@ -166,6 +166,13 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
         }
         String op = oConvertUtils.isEmpty(operator) ? SYSTEM_OPERATOR : operator.trim();
 
+        // 水位线（上次成功批次的 window_end）只对「今日变动」有意义：
+        // FULL/WAREHOUSE 永远是全量快照 + 全量 ERP，不接受增量窗口（2026-11-03 审查裁决）
+        if (dto.getWindowStart() != null && !WmsConstants.SYNC_SCOPE_TODAY.equals(scope)) {
+            throw new IllegalArgumentException("只有「今日变动（TODAY）」范围支持自定义时间窗（水位线），"
+                    + scope + " 始终取全量，不接受增量窗口");
+        }
+
         // 定时任务（system）防御性复核 sync.auto；手工触发不受该开关限制（spec §2.2）
         if (SYSTEM_OPERATOR.equals(op) && configService != null
                 && !configService.getBool(WmsConfigKey.SYNC_AUTO.getKey(), true)) {
@@ -187,7 +194,7 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
         Date windowStart;
         Date windowEnd;
         if (dto.getWindowStart() != null) {
-            // 定时任务水位线优先：上次成功批次的 window_end → 当前
+            // 已在上方校验过：只有 TODAY 能走到这里
             windowStart = dto.getWindowStart();
             windowEnd = now;
         } else if (WmsConstants.SYNC_SCOPE_TODAY.equals(scope)) {
@@ -254,11 +261,12 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
             return;
         }
         long start = System.currentTimeMillis();
+        ExecutionContext context = new ExecutionContext();
         try {
-            doExecute(run, start);
+            doExecute(run, start, context);
         } catch (Exception e) {
             log.error("对账批次[{}]执行失败：{}", run.getRunNo(), e.getMessage(), e);
-            failRun(run, e, start);
+            failRun(run, e, start, context.erpWarehouses);
         }
     }
 
@@ -267,7 +275,7 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
         executeRun(runId);
     }
 
-    private void doExecute(WmsSyncRun run, long start) {
+    private void doExecute(WmsSyncRun run, long start, ExecutionContext context) {
         String operator = operatorOf(run);
         Date now = new Date();
 
@@ -284,7 +292,7 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
         int flowCount = persistFlows(run, operator, now);
 
         // 4. 查金蝶（带重试）
-        Map<String, BigDecimal> erpByKey = queryErp(run, snapshots);
+        Map<String, BigDecimal> erpByKey = queryErp(run, snapshots, context);
 
         // 5. 仅ERP 单边行（TODAY 口径不产生）
         List<WmsSyncSnapshot> erpOnlyRows = today
@@ -350,19 +358,31 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
     }
 
     /**
-     * 库存聚合窗口：TODAY 用批次窗口起点；FULL/WAREHOUSE 的「标记点查」窗口起点=终点，
-     * 表示不加 update_time 过滤（取全量库存）。
+     * 库存聚合窗口：只有 TODAY 用批次窗口起点；FULL/WAREHOUSE 恒取全量（无 update_time 过滤）。
+     *
+     * <p>与流水窗口分开解析（2026-11-03 审查裁决）：FULL/WAREHOUSE 批次的 window_start 只是
+     * 「标记点」，绝不能拿来过滤库存，也不能退化成 now→now 去截断流水。
      */
     private Date resolveInventoryWindowStart(WmsSyncRun run) {
+        return WmsConstants.SYNC_SCOPE_TODAY.equals(run.getScopeType()) ? run.getWindowStart() : null;
+    }
+
+    /**
+     * 流水时间窗（spec §2.2「与库存窗口无关」）：
+     * <ul>
+     *   <li>手工（FULL / WAREHOUSE / 手工 TODAY）= 当天 00:00 → 当前；</li>
+     *   <li>定时 TODAY = 水位线（批次 window_start）→ 当前。</li>
+     * </ul>
+     *
+     * <p>FULL/WAREHOUSE 批次的 window_start=window_end=创建时刻（标记点），因此不能用它，
+     * 必须按「当前」所在自然日重新取当天 00:00。
+     */
+    private Date resolveFlowWindowStart(WmsSyncRun run) {
         if (WmsConstants.SYNC_SCOPE_TODAY.equals(run.getScopeType())) {
             return run.getWindowStart();
         }
-        Date start = run.getWindowStart();
-        Date end = run.getWindowEnd();
-        if (start == null || end == null || start.equals(end)) {
-            return null;
-        }
-        return start;
+        Date reference = run.getWindowEnd() == null ? new Date() : run.getWindowEnd();
+        return startOfToday(reference);
     }
 
     private List<String> aggregateWarehouses(WmsSyncRun run) {
@@ -375,7 +395,10 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
     // ---------------------------------------------------------------- 流水
 
     private int persistFlows(WmsSyncRun run, String operator, Date now) {
-        Date windowStart = run.getWindowStart() == null ? now : run.getWindowStart();
+        Date windowStart = resolveFlowWindowStart(run);
+        if (windowStart == null) {
+            windowStart = startOfToday(now);
+        }
         Date windowEnd = run.getWindowEnd() == null ? now : run.getWindowEnd();
         List<WmsSyncFlowRowVO> rows = new ArrayList<>();
         appendAll(rows, flowMapper.selectProductionInboundRows(windowStart, windowEnd));
@@ -414,26 +437,20 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
      * 抛出，由 {@link #failRun} 统一置批次失败并告警——因此一次「4 次尝试全失败」恰好产生 3 条
      * 失败日志，不会出现终态重复记录。
      */
-    private Map<String, BigDecimal> queryErp(WmsSyncRun run, List<WmsSyncSnapshot> snapshots) {
+    private Map<String, BigDecimal> queryErp(WmsSyncRun run, List<WmsSyncSnapshot> snapshots,
+                                             ExecutionContext context) {
         if (kingdeeProperties == null || !kingdeeProperties.isEnabled()) {
             throw new IllegalStateException("金蝶同步未启用（wms.sync.erp.kingdee.enabled=false），无法执行对账");
         }
         List<String> warehouseCodes = distinctErpWarehouses(run, snapshots);
-        Map<String, BigDecimal> result = null;
+        // 失败摘要要用实际查询的仓库集合（WAREHOUSE 批次不能写「全部」）
+        context.erpWarehouses = warehouseCodes;
         String lastError = null;
         for (int attempt = 0; attempt <= MAX_RETRY; attempt++) {
+            Map<String, BigDecimal> raw;
             long callStart = System.currentTimeMillis();
             try {
-                Map<String, BigDecimal> raw = inventoryReader.queryInventory(warehouseCodes);
-                result = raw == null ? new LinkedHashMap<>() : raw;
-                run.setRetryCount(attempt);
-                syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_WMS_TO_ERP,
-                        WmsConstants.SYNC_LOG_TYPE_RECONCILE, run.getRunNo(),
-                        WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, attempt,
-                        querySummary(run, warehouseCodes),
-                        "金蝶即时库存行数=" + result.size(),
-                        null, System.currentTimeMillis() - callStart);
-                return result;
+                raw = inventoryReader.queryInventory(warehouseCodes);
             } catch (Exception e) {
                 lastError = messageOf(e);
                 // 列约束 retry_count 0~3：第 4 次尝试（attempt=3）仍是「已重试 3 次」
@@ -448,10 +465,31 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
                         querySummary(run, warehouseCodes), null,
                         lastError, System.currentTimeMillis() - callStart);
                 sleepBeforeRetry(attempt);
+                continue;
             }
+
+            // 查询成功：成功日志**在 try 之外**写，日志库抖动不能被当成查询失败而重试/整批失败
+            Map<String, BigDecimal> result = raw == null ? new LinkedHashMap<>() : raw;
+            run.setRetryCount(attempt);
+            safeSuccessLog(run, warehouseCodes, result, attempt, System.currentTimeMillis() - callStart);
+            return result;
         }
         throw new ErpQueryExhaustedException(
                 "金蝶即时库存查询失败（已尝试 " + (MAX_RETRY + 1) + " 次）：" + lastError);
+    }
+
+    /** 成功日志写入失败只降级为 WARN，不影响对账结果。 */
+    private void safeSuccessLog(WmsSyncRun run, List<String> warehouseCodes,
+                                Map<String, BigDecimal> result, int retries, long costMs) {
+        try {
+            syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_WMS_TO_ERP,
+                    WmsConstants.SYNC_LOG_TYPE_RECONCILE, run.getRunNo(),
+                    WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, retries,
+                    querySummary(run, warehouseCodes),
+                    "金蝶即时库存行数=" + result.size(), null, costMs);
+        } catch (Exception e) {
+            log.warn("对账批次[{}]成功日志写入失败（不影响对账结果）：{}", run.getRunNo(), e.getMessage());
+        }
     }
 
     /**
@@ -598,7 +636,7 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
 
     // ---------------------------------------------------------------- 失败处理
 
-    private void failRun(WmsSyncRun run, Exception e, long start) {
+    private void failRun(WmsSyncRun run, Exception e, long start, List<String> queriedWarehouses) {
         String operator = operatorOf(run);
         String error = truncate(messageOf(e), WmsConstants.SYNC_ERROR_MAX_LENGTH);
         int retries = run.getRetryCount() == null ? 0 : run.getRetryCount();
@@ -620,7 +658,7 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
                 syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_WMS_TO_ERP,
                         WmsConstants.SYNC_LOG_TYPE_RECONCILE, run.getRunNo(),
                         WmsConstants.SYNC_LOG_TARGET_KINGDEE, false, retries,
-                        querySummary(run, null), null, error, costMs(start));
+                        querySummary(run, queriedWarehouses), null, error, costMs(start));
             } catch (Exception logError) {
                 log.error("对账批次[{}]失败日志写入异常：{}", run.getRunNo(), logError.getMessage(), logError);
             }
@@ -798,6 +836,16 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
             Thread.currentThread().interrupt();
             log.warn("对账重试退避等待被中断");
         }
+    }
+
+    /**
+     * 单次执行上下文：携带「本次实际查询的仓库集合」，供失败日志摘要使用。
+     *
+     * <p>失败日志要写实际仓库（WAREHOUSE 批次不能写「全部」），但异常里不适合塞业务细节，
+     * 故用执行上下文在 {@link #executeRun} 与 {@link #failRun} 之间传递。
+     */
+    static class ExecutionContext {
+        private List<String> erpWarehouses;
     }
 
     /**

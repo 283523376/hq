@@ -15,8 +15,9 @@ import java.util.List;
  * <p>{@code scopeType} 取 {@code WmsConstants.SYNC_SCOPE_FULL/TODAY/WAREHOUSE}；
  * {@code WAREHOUSE} 必带 {@code warehouseCodes}（WMS 仓库编码，空项会被过滤）。
  *
- * <p>{@code windowStart} 可空：定时任务传「上次成功批次的 window_end」作为水位线；
- * 手工触发不传，走默认口径（TODAY = 当天 00:00 → 当前，FULL/WAREHOUSE = 当前时刻标记点查）。
+ * <p>{@code windowStart} 可空，且**只对 TODAY 有效**：定时任务传「上次成功批次的 window_end」
+ * 作为水位线；手工触发不传，走默认口径（TODAY = 当天 00:00 → 当前，FULL/WAREHOUSE = 当前时刻标记点查）。
+ * FULL/WAREHOUSE 永远是全量快照 + 全量 ERP，传 windowStart 会被 {@code createRun} 直接拒绝。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-11-03
