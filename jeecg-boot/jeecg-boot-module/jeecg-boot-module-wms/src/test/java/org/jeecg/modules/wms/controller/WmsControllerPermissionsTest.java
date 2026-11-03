@@ -42,7 +42,8 @@ class WmsControllerPermissionsTest {
             WmsSystemConfigController.class,
             WmsWarningRuleController.class,
             WmsInventoryWarningController.class,
-            WmsBatchTraceController.class);
+            WmsBatchTraceController.class,
+            WmsSyncController.class);
 
     /**
      * 机器回调端点：调用方是 WCS/RMS 而非登录用户，加权限注解会让上游回传全部 401。

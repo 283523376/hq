@@ -524,6 +524,8 @@ public final class WmsConstants {
     public static final String AUDIT_ACTION_BIND = "绑定";
     /** 审计动作：解除绑定。 */
     public static final String AUDIT_ACTION_UNBIND = "解绑";
+    /** 审计动作：导出（SB-001 待推送包导出等，2026-11-03 新增）。 */
+    public static final String AUDIT_ACTION_EXPORT = "导出";
 
     /** 审计日志清理任务 id。 */
     public static final String AUDIT_CLEAN_JOB_ID = "wmsAuditCleanJob";
