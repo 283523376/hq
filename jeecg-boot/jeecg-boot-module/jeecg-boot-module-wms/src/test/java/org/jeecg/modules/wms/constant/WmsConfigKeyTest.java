@@ -22,7 +22,7 @@ class WmsConfigKeyTest {
      *   同步组随 SB-001 于 2026-11-03 新增 4 项：自动对账范围 + 三个保留期；
      *   金蝶单据组随 V2.4 于 2026-11-04 新增 5 个 formId，默认空串 = 未配置） */
     @Test
-    void shouldExposeNineKeysInFiveGroups() {
+    void shouldExposeAllKeysInGroups() {
         assertEquals(18, WmsConfigKey.ordered().length);
         assertEquals(3, WmsConfigKey.ofGroup(WmsConfigGroup.INVENTORY).size());
         assertEquals(6, WmsConfigKey.ofGroup(WmsConfigGroup.SYNC).size());

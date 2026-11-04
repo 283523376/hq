@@ -93,6 +93,8 @@ class WmsGapConstantsTest {
             WmsConfigKey item = keys.get(i);
             assertEquals(expectedKeys.get(i), item.getKey());
             assertEquals("", item.getDefaultValue(), "formId 未确认前默认必须是空串：" + item.getKey());
+            assertEquals(WmsConfigType.TEXT, item.getType(), "formId 是自由文本：" + item.getKey());
+            assertEquals(WmsConfigGroup.KINGDEE, item.getGroup(), "formId 必须归入金蝶单据组：" + item.getKey());
         }
     }
 }
