@@ -15,6 +15,7 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * @Description: 采购退货单回写（V2.4 §3.3 受托不良退货）。
@@ -25,8 +26,8 @@ import java.util.Map;
  * <p>口径：
  * <ul>
  *   <li><b>不传 {@code FBillNo} / {@code FID}</b>：单号与主键以 ERP 为准；</li>
- *   <li>只传业务字段：日期、受托方、物料编码、退货数量、批次、备注（来源单号/不良原因放备注，
- *       不猜测尚未确认的源单关联字段）；</li>
+ *   <li>只传业务字段：日期、受托方、物料编码、退货数量、批次、备注；
+ *       备注<b>恰好</b>为 {@code 来源单:<ref>}——它同时是幂等定位符，不拼原因等可变内容；</li>
  *   <li>受托方（供应商）由调用方按 {@code record.sourceBillNo} 反查入库单后作为
  *       {@code supplierNumber} 传入——{@code wms_defect_record} 本身不存受托方；</li>
  *   <li>日期取记录创建时间，不取执行瞬间（补跑/重试不会写错日期）；</li>
@@ -37,9 +38,10 @@ import java.util.Map;
  * <p>{@link #isEnabled()} 暴露 {@code wms.sync.erp.kingdee.enabled} 供调用方发起前判断；
  * Writer 不因开关关闭而返回 mock 成功。
  *
- * <p>{@link #existsByReference(String)} 供幂等查重：用包含匹配
- * {@code FNote like '%来源单:<ref>%'} 查询金蝶是否已有该退货单（与写入的备注格式自洽），
- * 查询失败抛错而不是返回 false——把查询失败当成「不存在」会让重试重复开单。
+ * <p>{@link #existsByReference(String)} 供幂等查重：用<b>等值</b>匹配
+ * {@code FNote='来源单:<ref>'} 查询金蝶是否已有该退货单。不用 LIKE：金蝶 FilterString
+ * 对 LIKE 的支持与底层方言转义层数均未验证。查询失败抛错而不是返回 false——
+ * 把查询失败当成「不存在」会让重试重复开单。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-11-04
@@ -50,8 +52,8 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
 
     private static final String BILL_NAME = "采购退货单";
     private static final WmsConfigKey FORM_KEY = WmsConfigKey.KD_FORM_PURCHASE_RETURN;
-    /** 备注长度上限：金蝶 FNote 超长会整单保存失败。 */
-    private static final int NOTE_MAX_LENGTH = 500;
+    /** 幂等定位符（来源单号）的合法形态：WMS 单号即字母/数字/下划线/连字符。 */
+    private static final Pattern REFERENCE_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
 
     private final WmsKingdeeFormClient formClient;
     private final IWmsSystemConfigService configService;
@@ -81,6 +83,8 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
         }
         // formId 必须最先校验：未配置时不做任何报文组装
         String formId = requireFormId();
+        // 幂等定位符：与 existsByReference 共用同一套 trim + 字符集校验，保证写/查口径一致
+        String reference = requireReference(record.getSourceBillNo());
 
         BigDecimal qty = record.getQty();
         if (qty == null || qty.signum() <= 0) {
@@ -110,11 +114,12 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
             // 先 trim 再判空：纯空格不得发成 {FNumber: ""}，金蝶会报必填项缺失
             model.put("FSupplierId", Map.of("FNumber", supplier));
         }
-        model.put("FNote", note(record));
+        // 备注恰好为「来源单:<ref>」——它同时是幂等定位符，不能拼原因等可变内容
+        model.put("FNote", "来源单:" + reference);
         model.put("FEntity", entries);
 
         log.info("回写金蝶{}({})：不良记录 {}，来源单 {}，受托方 {}", BILL_NAME, formId, record.getId(),
-                record.getSourceBillNo(), supplierNumber);
+                reference, supplier);
         return formClient.save(formId, model);
     }
 
@@ -122,9 +127,9 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
     public boolean existsByReference(String ref) {
         String reference = requireReference(ref);
         String formId = requireFormId();
-        // 必须用包含匹配：写入的备注是「WMS受托不良退货；来源单:<ref>；原因:...」，
-        // 等值查询永远查不到自己写的单，幂等保护等于没接（重试会重复开退货单）
-        String filter = "FNote like '%来源单:" + escapeLike(reference) + "%'";
+        // 等值匹配：写入的 FNote 恰好是「来源单:<ref>」，两边同一口径；
+        // LIKE 在金蝶 FilterString 下的可用性与方言转义层数未验证，不采用
+        String filter = "FNote='" + "来源单:" + reference.replace("'", "''") + "'";
         WmsKingdeeResult result = formClient.executeBillQuery(formId, "FBillNo", filter, 1);
         if (!result.isSuccess()) {
             // 查重失败不能当成「不存在」：那会在重试时重复开单
@@ -134,62 +139,24 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
         return !result.getRows().isEmpty();
     }
 
-    /** 参考号校验：非空、无控制字符（控制字符只可能来自脏数据，拼进查询只会得到坏 SQL）。 */
+    /**
+     * 参考号校验（write 与 existsByReference 共用）：trim 后必须匹配
+     * {@code ^[A-Za-z0-9_-]{1,64}$}。
+     *
+     * <p>字符集收紧到 WMS 单号的实际形态：引号、通配符、控制字符、反斜杠一概不进来，
+     * 查询条件只需做单引号加倍，不存在方言/转义层数问题。
+     */
     private String requireReference(String ref) {
         if (oConvertUtils.isEmpty(ref) || ref.trim().isEmpty()) {
-            throw new IllegalArgumentException("按参考号查重" + BILL_NAME + "必须提供参考号");
+            throw new IllegalArgumentException(BILL_NAME + "回写/查重必须提供来源单号");
         }
         String value = ref.trim();
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (c < 0x20 || c == 0x7F) {
-                // 不回显原值：控制字符会把日志/异常文案渲染乱
-                throw new IllegalArgumentException("参考号含控制字符，拒绝拼入金蝶" + BILL_NAME + "查询");
-            }
+        if (!REFERENCE_PATTERN.matcher(value).matches()) {
+            // 不回显原值：脏数据可能含控制字符，会把日志/异常文案渲染乱
+            throw new IllegalArgumentException("来源单号不合法（要求 ^[A-Za-z0-9_-]{1,64}$），拒绝写入金蝶"
+                    + BILL_NAME);
         }
         return value;
-    }
-
-    /**
-     * LIKE 转义：{@code \} → {@code \\}、{@code %} → {@code \%}、{@code _} → {@code \_}；
-     * 最后做 SQL 字面量转义 {@code '} → {@code ''}。
-     *
-     * <p>顺序不能反：反斜杠必须先于 % / _ 处理，否则会把新加的转义符再转一遍。
-     */
-    private String escapeLike(String value) {
-        StringBuilder escaped = new StringBuilder(value.length() + 8);
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            switch (c) {
-                case '\\':
-                    escaped.append("\\\\");
-                    break;
-                case '%':
-                    escaped.append("\\%");
-                    break;
-                case '_':
-                    escaped.append("\\_");
-                    break;
-                case '\'':
-                    escaped.append("''");
-                    break;
-                default:
-                    escaped.append(c);
-            }
-        }
-        return escaped.toString();
-    }
-
-    private String note(WmsDefectRecord record) {
-        StringBuilder sb = new StringBuilder("WMS受托不良退货");
-        if (oConvertUtils.isNotEmpty(record.getSourceBillNo())) {
-            sb.append("；来源单:").append(record.getSourceBillNo());
-        }
-        if (oConvertUtils.isNotEmpty(record.getReason())) {
-            sb.append("；原因:").append(record.getReason());
-        }
-        String text = sb.toString();
-        return text.length() <= NOTE_MAX_LENGTH ? text : text.substring(0, NOTE_MAX_LENGTH);
     }
 
     private String requireFormId() {

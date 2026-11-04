@@ -92,7 +92,12 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
 
         List<Map<String, Object>> entries = new ArrayList<>();
         for (WmsInboundDetail detail : details) {
-            // 数量校验必须排在「空物料跳过」之前：否则负数量/空数量会被跳过掩盖
+            // 空物料行最先跳过：没有物料编码的行走不到金蝶，数量是否合法对它没有意义
+            if (oConvertUtils.isEmpty(detail.getMaterialCode())) {
+                log.warn("入库单[{}]存在物料编码为空的明细行，跳过回写（明细 id={}）",
+                        order.getOrderNo(), detail.getId());
+                continue;
+            }
             BigDecimal qty = qtyOf(detail);
             if (qty == null) {
                 return WmsKingdeeResult.fail("入库单[" + order.getOrderNo() + "]物料["
@@ -108,11 +113,6 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
                         order.getOrderNo(), detail.getMaterialCode());
                 continue;
             }
-            if (oConvertUtils.isEmpty(detail.getMaterialCode())) {
-                log.warn("入库单[{}]存在物料编码为空的明细行，跳过回写（明细 id={}）",
-                        order.getOrderNo(), detail.getId());
-                continue;
-            }
             entries.add(entry(detail, qty));
         }
         if (entries.isEmpty()) {
@@ -124,9 +124,11 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
         // 业务日期以审核（上架确认）时间为准，退回创建时间
         model.put("FDate", formatDate(order.getAuditTime() != null
                 ? order.getAuditTime() : order.getCreateTime()));
-        if (oConvertUtils.isNotEmpty(order.getSupplierCode())) {
-            // 受托方：基础资料按编码绑定（2026-10-28 实测 {"Id":…} 会报必填项缺失）
-            model.put("FSupplierId", dict(order.getSupplierCode()));
+        String supplier = order.getSupplierCode() == null ? "" : order.getSupplierCode().trim();
+        if (!supplier.isEmpty()) {
+            // 受托方：基础资料按编码绑定（2026-10-28 实测 {"Id":…} 会报必填项缺失）；
+            // 先 trim 再判空，纯空格不得发成 {FNumber: ""}
+            model.put("FSupplierId", dict(supplier));
         }
         model.put("FNote", note(order));
         model.put("FEntity", entries);

@@ -16,7 +16,6 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -240,8 +239,8 @@ class WmsKingdeeGapWritersTest {
         verify(formClient).save(eq("PUR_MRRedReturn"), modelCaptor.capture());
         Map<String, Object> model = modelCaptor.getValue();
         assertFalse(model.containsKey("FBillNo"), "单号以 ERP 为准，不得传 FBillNo");
-        assertTrue(String.valueOf(model.get("FNote")).contains("RK20261104001"),
-                String.valueOf(model.get("FNote")));
+        // 备注恰好是幂等定位符，不拼原因等可变内容
+        assertEquals("来源单:RK20261104001", model.get("FNote"));
         // 受托方由调用方传入
         assertEquals(Map.of("FNumber", "SUP01"), model.get("FSupplierId"));
         // 日期取记录创建时间，不取执行瞬间
@@ -338,6 +337,40 @@ class WmsKingdeeGapWritersTest {
         assertEquals(1, ((List<?>) modelCaptor.getValue().get("FEntity")).size());
     }
 
+    /**
+     * 空物料行必须最先跳过：即使数量为负，也不该被数量校验拦下（该行本来就到不了金蝶）。
+     * 这一条锁死「空物料 → 数量 → 短装」的处理顺序。
+     */
+    @Test
+    void purchaseInboundWriterShouldSkipBlankMaterialBeforeQuantityCheck() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_INBOUND, "PUR_ReceiveBill");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail(null, "-1", null, null)));
+
+        WmsKingdeeResult result = purchaseInboundWriter.write(purchaseOrder());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("没有可回写的明细"), result.getMessage());
+        assertFalse(result.getMessage().contains("数量为负"), "空物料行不应进入数量校验：" + result.getMessage());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    /** 纯空格的供应商不得发成 {FNumber: ""}（入库 Writer 同一口径）。 */
+    @Test
+    void purchaseInboundWriterShouldNotSendBlankSupplier() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_INBOUND, "PUR_ReceiveBill");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("WA.1", "2", null, null)));
+        when(formClient.save(eq("PUR_ReceiveBill"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "CGRK0011", "1011"));
+        WmsInboundOrder order = purchaseOrder();
+        order.setSupplierCode("   ");
+
+        assertTrue(purchaseInboundWriter.write(order).isSuccess());
+
+        ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
+        verify(formClient).save(eq("PUR_ReceiveBill"), modelCaptor.capture());
+        assertFalse(modelCaptor.getValue().containsKey("FSupplierId"));
+    }
+
     /** 来源类型不匹配必须抛错：采购单不能走受托入库、反之亦然。 */
     @Test
     void writersShouldRejectMismatchedSourceType() {
@@ -403,70 +436,69 @@ class WmsKingdeeGapWritersTest {
         assertFalse(purchaseReturnWriter.existsByReference("RK20261104001"));
     }
 
-    /** 参考号里的单引号必须转义，否则会拼出错误的过滤条件。 */
+    /** 查重过滤条件必须是等值匹配，且与写入的备注（来源单:<ref>）同一口径。 */
     @Test
-    void existsByReferenceShouldEscapeSingleQuotes() {
+    void existsByReferenceShouldUseEqualityFilter() {
         stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
         when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
 
-        assertFalse(purchaseReturnWriter.existsByReference("RK'001"));
+        assertFalse(purchaseReturnWriter.existsByReference("RK20261104001"));
 
         ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
         verify(formClient).executeBillQuery(eq("PUR_MRRedReturn"), anyString(), filter.capture(), anyInt());
-        assertEquals("FNote like '%来源单:RK''001%'", filter.getValue());
+        assertEquals("FNote='来源单:RK20261104001'", filter.getValue());
     }
 
-    /** LIKE 通配符与反斜杠必须转义成字面量，避免参考号变成过宽的模式。 */
+    /** 参考号字符集收紧：控制字符、引号、通配符、超长一律拒绝，不拼进查询。 */
     @Test
-    void existsByReferenceShouldEscapeLikeWildcards() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
-        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
-                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
-
-        assertFalse(purchaseReturnWriter.existsByReference("A_B%C\\D"));
-
-        ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
-        verify(formClient).executeBillQuery(eq("PUR_MRRedReturn"), anyString(), filter.capture(), anyInt());
-        assertEquals("FNote like '%来源单:A\\_B\\%C\\\\D%'", filter.getValue());
-    }
-
-    /** 控制字符只可能来自脏数据，直接拒绝，不拼进查询。 */
-    @Test
-    void existsByReferenceShouldRejectControlCharacters() {
+    void existsByReferenceShouldRejectInvalidReference() {
         stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
 
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> purchaseReturnWriter.existsByReference("RK\n001"));
-
-        assertTrue(e.getMessage().contains("控制字符"), e.getMessage());
+        for (String bad : new String[]{"RK\n001", "RK'001", "A%B", "A B", "R".repeat(65)}) {
+            IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> purchaseReturnWriter.existsByReference(bad), "应拒绝参考号：" + bad);
+            assertTrue(e.getMessage().contains("不合法"), e.getMessage());
+        }
         verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
     }
 
+    /** write 侧与 exists 侧共用同一套来源单号校验。 */
+    @Test
+    void purchaseReturnWriterShouldRejectInvalidSourceBillNo() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> purchaseReturnWriter.write(defectRecord().setSourceBillNo("RK'001"), "SUP01"));
+
+        assertTrue(e.getMessage().contains("不合法"), e.getMessage());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
     /**
-     * 往返自洽：写单捕获的 FNote 必须能被同一 ref 的查重过滤条件命中。
+     * 往返自洽：write 写入的 FNote 恰好是「来源单:<ref>」，同一 ref 的等值查重必须命中。
      *
-     * <p>这里按 MySQL LIKE 语义（{@code \x} 字面量、{@code %} 任意串、{@code _} 任意字符）
-     * 模拟金蝶的匹配结果；写单备注格式或查重过滤条件任一改动破坏自洽，本用例即失败。
+     * <p>模拟金蝶按等值匹配：只有过滤条件与写入备注完全一致才返回行；
+     * 写单备注格式或查重过滤条件任一改动破坏自洽，本用例即失败。
      */
     @Test
     void existsByReferenceShouldMatchTheNoteWrittenByWrite() {
         stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
         when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "CTHD0009", "1009"));
-        String ref = "RK'2_5%\\0";
+        String ref = "RK_2026-1104";
 
         assertTrue(purchaseReturnWriter.write(defectRecord().setSourceBillNo(ref), "SUP01").isSuccess());
 
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
         verify(formClient).save(eq("PUR_MRRedReturn"), modelCaptor.capture());
         String note = String.valueOf(modelCaptor.getValue().get("FNote"));
-        assertTrue(note.contains("来源单:" + ref), note);
+        assertEquals("来源单:" + ref, note);
 
         when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
                 .thenAnswer(invocation -> {
                     String filter = invocation.getArgument(2);
-                    return likeMatches(filter, note)
+                    return ("FNote='" + note + "'").equals(filter)
                             ? WmsKingdeeResult.ok("[]", List.of(List.of("CTHD0009")), null, null)
                             : WmsKingdeeResult.ok("[]", List.of(), null, null);
                 });
@@ -575,35 +607,6 @@ class WmsKingdeeGapWritersTest {
         record.setDisposalType(WmsConstants.DEFECT_DISPOSAL_RETURN);
         record.setCreateTime(date("2026-11-02"));
         return record;
-    }
-
-    /**
-     * 模拟 MySQL LIKE 匹配（默认 {@code \} 为转义符）：先还原 SQL 字面量 {@code '' → '}，
-     * 再按 LIKE 语义把 {@code \x} 当字面量、{@code %} 当任意串、{@code _} 当任意单字符。
-     */
-    private boolean likeMatches(String filter, String text) {
-        // 只剥掉 SQL 字面量的边界，前后的 % 是 LIKE 通配符，必须留在 pattern 里
-        String prefix = "FNote like '";
-        String suffix = "'";
-        if (filter == null || !filter.startsWith(prefix) || !filter.endsWith(suffix)) {
-            return false;
-        }
-        String pattern = filter.substring(prefix.length(), filter.length() - suffix.length())
-                .replace("''", "'");
-        StringBuilder regex = new StringBuilder("(?s)");
-        for (int i = 0; i < pattern.length(); i++) {
-            char c = pattern.charAt(i);
-            if (c == '\\' && i + 1 < pattern.length()) {
-                regex.append(Pattern.quote(String.valueOf(pattern.charAt(++i))));
-            } else if (c == '%') {
-                regex.append(".*");
-            } else if (c == '_') {
-                regex.append('.');
-            } else {
-                regex.append(Pattern.quote(String.valueOf(c)));
-            }
-        }
-        return text.matches(regex.toString());
     }
 
     private Date date(String value) {
