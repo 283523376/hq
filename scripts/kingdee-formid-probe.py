@@ -44,12 +44,18 @@ QUERY_PATH = "/k3cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Execut
 MYSQL = r"C:/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe"
 
 # 5 个配置项 → (中文名, 内置候选)
+#
+# 第一项是 2026-11-04 在测试账套（6a9aaaadaf7ee6）实测确认的值：
+# 用 BOS_BillType 的 FBillFormId 反查「单据类型 → 业务对象标识」，再拿真实单据 View 佐证。
+# 其余候选保留作反例，方便下次换账套时对照。
 CONFIG_KEYS = [
     ("kingdee.form.purchase-order", "采购订单", ["PUR_PurchaseOrder"]),
     ("kingdee.form.purchase-inbound", "采购入库单", ["STK_InStock", "PUR_ReceiveBill"]),
     ("kingdee.form.purchase-return", "采购退货单", ["PUR_MRB", "STK_ReturnStock"]),
-    ("kingdee.form.consigned-order", "受托加工订单", ["SUB_SUBREQORDER", "SUB_SubReqOrder"]),
-    ("kingdee.form.consigned-inbound", "受托加工材料入库单", ["SUB_ReceiveBill", "SUB_SubStock"]),
+    # 受托加工销售走「销售订单」对象：实测 STK_OEMInStock 的 SubHeadEntity.SubSRCTYPE=SAL_SaleOrder
+    ("kingdee.form.consigned-order", "受托加工订单", ["SAL_SaleOrder", "SUB_SUBREQORDER"]),
+    # 单据类型 STCLRK01_SYS「标准受托加工材料入库单」→ STK_OEMInStock
+    ("kingdee.form.consigned-inbound", "受托加工材料入库单", ["STK_OEMInStock", "SUB_ReceiveBill"]),
 ]
 
 # 探测字段候选：FBillNo 是单据通用字段；个别单据没有时退回 FID
@@ -61,6 +67,15 @@ OBJECT_MISSING_HINTS = ("业务对象", "formId", "FormId", "标识为", "Could 
 
 def env(name: str, default: str = "") -> str:
     return (os.environ.get(name) or default).strip()
+
+
+def normalize_base(url: str) -> str:
+    """与后端 WmsKingdeeAuthServiceImpl.join 同款：数据中心地址常写成 host:port/k3cloud，
+    而各接口路径本身已含 /k3cloud，不去重会拼成 /k3cloud/k3cloud。"""
+    normalized = (url or "").strip().rstrip("/")
+    if normalized.lower().endswith("/k3cloud"):
+        normalized = normalized[: -len("/k3cloud")]
+    return normalized
 
 
 def color(text: str, code: str) -> str:
@@ -99,7 +114,7 @@ def login(base_url: str) -> str | None:
         "appsecret": app_secret,
         "lcid": 2052,
     }
-    status, body, set_cookie = http_post(base_url.rstrip("/") + LOGIN_PATH, payload)
+    status, body, set_cookie = http_post(normalize_base(base_url) + LOGIN_PATH, payload)
     if status != 200:
         print(color(f"登录请求失败：HTTP {status} {body[:200]}", "31"))
         return None
@@ -121,31 +136,45 @@ def login(base_url: str) -> str | None:
 
 
 def probe(base_url: str, cookie: str, form_id: str) -> tuple[str, str]:
-    """返回 (结论, 说明)。结论 ∈ ok / field / missing / error。"""
-    url = base_url.rstrip("/") + QUERY_PATH
+    """返回 (结论, 说明)。结论 ∈ ok / field / missing / error。
+
+    报文必须包一层 {"data": {...}}：金蝶 ExecuteBillQuery 不认扁平参数，
+    否则**任何** FormId 都返回「接口参数data不能为空」——那会把错 formId 判成对的。
+    （曾据此得出「9 个候选全命中」的假结论，加反向对照才暴露。）
+    """
+    url = normalize_base(base_url) + QUERY_PATH
     last_msg = ""
     for field in PROBE_FIELDS:
-        payload = {
+        payload = {"data": {
             "FormId": form_id,
-            # TopRowCount=0 + Limit 是翻页正确写法；这里只要一条
-            "TopRowCount": 0,
-            "Limit": 1,
-            "StartRow": 0,
             "FieldKeys": field,
             "FilterString": "",
-        }
+            "OrderString": "",
+            # TopRowCount 必须为 0，>0 会先截断结果集再应用 StartRow
+            "TopRowCount": 0,
+            "StartRow": 0,
+            "Limit": 1,
+        }}
         status, body, _ = http_post(url, payload, cookie)
         text = body.strip()
-        # 正常返回是 JSON 数组（可能为空数组）
-        if status == 200 and text.startswith("["):
-            return "ok", f"字段 {field} 可用"
         last_msg = text[:300]
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return "error", f"响应不是 JSON：{last_msg}"
+        # 成功返回形如 [["CGRK00040"]] 或 []；失败返回 [[{"Result":{...Errors...}}]]
+        if isinstance(parsed, list):
+            if not parsed:
+                return "ok", f"对象存在（字段 {field} 可用，当前无数据）"
+            first = parsed[0]
+            if isinstance(first, list) and all(not isinstance(c, dict) for c in first):
+                return "ok", f"对象存在（字段 {field} 可用，样本 {first[0] if first else '空'}）"
         lowered = text.lower()
-        if "字段" in text or "field" in lowered:
+        if "业务对象不存在" in text or "msgcode\":4" in lowered or "msgcode\": 4" in lowered:
+            return "missing", last_msg
+        if "字段不存在" in text or "msgcode\":9" in lowered or "msgcode\": 9" in lowered:
             # 对象在、字段不在：换下一个探测字段再试
             continue
-        if any(h.lower() in lowered for h in OBJECT_MISSING_HINTS):
-            return "missing", last_msg
         return "error", last_msg
     # 所有探测字段都不存在，但对象显然在（否则会走 missing 分支）
     return "field", last_msg
