@@ -138,12 +138,14 @@ public class WmsKingdeeFormClient {
     public WmsKingdeeResult save(String formId, Map<String, Object> model, boolean isDeleteEntry) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("NeedUpDateFields", new ArrayList<>());
-        data.put("IsDeleteEntry", isDeleteEntry);
-        data.put("IsEntryBatchFill", false);
+        // 与金蝶 WebAPI 官方样例对齐：IsDeleteEntry 传字符串 "true"/"false"，
+        // 不带 IsEntryBatchFill。注：这两项经实测**不是** Save 失败的成因，
+        // 仅为消除与官方样例的差异，便于下次排错时缩小变量。
+        data.put("IsDeleteEntry", isDeleteEntry ? "true" : "false");
         data.put("Model", model);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("FormId", formId);
-        body.put("Data", data);
+        body.put("data", data);
         return post(SAVE_PATH, body, false);
     }
 
@@ -201,7 +203,8 @@ public class WmsKingdeeFormClient {
     @SuppressWarnings("unchecked")
     private WmsKingdeeResult post(String path, Map<String, Object> body, boolean query) {
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        // 显式声明 UTF-8：报文含中文（如 FNote）时不应依赖客户端默认字符集。
+        headers.setContentType(new MediaType(MediaType.APPLICATION_JSON, java.nio.charset.StandardCharsets.UTF_8));
         if (!authService.applyAuth(headers)) {
             return WmsKingdeeResult.fail("金蝶鉴权失败");
         }

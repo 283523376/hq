@@ -33,7 +33,7 @@ import java.util.Map;
  * <p><b>字段依据（2026-11-04 测试账套 6a9aaaadaf7ee6 实测，生成 CGSL016641）</b>：
  * <ul>
  *   <li>头：{@code FStockOrgId}、{@code FBillTypeID}（{@link WmsConstants#KD_BILL_TYPE_PURCHASE_RECEIVE}）、
- *       {@code FDate}、{@code FSupplierID}、{@code FOwnerTypeIdHead}/{@code FOwnerIDHead}、
+ *       {@code FDate}、{@code FSupplierId}、{@code FOwnerTypeIdHead}/{@code FOwnerIdHead}、
  *       {@code FPurOrgId}、{@code FNote}（采购入库单没有头备注，别搞混）；</li>
  *   <li>分录实体键：{@code FDetailEntity}（不是 {@code FBillEntry}、也不是 {@code FEntity}）；</li>
  *   <li>数量：{@code FActReceiveQty} + {@code FReceiveQty} + {@code FReceiveBaseQty} 三个给同一数量；</li>
@@ -184,24 +184,28 @@ public class WmsKingdeePurchaseReceiveWriterImpl implements IWmsKingdeePurchaseR
         if (!supplier.isEmpty()) {
             // 供应商：基础资料按编码绑定（2026-10-28 实测 {"Id":…} 会报必填项缺失）；
             // 先 trim 再判空，纯空格不得发成 {FNumber: ""}。
-            // 字段名是大写 ID（FSupplierID）：小写 FSupplierId 会被当成没传。
-            model.put("FSupplierID", dict(supplier));
+            // 字段名是小写 d（FSupplierId）：2026-11-04 金蝶报错 FieldName 直接给出，
+            // 大写 FSupplierID 会被当成没传（与受托单 STK_OEMInStock 的"大写 ID"规律相反）
+            model.put("FSupplierId", dict(supplier));
         }
-        // 货主是组织：两个 ID 都是大写（FOwnerIDHead），采购组织同为本组织
+        // 货主是组织：字段名小写 d（FOwnerIdHead），采购组织同为本组织
         model.put("FOwnerTypeIdHead", WmsConstants.KD_OWNER_TYPE_ORG);
-        model.put("FOwnerIDHead", dict(orgNumber));
+        model.put("FOwnerIdHead", dict(orgNumber));
         model.put("FPurOrgId", dict(orgNumber));
         model.put("FNote", note(order));
         model.put(ENTRY_KEY, entries);
 
-        log.info("回写金蝶{}({})：WMS 单号 {}，明细 {} 行", BILL_NAME, formId, order.getOrderNo(),
-                entries.size());
+        log.info("回写金蝶{}({})：WMS 单号 {}，明细 {} 行，供应商={}", BILL_NAME, formId,
+                order.getOrderNo(), entries.size(), supplier);
         return formClient.save(formId, model);
     }
 
     private Map<String, Object> entry(WmsInboundDetail detail, BigDecimal qty, String stockCode,
                                       String unit, String orgNumber) {
         Map<String, Object> entry = new LinkedHashMap<>();
+        // 分录内码必须显式给 0：缺了它金蝶会解析错位，把整单头字段当成没传，
+        // 报出来的却是「供应商/货主必填」——误导性极强（2026-11-04 真账套对照实验）
+        entry.put("FEntryID", 0);
         entry.put("FMaterialId", dict(detail.getMaterialCode()));
         // 数量：实收数量与计价/库存数量给同一值（真账套实测三个字段都收）
         entry.put("FActReceiveQty", qty);
@@ -245,10 +249,10 @@ public class WmsKingdeePurchaseReceiveWriterImpl implements IWmsKingdeePurchaseR
     }
 
     private String note(WmsInboundOrder order) {
-        StringBuilder sb = new StringBuilder("WMS采购入库:");
+        StringBuilder sb = new StringBuilder("WMS-RECEIVE:");
         sb.append(order.getOrderNo());
         if (oConvertUtils.isNotEmpty(order.getPurchaseOrderNo())) {
-            sb.append("；采购订单:").append(order.getPurchaseOrderNo());
+            sb.append(";PO:").append(order.getPurchaseOrderNo());
         }
         String text = sb.toString();
         return text.length() <= NOTE_MAX_LENGTH ? text : text.substring(0, NOTE_MAX_LENGTH);

@@ -210,7 +210,7 @@ class WmsKingdeeGapWritersTest {
      * 收料单报文逐字段锁定（2026-11-04 真账套实测口径，生成 CGSL016641）。
      *
      * <p>改动这里的断言等于改金蝶报文：{@code FDetailEntity} 分录键、头的
-     * {@code FSupplierID}/{@code FOwnerIDHead}、分录的 {@code FStockUnitID}/{@code FStockID}
+     * {@code FSupplierId}/{@code FOwnerIdHead}（小写 d）、分录的 {@code FStockUnitID}/{@code FStockID}
      * 都是大写 ID，而 {@code FStockStatusId}/{@code FOwnerId} 是小写 d——大小写写错会被
      * 金蝶当成没传。
      */
@@ -238,11 +238,12 @@ class WmsKingdeeGapWritersTest {
         assertEquals(Map.of("FNumber", WmsConstants.KD_BILL_TYPE_PURCHASE_RECEIVE),
                 model.get("FBillTypeID"));
         assertEquals(Map.of("FNumber", "101"), model.get("FStockOrgId"));
-        assertEquals(Map.of("FNumber", "SUP01"), model.get("FSupplierID"));
-        assertFalse(model.containsKey("FSupplierId"), "小写 FSupplierId 会被当成没传");
+        assertEquals(Map.of("FNumber", "SUP01"), model.get("FSupplierId"),
+                "供应商字段名是小写 d（金蝶报错 FieldName 给出）");
+        assertFalse(model.containsKey("FSupplierID"), "大写 FSupplierID 不应用于收料单头");
         assertEquals("BD_OwnerOrg", model.get("FOwnerTypeIdHead"));
-        assertEquals(Map.of("FNumber", "101"), model.get("FOwnerIDHead"), "货主组织字段名是大写 ID");
-        assertFalse(model.containsKey("FOwnerIdHead"), "小写 Id 会被当成没传");
+        assertEquals(Map.of("FNumber", "101"), model.get("FOwnerIdHead"), "货主组织字段名是小写 d");
+        assertFalse(model.containsKey("FOwnerIDHead"), "大写 FOwnerIDHead 不应用于收料单头");
         assertEquals(Map.of("FNumber", "101"), model.get("FPurOrgId"));
 
         // 分录实体键：FDetailEntity（不是 FBillEntry / FEntity）
@@ -564,7 +565,7 @@ class WmsKingdeeGapWritersTest {
 
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
         verify(formClient).save(eq("PUR_ReceiveBill"), modelCaptor.capture());
-        assertFalse(modelCaptor.getValue().containsKey("FSupplierID"));
+        assertFalse(modelCaptor.getValue().containsKey("FSupplierId"));
     }
 
     /** 来源类型不匹配必须抛错：采购单不能走受托入库、反之亦然。 */
@@ -756,7 +757,7 @@ class WmsKingdeeGapWritersTest {
 
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
         verify(formClient).save(eq("PUR_MRRedReturn"), modelCaptor.capture());
-        assertFalse(modelCaptor.getValue().containsKey("FSupplierID"));
+        assertFalse(modelCaptor.getValue().containsKey("FSupplierId"));
     }
 
     /** 查重失败不能当成「不存在」，否则重试会重复开单。 */
