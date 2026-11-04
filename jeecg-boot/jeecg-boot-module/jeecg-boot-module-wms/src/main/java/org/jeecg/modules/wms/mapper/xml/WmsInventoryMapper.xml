@@ -2,13 +2,21 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.jeecg.modules.wms.mapper.WmsInventoryMapper">
 
-    <!-- 聚合上架：同 (material_id, location_id, batch_no, container_code) 存在则数量累加，否则插入新行 -->
+    <!--
+      聚合上架：同 (material_id, location_id, batch_no, container_code, ownership_type, consignor_id)
+      存在则数量累加，否则插入新行。
+      所有权两列必须显式写：唯一键自 V2.4 起含它们，若沿用固定列清单（漏写），
+      受托到货会落到 DB 默认值 OWNED 上，被并入同四元组的自有行——受托货直接变自有的账。
+      COALESCE 只是兜底旧调用方（不动所有权时按 OWNED/空串落库）。
+    -->
     <insert id="upsertInventory" parameterType="org.jeecg.modules.wms.entity.WmsInventory">
         INSERT INTO wms_inventory
-            (id, material_id, location_id, batch_no, container_code, quantity,
+            (id, material_id, location_id, batch_no, container_code,
+             ownership_type, consignor_id, quantity,
              first_inbound_time, create_by, create_time, update_by, update_time)
         VALUES
-            (#{id}, #{materialId}, #{locationId}, #{batchNo}, #{containerCode}, #{quantity},
+            (#{id}, #{materialId}, #{locationId}, #{batchNo}, #{containerCode},
+             COALESCE(#{ownershipType}, 'OWNED'), COALESCE(#{consignorId}, ''), #{quantity},
              COALESCE(#{firstInboundTime}, NOW()), #{createBy}, NOW(), #{updateBy}, NOW())
         ON DUPLICATE KEY UPDATE
             quantity = quantity + VALUES(quantity),
@@ -219,12 +227,17 @@
         </where>
     </sql>
 
-    <!-- 分页：与游标版同一排序，页面与导出看到的顺序一致 -->
+    <!--
+      分页与游标版同一排序（六列唯一键），页面与导出看到的顺序一致。
+      少排所有权两列会让「同物料/库位/批次/容器、不同受托方」的行并列，
+      MySQL 对并列行的分页边界没有稳定顺序 → 翻页重复/丢行。
+    -->
     <select id="selectLedgerPage" resultType="org.jeecg.modules.wms.vo.WmsInventoryLedgerVO">
         <include refid="ledgerColumns"/>
         <include refid="ledgerFrom"/>
         <include refid="ledgerWhere"/>
-         ORDER BY i.material_id ASC, i.location_id ASC, i.batch_no ASC, i.container_code ASC
+         ORDER BY i.material_id ASC, i.location_id ASC, i.batch_no ASC, i.container_code ASC,
+                  i.ownership_type ASC, i.consignor_id ASC
     </select>
 
     <!--

@@ -112,6 +112,9 @@ public class WmsExportTaskServiceImpl implements IWmsExportTaskService {
     }
 
     private String doCreateLedgerExport(WmsInventoryLedgerQueryDTO query, String operator) {
+        // 入口先归一化：非法 ownershipType 必须在此刻被拒（返回明确文案），
+        // 而不是先落一条任务、等后台线程跑起来才失败——那时用户只看到「导出失败」
+        WmsInventoryLedgerQueryDTO normalized = WmsInventoryLedgerServiceImpl.normalize(query);
         long running = taskMapper.selectCount(new LambdaQueryWrapper<WmsExportTask>()
                 .eq(WmsExportTask::getCreateBy, operator)
                 .in(WmsExportTask::getStatus,
@@ -125,7 +128,7 @@ public class WmsExportTaskServiceImpl implements IWmsExportTaskService {
         WmsExportTask task = new WmsExportTask();
         task.setId(IdWorker.getIdStr());
         task.setTaskType(WmsConstants.EXPORT_TASK_TYPE_INVENTORY_LEDGER);
-        task.setQueryParams(snapshotQuery(query));
+        task.setQueryParams(snapshotQuery(normalized));
         task.setStatus(WmsConstants.EXPORT_STATUS_PENDING);
         task.setCreateBy(operator);
         task.setCreateTime(now);

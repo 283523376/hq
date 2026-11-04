@@ -112,8 +112,7 @@ class WmsConsignedInventoryIsolationTest {
      * <p>比纯文本断言强一档：能证明 {@code <choose>}/{@code <if>} 在默认参数下确实落到 OWNED 分支，
      * 而不是「写了条件但分支求值取错」。
      */
-    private String renderSql(String xmlName, String statementId, java.util.Map<String, Object> params)
-            throws Exception {
+    private BoundSql boundSql(String xmlName, String statementId, Object params) throws Exception {
         String resource = "org/jeecg/modules/wms/mapper/xml/" + xmlName;
         MybatisConfiguration configuration = new MybatisConfiguration();
         try (InputStream in = getClass().getResourceAsStream("/" + resource)) {
@@ -122,8 +121,12 @@ class WmsConsignedInventoryIsolationTest {
         }
         String namespace = "org.jeecg.modules.wms.mapper." + xmlName.replace(".xml", "");
         MappedStatement ms = configuration.getMappedStatement(namespace + "." + statementId);
-        BoundSql boundSql = ms.getBoundSql(params);
-        return boundSql.getSql();
+        return ms.getBoundSql(params);
+    }
+
+    private String renderSql(String xmlName, String statementId, java.util.Map<String, Object> params)
+            throws Exception {
+        return boundSql(xmlName, statementId, params).getSql();
     }
 
     private static java.util.Map<String, Object> params(Object... kv) {
@@ -206,6 +209,57 @@ class WmsConsignedInventoryIsolationTest {
                 "游标的参数必须包含所有权两列");
     }
 
+    /** 页面分页与导出游标必须同一排序：并列行在分页边界上没有稳定顺序，会重复/丢行。 */
+    @Test
+    void ledgerPage_ordersBySameSixColumnsAsCursor() throws Exception {
+        String xml = mapperXml("WmsInventoryMapper.xml");
+        String pageOrder = select(xml, "selectLedgerPage").substring(
+                select(xml, "selectLedgerPage").indexOf("ORDER BY"));
+        String cursorOrder = select(xml, "selectLedgerCursor").substring(
+                select(xml, "selectLedgerCursor").indexOf("ORDER BY"));
+        for (String column : new String[]{"i.material_id", "i.location_id", "i.batch_no",
+                "i.container_code", "i.ownership_type", "i.consignor_id"}) {
+            assertTrue(pageOrder.contains(column), "分页排序缺少 " + column + "：" + pageOrder);
+            assertTrue(cursorOrder.contains(column), "游标排序缺少 " + column + "：" + cursorOrder);
+        }
+    }
+
+    /**
+     * 上架聚合必须把所有权两列写进 INSERT：唯一键自 V2.4 起含它们，
+     * 沿用固定列清单会让受托到货落到 DB 默认值 OWNED、并入同四元组的自有行。
+     */
+    @Test
+    void upsertInventory_carriesOwnershipAndConsignor() throws Exception {
+        WmsInventory consigned = new WmsInventory();
+        consigned.setOwnershipType(WmsConstants.OWNERSHIP_CONSIGNED);
+        consigned.setConsignorId("SUP-1");
+
+        BoundSql bound = boundSql("WmsInventoryMapper.xml", "upsertInventory", consigned);
+        String sql = bound.getSql();
+        assertTrue(sql.contains("ownership_type") && sql.contains("consignor_id"),
+                "upsertInventory 的 INSERT 列必须含所有权两列，实际：" + sql);
+        assertTrue(sql.contains("COALESCE(?, 'OWNED')"),
+                "所有权列必须带 OWNED 兜底（旧调用方不传时落自有），实际：" + sql);
+        assertTrue(sql.contains("COALESCE(?, '')"),
+                "受托方列必须带空串兜底（自有库存的 consignor_id 是空串不是 NULL），实际：" + sql);
+
+        List<String> properties = bound.getParameterMappings().stream()
+                .map(org.apache.ibatis.mapping.ParameterMapping::getProperty).toList();
+        assertTrue(properties.contains("ownershipType"), "所有权必须作为绑定参数：" + properties);
+        assertTrue(properties.contains("consignorId"), "受托方必须作为绑定参数：" + properties);
+
+        // 传入受托来源时，参数取实体值；不传时保持 null，由 COALESCE 在 SQL 侧回落 OWNED/''
+        assertEquals(WmsConstants.OWNERSHIP_CONSIGNED, valueOf(consigned, "ownershipType"));
+        assertEquals("SUP-1", valueOf(consigned, "consignorId"));
+        WmsInventory plain = new WmsInventory();
+        assertEquals(null, valueOf(plain, "ownershipType"));
+        assertEquals(null, valueOf(plain, "consignorId"));
+    }
+
+    private Object valueOf(WmsInventory entity, String property) {
+        return org.apache.ibatis.reflection.SystemMetaObject.forObject(entity).getValue(property);
+    }
+
     @Test
     void reconcileAndDiffLookupDefaultOwned() throws Exception {
         String xml = mapperXml("WmsInventoryMapper.xml");
@@ -241,7 +295,9 @@ class WmsConsignedInventoryIsolationTest {
                 "WmsBatchTraceMapper.xml"}) {
             // 注释里会引用反例，先剔掉注释再扫 SQL 正文
             String sql = mapperXml(name).replaceAll("(?s)<!--.*?-->", "");
-            assertFalse(sql.contains("<> 'CONSIGNED'") || sql.contains("!= 'CONSIGNED'"),
+            // XML 里 `<>` 必须写成 &lt;&gt;，只查字面 `<>` 永远抓不到真实违规
+            assertFalse(sql.contains("<> 'CONSIGNED'") || sql.contains("&lt;&gt; 'CONSIGNED'")
+                            || sql.contains("!= 'CONSIGNED'"),
                     name + " 不允许用负向匹配排除受托行：NULL 存量行会被一起漏掉");
         }
     }

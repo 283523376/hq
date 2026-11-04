@@ -62,7 +62,13 @@ public class WmsInventoryLedgerController {
     @GetMapping(value = "/page")
     @RequiresPermissions("wms:inventory:ledger")
     public Result<IPage<WmsInventoryLedgerVO>> page(WmsInventoryLedgerQueryDTO query) {
-        return Result.OK(ledgerService.queryPage(query));
+        try {
+            return Result.OK(ledgerService.queryPage(query));
+        } catch (RuntimeException e) {
+            // 与导出口径一致：筛选条件非法时逐字透出拒绝文案，
+            // 不要交给全局异常处理器（会给未捕获异常加前缀，前端看不懂到底哪项填错了）
+            return Result.error(e.getMessage());
+        }
     }
 
     @AutoLog(value = "库存-台账导出", operateType = 1)

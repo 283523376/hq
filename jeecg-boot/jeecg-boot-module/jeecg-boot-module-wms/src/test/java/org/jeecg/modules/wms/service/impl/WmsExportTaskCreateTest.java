@@ -78,6 +78,20 @@ class WmsExportTaskCreateTest {
         assertNull(saved.getExpireTime(), "排队中的任务还没有终态，不应有清理时点");
     }
 
+    /** 非法库存类型要在入口就拒，不能先落任务再等后台线程失败（用户只看到「导出失败」看不出原因）。 */
+    @Test
+    void rejectsIllegalOwnershipBeforePersistingTask() {
+        WmsInventoryLedgerQueryDTO query = new WmsInventoryLedgerQueryDTO();
+        query.setOwnershipType("BORROWED");
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.createLedgerExport(query, "zhangsan"));
+
+        assertTrue(ex.getMessage().contains("OWNED"), "实际文案：" + ex.getMessage());
+        verify(taskMapper, never()).insert(any(WmsExportTask.class));
+        verify(executor, never()).execute(any());
+    }
+
     @Test
     void rejectsWhenSameUserHasRunningTask() {
         when(taskMapper.selectCount(any())).thenReturn(1L);

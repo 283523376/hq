@@ -23,7 +23,11 @@ import java.util.List;
 public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
 
     /**
-     * 聚合上架：同 (material_id, location_id, batch_no, container_code) 存在则数量累加，否则插入新行。
+     * 聚合上架：同 (material_id, location_id, batch_no, container_code, ownership_type, consignor_id)
+     * 存在则数量累加，否则插入新行。
+     *
+     * <p>所有权两列必须入 SQL（V2.4 六列唯一键）：漏写会让受托到货落到 DB 默认值 OWNED，
+     * 被并入同四元组的自有行。实体上未设置时按 {@code OWNED} / 空串兜底，兼容旧调用方。
      *
      * @return 影响行数（插入=1，累加=2）
      */
@@ -88,8 +92,9 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
     /**
      * 库存台账分页（KC-004）。
      *
-     * <p>排序按 `wms_inventory` 唯一键的四列，与 {@link #selectLedgerCursor} 保持一致，
-     * 这样页面看到的顺序和导出文件里的一致。
+     * <p>排序按 `wms_inventory` 唯一键的六列（V2.4 起含 ownership_type / consignor_id），
+     * 与 {@link #selectLedgerCursor} 完全一致，这样页面看到的顺序和导出文件里的一致；
+     * 少排所有权两列时「同四元组、不同受托方」的行会并列，分页边界不稳定。
      */
     IPage<WmsInventoryLedgerVO> selectLedgerPage(Page<WmsInventoryLedgerVO> page,
                                                  @Param("q") WmsInventoryLedgerQueryDTO q);
