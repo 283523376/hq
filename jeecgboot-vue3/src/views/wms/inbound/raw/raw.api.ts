@@ -18,12 +18,12 @@ export const putawayRawInbound = (id: string, params) =>
   defHttp.post({ url: `${RAW}/${id}/putaway`, params }, { successMessageMode: 'none' });
 
 /**
- * 入库单分页。
+ * 原材料入库单分页（`source_type` 为 PURCHASE/CONSIGNED 的单据）。
  *
- * 原材料入库与历史采购入库同表（`wms_inbound_order`），后端没有独立的原材料分页端点，
- * 这里复用 `/wms/inbound/list`，前端按 `sourceType` / `inboundType` 区分来源与处理方式。
+ * 不用 `/wms/inbound/list`：那是全量入库单，会混入生产入库与历史采购收料单，
+ * 而那些单的 `source_type` 为空，前端只能靠状态猜「处理方式」，会误判成大改小。
  */
-export const listRawInbound = (params?) => defHttp.get({ url: '/wms/inbound/list', params });
+export const listRawInbound = (params?) => defHttp.get({ url: `${RAW}/page`, params });
 
 /** 单据详情（单据 + 明细 + 检验任务），上架弹层取明细用 */
 export const getRawInboundDetail = (id: string) => defHttp.get({ url: `/wms/inbound/${id}` });

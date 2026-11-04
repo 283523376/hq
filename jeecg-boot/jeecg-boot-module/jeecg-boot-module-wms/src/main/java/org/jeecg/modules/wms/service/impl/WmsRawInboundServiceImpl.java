@@ -1,8 +1,11 @@
 package org.jeecg.modules.wms.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
@@ -560,5 +563,27 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
             next = Integer.parseInt(latest.get(0).getOrderNo().substring(prefix.length() + date.length())) + 1;
         }
         return prefix + date + String.format("%04d", next);
+    }
+
+    @Override
+    public IPage<WmsInboundOrder> listPage(int pageNo, int pageSize, String sourceType,
+                                           String inboundStatus, String orderNo) {
+        QueryWrapper<WmsInboundOrder> qw = new QueryWrapper<>();
+        // 只取原材料通道的单据：source_type 为空的都是旧采购收料/生产入库，不属本页
+        if (oConvertUtils.isNotEmpty(sourceType)) {
+            qw.eq("source_type", sourceType.trim());
+        } else {
+            qw.in("source_type", WmsConstants.INBOUND_SOURCE_PURCHASE,
+                    WmsConstants.INBOUND_SOURCE_CONSIGNED);
+        }
+        if (oConvertUtils.isNotEmpty(inboundStatus)) {
+            qw.eq("inbound_status", inboundStatus.trim());
+        }
+        if (oConvertUtils.isNotEmpty(orderNo)) {
+            String kw = orderNo.trim();
+            qw.and(w -> w.like("order_no", kw).or().like("erp_bill_no", kw));
+        }
+        qw.orderByDesc("create_time");
+        return page(new Page<>(pageNo, pageSize), qw);
     }
 }

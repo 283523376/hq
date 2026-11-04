@@ -78,6 +78,8 @@ class WmsGapControllerTest {
     }
 
     private static final List<Endpoint> ENDPOINTS = List.of(
+            new Endpoint(WmsRawInboundController.class, "page", "wms:inbound:consigned",
+                    false, null, null),
             new Endpoint(WmsRawInboundController.class, "receive", "wms:inbound:consigned",
                     true, WmsConstants.AUDIT_BIZ_INBOUND, WmsConstants.AUDIT_ACTION_CREATE),
             new Endpoint(WmsRawInboundController.class, "putaway", "wms:inbound:consigned",
@@ -148,6 +150,20 @@ class WmsGapControllerTest {
         Result<WmsInboundOrder> result = controller.receive(new WmsRawInboundDTO());
 
         assertRawError(result, "ERP 订单不存在：PO001");
+    }
+
+    /** 原材料列表必须走专用分页：旧的 /wms/inbound/list 会混入生产入库与历史收料单。 */
+    @Test
+    void rawInboundPage_forwardsFiltersToService() {
+        IWmsRawInboundService service = mock(IWmsRawInboundService.class);
+        when(service.listPage(1, 10, "CONSIGNED", "待分配", "RK001"))
+                .thenReturn(new Page<>(1, 10));
+        WmsRawInboundController controller = new WmsRawInboundController(service);
+
+        Result<IPage<WmsInboundOrder>> result = controller.page(1, 10, "CONSIGNED", "待分配", "RK001");
+
+        assertTrue(result.isSuccess(), result.getMessage());
+        verify(service).listPage(1, 10, "CONSIGNED", "待分配", "RK001");
     }
 
     @Test

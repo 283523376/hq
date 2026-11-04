@@ -1,5 +1,6 @@
 package org.jeecg.modules.wms.service;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.jeecg.common.system.base.service.JeecgService;
 import org.jeecg.modules.wms.dto.WmsPutawayDTO;
 import org.jeecg.modules.wms.dto.WmsRawInboundDTO;
@@ -49,4 +50,17 @@ public interface IWmsRawInboundService extends JeecgService<WmsInboundOrder> {
      * @throws RuntimeException 单据/状态/库位/物料校验失败，或金蝶配置未就绪
      */
     void putawayRaw(String inboundId, WmsPutawayDTO dto, String operator);
+
+    /**
+     * 原材料入库单分页：<b>只含 {@code source_type} 为 PURCHASE/CONSIGNED 的单据</b>。
+     *
+     * <p>不复用 {@code /wms/inbound/list}：那是全量入库单（含生产入库、历史采购收料），
+     * 混在一起既分不清口径，也会把 {@code source_type=NULL} 的旧单渲染成「大改小/直入」。
+     *
+     * @param sourceType    来源类型（PURCHASE/CONSIGNED），空=不限
+     * @param inboundStatus 单据状态，空=不限
+     * @param orderNo       入库单号/ERP 单号，任意连续子串模糊
+     */
+    IPage<WmsInboundOrder> listPage(int pageNo, int pageSize, String sourceType,
+                                    String inboundStatus, String orderNo);
 }

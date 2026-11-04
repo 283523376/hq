@@ -1,5 +1,6 @@
 package org.jeecg.modules.wms.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
@@ -12,10 +13,12 @@ import org.jeecg.modules.wms.dto.WmsRawInboundDTO;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.service.IWmsRawInboundService;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -40,6 +43,18 @@ public class WmsRawInboundController {
 
     public WmsRawInboundController(IWmsRawInboundService rawInboundService) {
         this.rawInboundService = rawInboundService;
+    }
+
+    @Operation(summary = "原材料入库-分页（只含外购/受托通道的单据）")
+    @GetMapping(value = "/page")
+    @RequiresPermissions("wms:inbound:consigned")
+    public Result<IPage<WmsInboundOrder>> page(
+            @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
+            @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
+            @RequestParam(name = "sourceType", required = false) String sourceType,
+            @RequestParam(name = "inboundStatus", required = false) String inboundStatus,
+            @RequestParam(name = "orderNo", required = false) String orderNo) {
+        return Result.OK(rawInboundService.listPage(pageNo, pageSize, sourceType, inboundStatus, orderNo));
     }
 
     @Operation(summary = "原材料入库-到货登记（外购/受托 × 段差棒直入/大改小）")
