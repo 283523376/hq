@@ -921,4 +921,66 @@ public final class WmsConstants {
 
     /** 审计业务类型：上位系统同步（差异标记/发起盘点等，spec §2.9）。 */
     public static final String AUDIT_BIZ_SYNC = "上位同步";
+
+    // ==================== V2.4 受托库存 / 改制 / 不良（spec 2026-11-04） ====================
+
+    /** 库存所有权：自有（默认值；自有库存的 {@code consignor_id} 为空串）。 */
+    public static final String OWNERSHIP_OWNED = "OWNED";
+
+    /**
+     * 库存所有权：受托（货权属受托方）。
+     *
+     * <p>写入时 {@code consignor_id} 必须非空——受托行不带受托方会被六列唯一键
+     * 与自有库存分开，却也无法归属到任何一家，退货/报废都找不到账。
+     */
+    public static final String OWNERSHIP_CONSIGNED = "CONSIGNED";
+
+    /** 入库来源类型：外购（ERP 采购订单驱动的到货登记，spec §3.2）。 */
+    public static final String INBOUND_SOURCE_PURCHASE = "PURCHASE";
+
+    /** 入库来源类型：受托（受托加工材料，入受托库存并回写受托加工材料入库单）。 */
+    public static final String INBOUND_SOURCE_CONSIGNED = "CONSIGNED";
+
+    /**
+     * 到货处理方式：大改小（CONVERT）。
+     *
+     * <p>原材料直送车间、**不入 WMS 库存**；WMS 只登记改制单投入数量，
+     * 产出半成品走生产入库（RK-002 通道）。
+     */
+    public static final String INBOUND_HANDLING_CONVERT = "CONVERT";
+
+    /** 到货处理方式：段差棒直入（分配立库货位、设备入库后按自有库存入账）。 */
+    public static final String INBOUND_HANDLING_DIRECT = "DIRECT";
+
+    /** 改制单状态：草稿（已建单，可执行完成或取消）。 */
+    public static final String CONVERSION_STATUS_DRAFT = "DRAFT";
+
+    /** 改制单状态：执行中（已完成前的中转态，预留给「完成中」的并发保护）。 */
+    public static final String CONVERSION_STATUS_RUNNING = "RUNNING";
+
+    /** 改制单状态：已完成（终态；已生成生产入库单，重复完成必须拒绝）。 */
+    public static final String CONVERSION_STATUS_DONE = "DONE";
+
+    /** 改制单状态：已取消（终态）。 */
+    public static final String CONVERSION_STATUS_CANCELLED = "CANCELLED";
+
+    /** 不良来源类型：生产（由生产入库单的不良数量登记，入自有废品仓）。 */
+    public static final String DEFECT_SOURCE_PRODUCTION = "PRODUCTION";
+
+    /** 不良来源类型：受托（由受托到货登记产生，扣减受托库存且不转自有）。 */
+    public static final String DEFECT_SOURCE_CONSIGNED = "CONSIGNED";
+
+    /** 不良处置方式：入废品仓（受托不良仍记在受托方名下，不转自有）。 */
+    public static final String DEFECT_DISPOSAL_SCRAP = "SCRAP";
+
+    /** 不良处置方式：退货（受托不良生成采购退货单，`wms_defect_record.return_bill_no` 回存单号）。 */
+    public static final String DEFECT_DISPOSAL_RETURN = "RETURN";
+
+    /**
+     * 物料分类类型：原材料（V2.4 恢复外购/受托原材料入库）。
+     *
+     * <p>与 {@link #CATEGORY_TYPE_HALF_FINISHED} 等分类同一维度；新增该值只是让
+     * {@code saveDetails} 能落原材料分类，不改变既有分类口径。
+     */
+    public static final String CATEGORY_TYPE_RAW = "原材料";
 }

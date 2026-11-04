@@ -62,9 +62,14 @@ public class WmsConversionOrder extends JeecgEntity {
     @Schema(description = "产出数量")
     private java.math.BigDecimal outputQty;
 
-    /** 单据状态：草稿 / 已完成 / 已取消。 */
+    /**
+     * 单据状态四态：DRAFT 草稿 / RUNNING 执行中 / DONE 已完成 / CANCELLED 已取消。
+     *
+     * <p>取值见 {@link org.jeecg.modules.wms.constant.WmsConstants#CONVERSION_STATUS_DRAFT} 等四个常量，禁止写字面量；
+     * 状态机与合法转移由 {@code WmsConversionServiceImpl} 负责。
+     */
     @Excel(name = "状态", width = 12)
-    @Schema(description = "单据状态：草稿 / 已完成 / 已取消")
+    @Schema(description = "单据状态：DRAFT 草稿 / RUNNING 执行中 / DONE 已完成 / CANCELLED 已取消")
     private String status;
 
     /** 操作人。 */

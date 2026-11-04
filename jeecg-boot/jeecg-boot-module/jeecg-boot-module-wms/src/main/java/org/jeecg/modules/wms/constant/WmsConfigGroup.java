@@ -17,7 +17,14 @@ public enum WmsConfigGroup {
     SYNC("sync", "上位系统同步范围"),
     DEFECT("defect", "不良品存放规则"),
     DEVICE("device", "设备告警阈值"),
-    AUDIT("audit", "审计留痕");
+    AUDIT("audit", "审计留痕"),
+    /**
+     * 金蝶单据 formId（V2.4 spec §6）。
+     *
+     * <p>formId 由 BOS 控制台确认后由管理员录入；单独成组是为了让「未配置」在配置页一眼可见，
+     * 不必翻到同步组里逐项找。
+     */
+    KINGDEE("kingdee", "金蝶单据");
 
     private final String code;
     private final String name;
@@ -47,7 +54,7 @@ public enum WmsConfigGroup {
 
     /** 前端菜单顺序。 */
     public static List<WmsConfigGroup> orderedAsList() {
-        return Arrays.asList(INVENTORY, SYNC, DEFECT, DEVICE, AUDIT);
+        return Arrays.asList(INVENTORY, SYNC, DEFECT, DEVICE, AUDIT, KINGDEE);
     }
 
     public static WmsConfigGroup[] ordered() {

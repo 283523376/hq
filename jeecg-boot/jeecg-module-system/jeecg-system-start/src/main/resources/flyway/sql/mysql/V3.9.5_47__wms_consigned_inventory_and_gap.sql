@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS `wms_conversion_order` (
   `output_material_code`  varchar(64)    NOT NULL COMMENT '产出物料编码',
   `output_batch_no`       varchar(64)    NOT NULL DEFAULT '' COMMENT '产出批次号',
   `output_qty`            decimal(20,6)  NOT NULL COMMENT '产出计划数量',
-  `status`                varchar(16)    NOT NULL DEFAULT '草稿' COMMENT '状态：草稿 / 已完成 / 已取消',
+  `status`                varchar(16)    NOT NULL DEFAULT '草稿' COMMENT '状态：DRAFT 草稿 / RUNNING 执行中 / DONE 已完成 / CANCELLED 已取消',
   `operator`              varchar(64)    DEFAULT NULL COMMENT '操作人',
   `erp_bill_no`           varchar(64)    DEFAULT NULL COMMENT '回写的金蝶单据号',
   `create_by`             varchar(50)    DEFAULT NULL COMMENT '创建人',

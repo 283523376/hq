@@ -54,7 +54,32 @@ public enum WmsConfigKey {
             String.valueOf(WmsConstants.DEVICE_OFFLINE_THRESHOLD_SECONDS), null),
     DEVICE_ALERT_THROTTLE_MINUTES("device.alert.throttle.minutes", "同一设备告警最小间隔（分钟）",
             WmsConfigGroup.DEVICE, WmsConfigType.INT,
-            String.valueOf(WmsConstants.DEVICE_ALERT_THROTTLE_MINUTES), null);
+            String.valueOf(WmsConstants.DEVICE_ALERT_THROTTLE_MINUTES), null),
+
+    // ---------------------------------------------------------------- 金蝶单据 formId（V2.4）
+    // spec §6：formId 以 BOS 在线控制台确认为准，确认前一律留空（空 = 未配置）。
+    // 下游 Reader/Writer 读到空串必须显式报错，不得静默返回空结果或跳过回写 ——
+    // 静默会让「假成功」一路走到月末结账。默认值绝不能填猜测的 formId。
+
+    /** 受托加工材料入库单 FormId（WMS→ERP 回写，spec §3.2 受托入库）。 */
+    KD_FORM_CONSIGNED_INBOUND("kingdee.form.consigned-inbound", "受托加工材料入库单 FormId",
+            WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
+
+    /** 采购入库单 FormId（WMS→ERP 回写，spec §3.2 段差棒直入）。 */
+    KD_FORM_PURCHASE_INBOUND("kingdee.form.purchase-inbound", "采购入库单 FormId",
+            WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
+
+    /** 采购退货单 FormId（WMS→ERP 回写，spec §3.3 受托不良退货）。 */
+    KD_FORM_PURCHASE_RETURN("kingdee.form.purchase-return", "采购退货单 FormId",
+            WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
+
+    /** 采购订单 FormId（ERP→WMS 读取，spec §3.2 到货登记校验）。 */
+    KD_FORM_PURCHASE_ORDER("kingdee.form.purchase-order", "采购订单 FormId",
+            WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
+
+    /** 受托加工订单 FormId（ERP→WMS 读取，spec §3.2 受托到货登记校验）。 */
+    KD_FORM_CONSIGNED_ORDER("kingdee.form.consigned-order", "受托加工订单 FormId",
+            WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null);
 
     private final String key;
     private final String label;
