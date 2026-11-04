@@ -291,6 +291,12 @@ public final class WmsConstants {
     /** 入库类型：采购入库。 */
     public static final String INBOUND_TYPE_PURCHASE = "采购入库";
 
+    /** 入库类型：外购原材料入库（V2.4 RK-001 段差棒直入 / 大改小登记）。 */
+    public static final String INBOUND_TYPE_RAW_PURCHASE = "外购原材料入库";
+
+    /** 入库类型：受托原材料入库（V2.4 RK-001，入受托库存并回写受托加工材料入库单）。 */
+    public static final String INBOUND_TYPE_RAW_CONSIGNED = "受托原材料入库";
+
     /** 单据状态：待检验（收料后的初始状态）。 */
     public static final String INBOUND_STATUS_PENDING_INSPECT = "待检验";
     /** 单据状态：待分配（检验合格后）。 */

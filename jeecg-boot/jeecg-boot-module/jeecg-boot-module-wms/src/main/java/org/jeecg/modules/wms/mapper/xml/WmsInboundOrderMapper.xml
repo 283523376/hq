@@ -22,12 +22,20 @@
                )
     </update>
 
-    <!-- 取待补偿单据：每轮限量，按最后尝试时间升序（最久没动的优先）。 -->
+    <!--
+      取待补偿单据：每轮限量，按最后尝试时间升序（最久没动的优先）。
+
+      排除 source_type 非空的「原材料到货单」（V2.4 RK-001）：它们走
+      WmsRawInboundServiceImpl.putawayRaw 内的可配置金蝶 Writer 回写，而不是旧 HTTP 网关。
+      旧网关未配置地址时按「模拟成功」返回，补偿任务会把真实失败刷成同步成功——必须在这里挡掉。
+      存量采购入库单 source_type 为 NULL，仍按原口径参与补偿。
+    -->
     <select id="selectSyncCandidates" resultType="org.jeecg.modules.wms.entity.WmsInboundOrder">
         SELECT *
           FROM wms_inbound_order
          WHERE deleted_at = 0
            AND inbound_status = '已审核'
+           AND (source_type IS NULL OR source_type = '')
            AND (
                  sync_status IN ('待同步', '同步失败')
                  OR (sync_status = '同步中' AND (last_sync_time IS NULL OR last_sync_time &lt; #{staleBefore}))

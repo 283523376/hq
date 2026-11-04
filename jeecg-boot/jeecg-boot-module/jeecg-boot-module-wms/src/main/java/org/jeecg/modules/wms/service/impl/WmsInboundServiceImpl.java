@@ -486,8 +486,10 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
                 throw new RuntimeException("物料不存在");
             }
             String categoryType = resolveCategoryType(material);
+            // V2.4 恢复原材料（RK-001 外购/受托到货）；其余分类仍不在采购入库范围内
             if (!WmsConstants.CATEGORY_TYPE_HALF_FINISHED.equals(categoryType)
-                    && !WmsConstants.CATEGORY_TYPE_AUXILIARY.equals(categoryType)) {
+                    && !WmsConstants.CATEGORY_TYPE_AUXILIARY.equals(categoryType)
+                    && !WmsConstants.CATEGORY_TYPE_RAW.equals(categoryType)) {
                 throw new RuntimeException(String.format("物料[%s]类型不支持采购入库", material.getMaterialName()));
             }
             WmsInboundDetail detail = new WmsInboundDetail()
