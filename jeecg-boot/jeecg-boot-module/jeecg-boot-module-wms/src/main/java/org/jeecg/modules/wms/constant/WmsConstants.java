@@ -513,6 +513,10 @@ public final class WmsConstants {
     public static final String AUDIT_BIZ_MASTER_DATA = "主数据";
     /** 审计业务类型：销售订单（ERP 只读快照）。 */
     public static final String AUDIT_BIZ_SALES_ORDER = "销售订单";
+    /** 审计业务类型：改制单（大改小，V2.4）。 */
+    public static final String AUDIT_BIZ_CONVERSION = "改制单";
+    /** 审计业务类型：不良品记录（RK-005 生产/受托两类来源）。 */
+    public static final String AUDIT_BIZ_DEFECT_RECORD = "不良品记录";
 
     /** 审计动作：新建。 */
     public static final String AUDIT_ACTION_CREATE = "创建";
@@ -532,6 +536,20 @@ public final class WmsConstants {
     public static final String AUDIT_ACTION_UNBIND = "解绑";
     /** 审计动作：导出（SB-001 待推送包导出等，2026-11-03 新增）。 */
     public static final String AUDIT_ACTION_EXPORT = "导出";
+    /** 审计动作：新增单据（V2.4 口径；与「创建」同义，按 spec 文案保留「新增」）。 */
+    public static final String AUDIT_ACTION_ADD = "新增";
+    /** 审计动作：到货登记（外购/受托原材料入库，V2.4）。 */
+    public static final String AUDIT_ACTION_RECEIVE = "登记";
+    /** 审计动作：上架（无检验上架，V2.4）。 */
+    public static final String AUDIT_ACTION_PUTAWAY = "上架";
+    /** 审计动作：完成（改制单完成，V2.4）。 */
+    public static final String AUDIT_ACTION_COMPLETE = "完成";
+    /** 审计动作：取消（撤销未完成的单据，如改制单取消；与「作废」区分）。 */
+    public static final String AUDIT_ACTION_CANCEL_BILL = "取消";
+    /** 审计动作：退货（受托不良退货，V2.4）。 */
+    public static final String AUDIT_ACTION_RETURN = "退货";
+    /** 审计动作：取消领料（CK-001，V2.4）。 */
+    public static final String AUDIT_ACTION_CANCEL_PICK = "取消领料";
 
     /** 审计日志清理任务 id。 */
     public static final String AUDIT_CLEAN_JOB_ID = "wmsAuditCleanJob";

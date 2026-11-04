@@ -83,6 +83,14 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
     @RequiresPermissions("wms:inbound:putaway")
     public Result<Void> putaway(@PathVariable("id") String id, @RequestBody WmsPutawayDTO dto) {
         try {
+            WmsInboundOrder order = service.getById(id);
+            if (order == null) {
+                return Result.error("单据不存在");
+            }
+            String rejection = rejectRawChannel(order, false);
+            if (rejection != null) {
+                return Result.error(rejection);
+            }
             service.putaway(id, dto);
             return Result.OK("上架成功", null);
         } catch (RuntimeException e) {
@@ -98,6 +106,10 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
             WmsInboundOrder order = service.getById(id);
             if (order == null) {
                 return Result.error("单据不存在");
+            }
+            String rejection = rejectRawChannel(order, true);
+            if (rejection != null) {
+                return Result.error(rejection);
             }
             if (!org.jeecg.modules.wms.constant.WmsConstants.INBOUND_STATUS_AUDITED
                     .equals(order.getInboundStatus())) {
@@ -163,6 +175,24 @@ public class WmsInboundController extends JeecgController<WmsInboundOrder, IWmsI
 
     @Autowired
     private org.jeecg.modules.wms.service.IWmsMaterialCategoryService categoryService;
+
+    /**
+     * 外购/受托原材料单据（{@code sourceType} 非空）只能走 {@code /wms/raw-inbound} 新通道。
+     *
+     * <p>旧上架只写自有库存行（{@code ownership_type=OWNED}），受托货会被并入自有账；
+     * 旧同步走旧 ERP 网关，对这两类单据是「假成功」。返回 null 表示可以放行。
+     */
+    private String rejectRawChannel(WmsInboundOrder order, boolean sync) {
+        if (oConvertUtils.isEmpty(order.getSourceType())) {
+            return null;
+        }
+        String putawayPath = "/wms/raw-inbound/" + order.getId() + "/putaway";
+        if (sync) {
+            return "该入库单走外购/受托原材料入库通道，旧通道同步已停用；"
+                    + "请在 " + putawayPath + " 上架时完成回写";
+        }
+        return "该入库单走外购/受托原材料入库通道，请使用 " + putawayPath + " 上架";
+    }
 
     /** 物料 → 目标库区类型（统一走 {@link org.jeecg.modules.wms.util.WmsInboundRouting}）。 */
     private String resolveWarehouseTypeForMaterial(org.jeecg.modules.wms.entity.WmsMaterial material) {

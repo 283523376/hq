@@ -120,6 +120,8 @@ class WmsRawInboundServiceImplTest {
         when(detailMapper.updateById(any(WmsInboundDetail.class))).thenReturn(1);
         when(locationMapper.update(any(), any())).thenReturn(1);
         when(inventoryMapper.upsertInventory(any(WmsInventory.class))).thenReturn(1);
+        // V2.4 Task 9：外购必须带供应商，helper dto() 统一填 sup1
+        when(supplierService.getById("sup1")).thenReturn(supplier());
     }
 
     // ------------------------------------------------------------------ 到货登记
@@ -146,6 +148,21 @@ class WmsRawInboundServiceImplTest {
         assertEquals("M001", detail.getValue().getMaterialCode());
         assertEquals("B20261104", detail.getValue().getBatchNo());
         assertEquals(0, new BigDecimal("10").compareTo(detail.getValue().getQuantity()));
+    }
+
+    @Test
+    void receivePurchaseWithoutSupplierIsRejected() {
+        WmsRawInboundDTO dto = dto(WmsConstants.INBOUND_SOURCE_PURCHASE,
+                WmsConstants.INBOUND_HANDLING_DIRECT);
+        dto.setSupplierId("  ");
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> spy.receive(dto, OPERATOR));
+
+        assertTrue(e.getMessage().contains("供应商"), e.getMessage());
+        verify(orderMapper, never()).insert(any(WmsInboundOrder.class));
+        // 缺供应商在 ERP 查询之前就拒绝，不能白调金蝶
+        verify(reader, never()).queryPurchaseOrder(anyString());
     }
 
     @Test
@@ -457,6 +474,8 @@ class WmsRawInboundServiceImplTest {
         dto.setSourceType(sourceType);
         dto.setHandlingType(handlingType);
         dto.setErpOrderNo(ERP_ORDER_NO);
+        // 外购供应商必填（V2.4 Task 9）；受托场景由 service 忽略该字段
+        dto.setSupplierId("sup1");
         WmsRawInboundDTO.Item item = new WmsRawInboundDTO.Item();
         item.setMaterialId("mat1");
         item.setQuantity(new BigDecimal("10"));

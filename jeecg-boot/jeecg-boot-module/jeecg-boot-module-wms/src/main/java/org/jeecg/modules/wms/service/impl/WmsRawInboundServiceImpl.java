@@ -151,6 +151,11 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         if (consigned && consignorId.isEmpty()) {
             throw new RuntimeException("受托到货必须指定受托方（consignorId）");
         }
+        // 外购必须带供应商：金蝶采购入库单的 FSupplierId 是必填项，缺了回写必失败；
+        // 放在 ERP 查询之前，避免白调一次接口。
+        if (!consigned && trim(dto.getSupplierId()).isEmpty()) {
+            throw new RuntimeException("外购到货必须指定供应商（supplierId），否则采购入库单回写会缺少 FSupplierId");
+        }
 
         // 1) ERP 订单校验：金蝶侧查不到这张单就不允许登记（开关关/未配 formId 同样失败）
         queryErpOrder(consigned, erpOrderNo);

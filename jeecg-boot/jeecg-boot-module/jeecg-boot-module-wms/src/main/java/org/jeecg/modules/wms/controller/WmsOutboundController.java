@@ -15,10 +15,12 @@ import org.jeecg.modules.wms.dto.WmsOutboundPickCreateDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSampleCreateDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundReviewDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSalesCreateDTO;
+import org.jeecg.modules.wms.dto.WmsPickCancelDTO;
 import org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.util.WmsSyncAutoGate;
+import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.service.IWmsOutboundService;
 import org.jeecg.modules.wms.service.IWmsOutboundSyncService;
 import org.jeecg.modules.wms.service.IWmsOutboundTaskService;
@@ -111,6 +113,21 @@ public class WmsOutboundController extends JeecgController<WmsOutboundOrder, IWm
     public Result<WmsOutboundOrder> createPick(@RequestBody WmsOutboundPickCreateDTO dto) {
         try {
             return Result.OK("创建成功", service.createPick(dto));
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_OUTBOUND, action = WmsConstants.AUDIT_ACTION_CANCEL_PICK,
+            bizNoSpEL = "#id")
+    @Operation(summary = "出库-取消领料并通知工单创建人（CK-001）")
+    @PostMapping(value = "/pick/{id}/cancel")
+    @RequiresPermissions("wms:outbound:pick:cancel")
+    public Result<Void> cancelPick(@PathVariable("id") String id,
+                                   @RequestBody(required = false) WmsPickCancelDTO dto) {
+        try {
+            service.cancelPick(id, dto == null ? null : dto.getReason(), WmsUtils.currentUsername());
+            return Result.OK("取消成功", null);
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());
         }
