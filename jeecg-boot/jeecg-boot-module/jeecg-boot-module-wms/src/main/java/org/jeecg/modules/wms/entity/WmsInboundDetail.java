@@ -55,6 +55,10 @@ public class WmsInboundDetail extends JeecgEntity {
     @Schema(description = "批次号")
     private String batchNo;
 
+    /** 来源物料编码（改制投入物料；普通采购入库为空）。 */
+    @Schema(description = "来源物料编码")
+    private String sourceMaterialCode;
+
     /** 删除时间戳（epoch 毫秒）：0=未删除。 */
     @TableLogic(value = "0", delval = "UNIX_TIMESTAMP(NOW(3)) * 1000")
     @Schema(description = "删除时间戳(epoch ms)：0=未删除")

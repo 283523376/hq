@@ -142,6 +142,23 @@ public class WmsOutboundOrder extends JeecgEntity {
     @Schema(description = "完成时间")
     private Date completeTime;
 
+    /** 领料人ID（CK-001，取当前登录账号）。 */
+    @Schema(description = "领料人ID")
+    private String pickerId;
+
+    /** 领料人姓名。 */
+    @Excel(name = "领料人", width = 16)
+    @Schema(description = "领料人姓名")
+    private String pickerName;
+
+    /** 领料设备ID（wms_device.id）。 */
+    @Schema(description = "领料设备ID")
+    private String deviceId;
+
+    /** 取消原因（领料物料不符/库存不足等）。 */
+    @Schema(description = "取消原因")
+    private String cancelReason;
+
     /** 备注。 */
     @Excel(name = "备注", width = 20)
     @Schema(description = "备注")

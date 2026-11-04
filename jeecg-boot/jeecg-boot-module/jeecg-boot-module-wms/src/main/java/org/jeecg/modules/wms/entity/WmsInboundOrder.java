@@ -74,6 +74,14 @@ public class WmsInboundOrder extends JeecgEntity {
     @Schema(description = "最后一次同步尝试时间")
     private java.util.Date lastSyncTime;
 
+    /** 入库来源类型：PURCHASE 外购 / CONSIGNED 受托。 */
+    @Schema(description = "入库来源类型：PURCHASE 外购 / CONSIGNED 受托")
+    private String sourceType;
+
+    /** 改制单ID（wms_conversion_order.id）：大改小产出回填。 */
+    @Schema(description = "改制单ID")
+    private String conversionOrderId;
+
     /** 审核人（自动审核为 system） */
     @Schema(description = "审核人")
     private String auditBy;

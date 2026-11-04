@@ -47,6 +47,19 @@ public class WmsInventory extends JeecgEntity {
     private java.math.BigDecimal lockedQty;
 
     /**
+     * 库存所有权：OWNED 自有 / CONSIGNED 受托。
+     *
+     * <p>受托库存不得用于自有生产领料、销售出库，只能退货或报废处置；
+     * 出库分配默认只取 OWNED（见 spec 2026-11-04 §3.1）。存量数据一律 OWNED。
+     */
+    @Schema(description = "库存所有权：OWNED 自有 / CONSIGNED 受托")
+    private String ownershipType;
+
+    /** 受托方ID（wms_supplier.id）：ownershipType=CONSIGNED 时必填；自有为空串。 */
+    @Schema(description = "受托方ID")
+    private String consignorId;
+
+    /**
      * 批次首次入库时间（超期预警起算点）。
      *
      * <p>不是行创建时间：调拨到新库位、盘盈新建行时都**继承/沿用**原批次首次入库时间，
