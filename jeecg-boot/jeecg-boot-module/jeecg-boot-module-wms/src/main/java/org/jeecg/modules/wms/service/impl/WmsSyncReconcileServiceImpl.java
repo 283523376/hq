@@ -396,8 +396,9 @@ public class WmsSyncReconcileServiceImpl extends JeecgServiceImpl<WmsSyncRunMapp
     // ---------------------------------------------------------------- 快照
 
     private List<WmsSyncSnapshot> buildSnapshots(WmsSyncRun run, String operator, Date now) {
+        // 对账域只含自有库存：受托材料在金蝶即时库存里没有对应账，纳入会天天报假差异（spec 2026-11-04 §3.1）
         List<WmsSyncAggregateVO> aggregates = inventoryMapper.selectReconcileAggregate(
-                resolveInventoryWindowStart(run), aggregateWarehouses(run));
+                resolveInventoryWindowStart(run), aggregateWarehouses(run), WmsConstants.OWNERSHIP_OWNED);
         List<WmsSyncSnapshot> snapshots = new ArrayList<>();
         if (aggregates == null) {
             return snapshots;

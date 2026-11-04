@@ -80,8 +80,10 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
         }
         String type = dto.getStocktakeType() == null ? WmsConstants.STOCKTAKE_TYPE_PERIODIC : dto.getStocktakeType();
 
+        // 盘点只盘自有库存：受托货物权不属企业，盘出来的盈亏既不能调整自有账、也没有处置权（spec 2026-11-04 §3.1）
         List<WmsInventory> stocks = inventoryMapper.selectList(new LambdaQueryWrapper<WmsInventory>()
-                .in(WmsInventory::getLocationId, dto.getLocationIds()));
+                .in(WmsInventory::getLocationId, dto.getLocationIds())
+                .eq(WmsInventory::getOwnershipType, WmsConstants.OWNERSHIP_OWNED));
         if (stocks.isEmpty()) {
             throw new RuntimeException("所选库位没有库存，无法盘点");
         }
@@ -358,11 +360,14 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
      * 对账按 update_time 取数，本项目无自动填充，走通用 updateById 审计列不变。
      */
     private void applyToInventory(WmsStocktakeDetail detail, String operator) {
+        // 必须带 ownership_type：六列唯一键里受托行可能与本行同物料/库位/批次/容器，
+        // 不带这个条件既可能 selectOne 撞多行抛异常，也可能把实盘数写进受托库存
         WmsInventory existing = inventoryMapper.selectOne(new LambdaQueryWrapper<WmsInventory>()
                 .eq(WmsInventory::getMaterialId, detail.getMaterialId())
                 .eq(WmsInventory::getLocationId, detail.getLocationId())
                 .eq(detail.getBatchNo() != null, WmsInventory::getBatchNo, detail.getBatchNo())
                 .eq(detail.getContainerCode() != null, WmsInventory::getContainerCode, detail.getContainerCode())
+                .eq(WmsInventory::getOwnershipType, WmsConstants.OWNERSHIP_OWNED)
                 .last("limit 1"));
         if (detail.getActualQty().signum() == 0) {
             if (existing != null) {
@@ -378,6 +383,9 @@ public class WmsStocktakeServiceImpl implements IWmsStocktakeService {
             created.setContainerCode(detail.getContainerCode());
             created.setQuantity(detail.getActualQty());
             created.setLockedQty(BigDecimal.ZERO);
+            // 盘盈行一律自有：盘点范围本身已限定 OWNED，不能因为实体字段没填就漏写所有权
+            created.setOwnershipType(WmsConstants.OWNERSHIP_OWNED);
+            created.setConsignorId("");
             // 盘盈是新增行：实物入库时点无从得知，取发现时间（spec 2026-10-28 D4）
             created.setFirstInboundTime(new Date());
             // 时间列由 fillCreate 填；操作人列显式用 operator——fillCreate 取 Shiro 上下文，

@@ -13,7 +13,7 @@ import java.util.List;
  * @Description: 库存台账导出的分批数据源（KC-004）。
  *
  * <p>AutoPoi 的 {@code exportBigExcel} 会反复回调 {@link #selectListForExcelExport}，
- * 直到返回 null 或空列表。这里用「上一批末行」当游标，按 `wms_inventory` 唯一键的四列继续往下取，
+ * 直到返回 null 或空列表。这里用「上一批末行」当游标，按 `wms_inventory` 唯一键的六列继续往下取，
  * **不用 OFFSET**——几十万行时 `LIMIT 5000 OFFSET 350000` 会让 MySQL 从头扫 35 万行。
  *
  * <p>回调是单线程顺序调用的，所以游标状态不需要加锁。
@@ -52,6 +52,8 @@ public class WmsLedgerExportPageSource implements IExcelExportServer {
                 lastRow == null ? null : lastRow.getLocationId(),
                 lastRow == null ? null : lastRow.getBatchNo(),
                 lastRow == null ? null : lastRow.getContainerCode(),
+                lastRow == null ? null : lastRow.getOwnershipType(),
+                lastRow == null ? null : lastRow.getConsignorId(),
                 batchSize);
         if (rows == null || rows.isEmpty()) {
             return null;

@@ -39,6 +39,18 @@ public class WmsInventoryLedgerServiceImpl implements IWmsInventoryLedgerService
         n.setWarehouseId(trimToNull(source.getWarehouseId()));
         n.setOnlyPositive(source.getOnlyPositive() == null ? Boolean.TRUE : source.getOnlyPositive());
 
+        // 库存类型：默认/NULL 一律 OWNED，只有显式 CONSIGNED 才翻受托（spec 2026-11-04 §3.1）
+        String ownership = trimToNull(source.getOwnershipType());
+        if (ownership == null || WmsConstants.OWNERSHIP_OWNED.equals(ownership)) {
+            n.setOwnershipType(WmsConstants.OWNERSHIP_OWNED);
+        } else if (WmsConstants.OWNERSHIP_CONSIGNED.equals(ownership)) {
+            n.setOwnershipType(WmsConstants.OWNERSHIP_CONSIGNED);
+            n.setConsignorId(trimToNull(source.getConsignorId()));
+        } else {
+            // 不静默回落成 OWNED：调用方以为在查受托货、实际拿到自有数据，比报错更危险
+            throw new RuntimeException("库存类型只能是 OWNED（自有）或 CONSIGNED（受托）：" + ownership);
+        }
+
         Integer pageNo = source.getPageNo();
         n.setPageNo(pageNo == null || pageNo < 1 ? 1 : pageNo);
 

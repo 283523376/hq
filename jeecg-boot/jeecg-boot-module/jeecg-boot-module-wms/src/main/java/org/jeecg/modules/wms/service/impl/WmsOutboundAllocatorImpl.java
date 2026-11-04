@@ -65,6 +65,11 @@ public class WmsOutboundAllocatorImpl implements IWmsOutboundAllocator {
                     if (allocated.compareTo(required) >= 0) {
                         break;
                     }
+                    // 受托库存不得被自有出库占用（spec 2026-11-04 §3.1）：SQL 已默认过滤，
+                    // 这里再兜一道，防止 mapper 语句被改坏时悄悄把别人的货发出去
+                    if (!WmsConstants.OWNERSHIP_OWNED.equals(row.getOwnershipType())) {
+                        continue;
+                    }
                     BigDecimal available = nvl(row.getQuantity()).subtract(nvl(row.getLockedQty()));
                     if (available.signum() <= 0) {
                         continue;

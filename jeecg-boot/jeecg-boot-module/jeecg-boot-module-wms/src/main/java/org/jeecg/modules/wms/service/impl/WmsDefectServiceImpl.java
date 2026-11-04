@@ -104,6 +104,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             query.setLocationCode(locationCode);
             // 报废只关心还有量的行；0 量的行留在库里但没处置价值
             query.setOnlyPositive(Boolean.TRUE);
+            // 不良品台账默认只列自有库存；受托不良按受托方独立记账（V2.4 后续），不能混进自有台账
+            query.setOwnershipType(WmsConstants.OWNERSHIP_OWNED);
             IPage<WmsInventoryLedgerVO> page = inventoryMapper.selectLedgerPage(
                     new Page<>(pageNo, pageSize), query);
             if (page != null && page.getRecords() != null) {

@@ -32,6 +32,10 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
     /**
      * 出库可用库存（按 FIFO 排序）：quantity - locked_qty &gt; 0。
      *
+     * <p>**只返回自有（OWNED）库存**：受托材料不得用于自有生产领料/销售出库
+     * （spec 2026-11-04 §3.1）。SQL 用正向匹配 {@code ownership_type = 'OWNED'}，
+     * 不写 {@code <> 'CONSIGNED'}，否则 ownership_type 为 NULL 的存量行会被漏掉。
+     *
      * @param warehouseType   立库/敏捷仓
      * @param requireContainer 是否只取已绑定料箱的行（敏捷仓）
      */
@@ -46,6 +50,8 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
 
     /**
      * 指定库区的可用库存（FIFO）：调拨按「源仓」取数，避免同类型多仓混用。
+     *
+     * <p>同样**只返回自有（OWNED）库存**（spec 2026-11-04 §3.1）。
      *
      * @param warehouseId      源库区ID
      * @param requireContainer 是否只取已绑定料箱的行（敏捷仓）
@@ -91,14 +97,17 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
     /**
      * 库存台账游标分批（导出专用）。
      *
-     * <p>`lastXxx` 全部为 null 时取第一批；否则取严格大于该四元组的下一批。
-     * 四列是唯一键 `uk_wms_inv_mat_loc_batch_container`，所以游标不会重复或遗漏。
+     * <p>`lastXxx` 全部为 null 时取第一批；否则取严格大于该六元组的下一批。
+     * 六列是唯一键 `uk_wms_inv_mat_loc_batch_container`（V2.4 起含 ownership_type / consignor_id），
+     * 所以游标不会重复或遗漏——只按前四列比较会让「同四元组、不同受托方」的行被跳过。
      */
     List<WmsInventoryLedgerVO> selectLedgerCursor(@Param("q") WmsInventoryLedgerQueryDTO q,
                                                   @Param("lastMaterialId") String lastMaterialId,
                                                   @Param("lastLocationId") String lastLocationId,
                                                   @Param("lastBatchNo") String lastBatchNo,
                                                   @Param("lastContainerCode") String lastContainerCode,
+                                                  @Param("lastOwnershipType") String lastOwnershipType,
+                                                  @Param("lastConsignorId") String lastConsignorId,
                                                   @Param("limit") int limit);
 
     /**
@@ -109,9 +118,12 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
      *
      * @param windowStart    「今日变动」起点；null 即取全量
      * @param warehouseCodes 指定仓库范围；null 即不限（注意：空集合会拼出 `IN ()`，调用方传 null 或非空）
+     * @param ownershipType  库存类型：正常对账传 {@code OWNED}；null 时 SQL 同样兜底为 OWNED
+     *                       （受托库存不参与金蝶即时库存对账，spec 2026-11-04 §3.1）
      */
     List<WmsSyncAggregateVO> selectReconcileAggregate(@Param("windowStart") Date windowStart,
-                                                      @Param("warehouseCodes") List<String> warehouseCodes);
+                                                      @Param("warehouseCodes") List<String> warehouseCodes,
+                                                      @Param("ownershipType") String ownershipType);
 
     /**
      * SB-001 由差异发起盘点：反查 仓库+物料(ERP 编码)+批次 命中的库位（spec 2026-11-03 §2.8）。
@@ -121,6 +133,7 @@ public interface WmsInventoryMapper extends BaseMapper<WmsInventory> {
      * 的行——账面已归零的物料没有可盘的实物，调用方应拒绝发起。
      *
      * <p>与对账聚合一样**不**过滤主数据 {@code deleted_at}：要的是「库存行现在挂在哪个仓库上」。
+     * 但**只取自有（OWNED）库存**——对账域本身不含受托，反查库位必须同口径。
      *
      * @param warehouseCode 差异行的仓库键（ERP 仓库编码，或与金蝶 1:1 的 WMS 编码）
      * @param materialCode  差异行的物料编码（ERP/kingdee_code）

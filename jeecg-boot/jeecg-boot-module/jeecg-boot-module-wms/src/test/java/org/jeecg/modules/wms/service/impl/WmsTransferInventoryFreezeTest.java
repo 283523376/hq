@@ -73,6 +73,8 @@ class WmsTransferInventoryFreezeTest {
         row.setLocationCode("TS-01");
         row.setQuantity(new BigDecimal("10"));
         row.setLockedQty(BigDecimal.ZERO);
+        // 分配器只认自有库存（spec 2026-11-04 §3.1）
+        row.setOwnershipType(org.jeecg.modules.wms.constant.WmsConstants.OWNERSHIP_OWNED);
         org.jeecg.modules.wms.entity.WmsTransferOrder order = new org.jeecg.modules.wms.entity.WmsTransferOrder();
         order.setId("tr-1");
         order.setOutWarehouseId("w1");

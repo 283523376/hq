@@ -74,6 +74,10 @@ public class WmsTransferInventoryServiceImpl implements IWmsTransferInventorySer
                 if (allocated.compareTo(required) >= 0) {
                     break;
                 }
+                // 受托库存不参与自有移库（spec 2026-11-04 §3.1）：SQL 已默认过滤，服务层再兜一道
+                if (!WmsConstants.OWNERSHIP_OWNED.equals(row.getOwnershipType())) {
+                    continue;
+                }
                 // 盘点冻结的源库位不可建移库任务：否则盘点差异被并发移库搅乱、产出假盘亏
                 WmsStocktakeFreezeGuard.assertNotFrozen(row.getLocationId(), locationMapper);
                 BigDecimal available = nvl(row.getQuantity()).subtract(nvl(row.getLockedQty()));
@@ -227,11 +231,14 @@ public class WmsTransferInventoryServiceImpl implements IWmsTransferInventorySer
     }
 
     private WmsInventory findRow(String materialId, String locationId, String batchNo, String containerCode) {
+        // 移库只处理自有库存：六列唯一键允许同库位存在同一物料/批次/容器的受托行，
+        // 不带 ownership_type 有可能把自有数量加到受托行上（spec 2026-11-04 §3.1）
         List<WmsInventory> rows = inventoryMapper.selectList(new LambdaQueryWrapper<WmsInventory>()
                 .eq(WmsInventory::getMaterialId, materialId)
                 .eq(WmsInventory::getLocationId, locationId)
                 .eq(WmsInventory::getBatchNo, batchNo)
                 .eq(WmsInventory::getContainerCode, containerCode)
+                .eq(WmsInventory::getOwnershipType, WmsConstants.OWNERSHIP_OWNED)
                 .last("LIMIT 1"));
         return rows.isEmpty() ? null : rows.get(0);
     }

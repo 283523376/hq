@@ -40,6 +40,22 @@ public class WmsInventoryLedgerQueryDTO implements Serializable {
     @Schema(description = "只看有库存（默认 true）")
     private Boolean onlyPositive = Boolean.TRUE;
 
+    /**
+     * 库存类型：OWNED 自有 / CONSIGNED 受托。
+     *
+     * <p>**默认（null 或空串）一律按 OWNED 处理**：受托库存不属于企业，台账/导出默认只应看到自有。
+     * 只有显式传 CONSIGNED 才会翻出受托行——否则「查库存」会悄悄把别人的货算进自家可用量。
+     *
+     * <p>旧导任务反序列化回来时该字段为 null，必须按 OWNED 重放（见
+     * {@code WmsInventoryLedgerServiceImpl.normalize}）。
+     */
+    @Schema(description = "库存类型：OWNED 自有（默认）/ CONSIGNED 受托")
+    private String ownershipType;
+
+    /** 受托方ID（wms_supplier.id）：仅 ownershipType=CONSIGNED 时生效，自有库存忽略。 */
+    @Schema(description = "受托方ID（仅受托库存筛选）")
+    private String consignorId;
+
     @Schema(description = "页码，默认 1")
     private Integer pageNo = 1;
 

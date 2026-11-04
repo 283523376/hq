@@ -103,4 +103,23 @@ public class WmsInventoryLedgerVO implements Serializable {
     @Excel(name = "库龄(天)", width = 10, orderNum = "15")
     @Schema(description = "库龄天数（自首次入库起算）")
     private Integer stockAgeDays;
+
+    /** 库存类型：默认只查自有，受托需显式筛选（spec 2026-11-04 §3.1）。 */
+    @Excel(name = "库存类型", width = 12, orderNum = "16", replace = {"自有_OWNED", "受托_CONSIGNED"})
+    @Schema(description = "库存类型：OWNED 自有 / CONSIGNED 受托")
+    private String ownershipType;
+
+    /** 受托方名称：自有库行为空；先取供应商档案名称，档案缺失时保留空串而不是报错。 */
+    @Excel(name = "受托方", width = 20, orderNum = "17")
+    @Schema(description = "受托方名称（自有库存为空）")
+    private String consignorName;
+
+    /**
+     * 受托方ID：导出游标用（不导出）。
+     *
+     * <p>六列唯一键里受托行可能同物料/库位/批次/容器、仅受托方不同，
+     * 光标必须带上这一列才能保证分批不重不漏。
+     */
+    @Schema(description = "受托方ID（游标用）")
+    private String consignorId;
 }

@@ -83,6 +83,8 @@ class WmsOutboundAllocatorTest {
         vo.setBatchNo("B1");
         vo.setQuantity(new BigDecimal(qty));
         vo.setLockedQty(new BigDecimal(locked));
+        // 分配器只认自有库存（spec 2026-11-04 §3.1）；SQL 默认就带 ownership_type，测试行必须补齐
+        vo.setOwnershipType(WmsConstants.OWNERSHIP_OWNED);
         return vo;
     }
 

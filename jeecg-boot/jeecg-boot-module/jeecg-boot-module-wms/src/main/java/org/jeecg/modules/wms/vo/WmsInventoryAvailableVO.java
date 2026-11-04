@@ -43,6 +43,15 @@ public class WmsInventoryAvailableVO implements Serializable {
     @Schema(description = "已锁定数量")
     private BigDecimal lockedQty;
 
+    /**
+     * 库存所有权：OWNED 自有 / CONSIGNED 受托。
+     *
+     * <p>SQL 已默认只取 OWNED；服务层仍做一次兜底判断（见各分配器），
+     * 防止 mapper 语句被改坏时受托货被自有出库/调拨悄悄占用。
+     */
+    @Schema(description = "库存所有权：OWNED 自有 / CONSIGNED 受托")
+    private String ownershipType;
+
     @Schema(description = "入库时间（FIFO 排序用）")
     private Date createTime;
 }

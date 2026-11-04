@@ -16,7 +16,12 @@
             update_time = NOW()
     </insert>
 
-    <!-- 出库可用库存：按入库时间 FIFO；敏捷仓只取已绑定料箱的行 -->
+    <!--
+      出库可用库存：按入库时间 FIFO；敏捷仓只取已绑定料箱的行。
+      只取自有（OWNED）库存：受托材料不属于企业，不得被自有生产领料/销售出库占用（spec 2026-11-04 §3.1）。
+      这里必须**正向匹配 'OWNED'**，不能写 &lt;&gt; 'CONSIGNED'——存量行的 ownership_type 若因
+      历史数据/人工改库为 NULL，负向匹配会把它们一并漏掉，表现为「有货却分不出来」。
+    -->
     <select id="selectAvailable" resultType="org.jeecg.modules.wms.vo.WmsInventoryAvailableVO">
         SELECT i.id,
                i.material_id,
@@ -26,12 +31,14 @@
                i.batch_no,
                i.quantity,
                i.locked_qty,
+               i.ownership_type,
                i.create_time
           FROM wms_inventory i
           JOIN wms_location l ON l.id = i.location_id AND l.deleted_at = 0
           JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
          WHERE i.material_id = #{materialId}
            AND w.warehouse_type = #{warehouseType}
+           AND i.ownership_type = 'OWNED'
            AND i.quantity - i.locked_qty &gt; 0
         <if test="batchNo != null and batchNo != ''">
            AND i.batch_no = #{batchNo}
@@ -43,7 +50,7 @@
          LIMIT #{limit}
     </select>
 
-    <!-- 指定库区的可用库存（FIFO）：调拨按源仓取数，避免同类型多仓混用 -->
+    <!-- 指定库区的可用库存（FIFO）：调拨按源仓取数，避免同类型多仓混用。同样只取自有（OWNED）。 -->
     <select id="selectAvailableByWarehouse" resultType="org.jeecg.modules.wms.vo.WmsInventoryAvailableVO">
         SELECT i.id,
                i.material_id,
@@ -53,12 +60,14 @@
                i.batch_no,
                i.quantity,
                i.locked_qty,
+               i.ownership_type,
                i.create_time
           FROM wms_inventory i
           JOIN wms_location l ON l.id = i.location_id AND l.deleted_at = 0
           JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
          WHERE i.material_id = #{materialId}
            AND w.id = #{warehouseId}
+           AND i.ownership_type = 'OWNED'
         <if test="containerCode != null and containerCode != ''">
            AND i.container_code = #{containerCode}
         </if>
@@ -138,6 +147,8 @@
           JOIN wms_material  m ON m.id = i.material_id  AND m.deleted_at = 0
           JOIN wms_location  l ON l.id = i.location_id  AND l.deleted_at = 0
           JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
+          <!-- 受托方名称：供应商档案可被逻辑删除，LEFT JOIN 保证受托行不会因档案缺失从台账里消失 -->
+          LEFT JOIN wms_supplier s ON s.id = i.consignor_id AND s.deleted_at = 0
     </sql>
 
     <sql id="ledgerColumns">
@@ -157,6 +168,9 @@
                i.quantity,
                i.locked_qty,
                (i.quantity - i.locked_qty) AS available_qty,
+               i.ownership_type,
+               i.consignor_id,
+               COALESCE(s.supplier_name, '') AS consignor_name,
                i.first_inbound_time,
                <choose>
                    <when test="q.asOfDate != null">
@@ -170,6 +184,22 @@
 
     <sql id="ledgerWhere">
         <where>
+            <!--
+              库存类型默认 OWNED（spec 2026-11-04 §3.1）。
+              过滤放在 SQL 而不是只靠服务层 normalize：导出/废品台账等调用方会绕过 normalize
+              直接调 selectLedgerPage，只有 SQL 兜底才能保证「默认不显示受托」在任何入口都成立。
+            -->
+            <choose>
+                <when test="q.ownershipType != null and 'CONSIGNED'.equals(q.ownershipType)">
+                    AND i.ownership_type = 'CONSIGNED'
+                    <if test="q.consignorId != null and q.consignorId != ''">
+                        AND i.consignor_id = #{q.consignorId}
+                    </if>
+                </when>
+                <otherwise>
+                    AND i.ownership_type = 'OWNED'
+                </otherwise>
+            </choose>
             <if test="q.onlyPositive != null and q.onlyPositive">
                 AND i.quantity &lt;&gt; 0
             </if>
@@ -197,16 +227,23 @@
          ORDER BY i.material_id ASC, i.location_id ASC, i.batch_no ASC, i.container_code ASC
     </select>
 
-    <!-- 导出分批：游标四列即唯一键 uk_wms_inv_mat_loc_batch_container，走索引范围扫描，不用 OFFSET -->
+    <!--
+      导出分批：游标六列即唯一键 uk_wms_inv_mat_loc_batch_container（V2.4 起含 ownership_type/consignor_id），
+      走索引范围扫描，不用 OFFSET。
+      为什么必须带所有权两列：受托行可能与自有行同物料/库位/批次/容器（六列键才唯一），
+      只按前四列比较时，同一四元组的两行会被游标「跳过头」——导出静默少行，而且看不出来。
+    -->
     <select id="selectLedgerCursor" resultType="org.jeecg.modules.wms.vo.WmsInventoryLedgerVO">
         <include refid="ledgerColumns"/>
         <include refid="ledgerFrom"/>
         <include refid="ledgerWhere"/>
         <if test="lastMaterialId != null">
-           AND (i.material_id, i.location_id, i.batch_no, i.container_code) &gt;
-               (#{lastMaterialId}, #{lastLocationId}, #{lastBatchNo}, #{lastContainerCode})
+           AND (i.material_id, i.location_id, i.batch_no, i.container_code, i.ownership_type, i.consignor_id) &gt;
+               (#{lastMaterialId}, #{lastLocationId}, #{lastBatchNo}, #{lastContainerCode},
+                #{lastOwnershipType}, #{lastConsignorId})
         </if>
-         ORDER BY i.material_id ASC, i.location_id ASC, i.batch_no ASC, i.container_code ASC
+         ORDER BY i.material_id ASC, i.location_id ASC, i.batch_no ASC, i.container_code ASC,
+                  i.ownership_type ASC, i.consignor_id ASC
          LIMIT #{limit}
     </select>
 
@@ -230,6 +267,19 @@
           JOIN wms_warehouse w ON w.id = l.warehouse_id
           JOIN wms_material  m ON m.id = i.material_id
          WHERE i.quantity &lt;&gt; 0
+          <!--
+            对账默认只含自有库存（spec 2026-11-04 §3.1 裁决）：受托材料所有权不属于企业，
+            金蝶即时库存里没有这部分账，混进来会天天报假差异。受托对账后续按需扩展。
+            与台账同理用正向匹配 'OWNED'，避免 NULL 存量行被负向匹配漏掉。
+          -->
+          <choose>
+              <when test="ownershipType != null and ownershipType != ''">
+                  AND i.ownership_type = #{ownershipType}
+              </when>
+              <otherwise>
+                  AND i.ownership_type = 'OWNED'
+              </otherwise>
+          </choose>
           <if test="windowStart != null">AND i.update_time &gt;= #{windowStart}</if>
           <if test="warehouseCodes != null">AND w.warehouse_code IN
             <foreach collection="warehouseCodes" item="c" open="(" separator="," close=")">#{c}</foreach></if>
@@ -254,6 +304,8 @@
          WHERE COALESCE(NULLIF(w.erp_stock_code,''), w.warehouse_code) = #{warehouseCode}
            AND m.kingdee_code = #{materialCode}
            AND COALESCE(i.batch_no,'') = #{batchNo}
+           <!-- 对账域只含自有库存，反查库位也必须同口径：否则只堆着受托货的库位会被拉进盘点 -->
+           AND i.ownership_type = 'OWNED'
            AND (i.quantity &gt; 0 OR i.locked_qty &gt; 0)
          ORDER BY i.location_id
     </select>

@@ -121,7 +121,7 @@ class WmsSyncReconcileServiceImplTest {
         Date now = new Date();
         WmsSyncRun run = run(WmsConstants.SYNC_SCOPE_FULL, now, now);
         when(runMapper.selectById(RUN_ID)).thenReturn(run);
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of(
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of(
                 aggregate("D.01", "WMS-A", "M1", "L1", "10"),
                 aggregate("D.01", "WMS-A", "M2", "L2", "20")));
         when(inventoryReader.queryInventory(any())).thenReturn(map(
@@ -160,7 +160,7 @@ class WmsSyncReconcileServiceImplTest {
     void executeRun_readerReceivesErpWarehouseCode() {
         Date now = new Date();
         when(runMapper.selectById(RUN_ID)).thenReturn(run(WmsConstants.SYNC_SCOPE_FULL, now, now));
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of(
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of(
                 aggregate("D.01", "WMS-A", "M1", "L1", "10")));
         when(inventoryReader.queryInventory(any())).thenReturn(map("D.01|M1|L1", "10"));
 
@@ -180,7 +180,7 @@ class WmsSyncReconcileServiceImplTest {
         Date now = new Date();
         WmsSyncRun run = run(WmsConstants.SYNC_SCOPE_FULL, now, now);
         when(runMapper.selectById(RUN_ID)).thenReturn(run);
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of(
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of(
                 aggregate("D.01", "WMS-A", "M1", "L1", "10"),   // ERP 8  → 多账 +2
                 aggregate("D.01", "WMS-A", "M2", "L2", "5"),    // ERP 9  → 少账 -4
                 aggregate("D.01", "WMS-A", "M3", "L3", "7"),    // ERP 无 → 仅WMS
@@ -238,7 +238,7 @@ class WmsSyncReconcileServiceImplTest {
         Date now = new Date();
         WmsSyncRun run = run(WmsConstants.SYNC_SCOPE_FULL, now, now);
         when(runMapper.selectById(RUN_ID)).thenReturn(run);
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of(
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of(
                 aggregate("D.01", "WMS-A", "M1", "L1", "10"),
                 aggregate("D.01", "WMS-A", "M2", "L2", "20")));
         when(inventoryReader.queryInventory(any())).thenThrow(new RuntimeException("金蝶超时"));
@@ -285,7 +285,7 @@ class WmsSyncReconcileServiceImplTest {
         WmsSyncRun run = run(WmsConstants.SYNC_SCOPE_TODAY, todayStart, now);
         run.setOperator("lisi");
         when(runMapper.selectById(RUN_ID)).thenReturn(run);
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of(
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of(
                 aggregate("D.01", "WMS-A", "M1", "L1", "10"),
                 aggregate("D.01", "WMS-A", "M2", "L2", "20")));
         when(inventoryReader.queryInventory(any())).thenReturn(map(
@@ -317,9 +317,13 @@ class WmsSyncReconcileServiceImplTest {
         // 今日变动窗口 = 当天 00:00，仓库过滤为空
         ArgumentCaptor<Date> windowCap = ArgumentCaptor.forClass(Date.class);
         ArgumentCaptor<List<String>> aggregateWarehouses = ArgumentCaptor.forClass(List.class);
-        verify(inventoryMapper).selectReconcileAggregate(windowCap.capture(), aggregateWarehouses.capture());
+        ArgumentCaptor<String> ownershipCap = ArgumentCaptor.forClass(String.class);
+        verify(inventoryMapper).selectReconcileAggregate(windowCap.capture(), aggregateWarehouses.capture(),
+                ownershipCap.capture());
         assertEquals(todayStart, windowCap.getValue());
         assertNull(aggregateWarehouses.getValue());
+        assertEquals(WmsConstants.OWNERSHIP_OWNED, ownershipCap.getValue(),
+                "对账域只含自有库存：受托库存不参与金蝶即时库存对账（spec 2026-11-04 §3.1）");
     }
 
     // ================================================================ 流水窗口 / 落库
@@ -328,7 +332,7 @@ class WmsSyncReconcileServiceImplTest {
     void executeRun_fullManualUsesTodayWindowForFlow() {
         Date now = new Date();
         when(runMapper.selectById(RUN_ID)).thenReturn(run(WmsConstants.SYNC_SCOPE_FULL, now, now));
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of(
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of(
                 aggregate("D.01", "WMS-A", "M1", "L1", "10")));
         when(inventoryReader.queryInventory(any())).thenReturn(map("D.01|M1|L1", "10"));
         when(flowMapper.selectOutboundRows(any(), any())).thenReturn(List.of(flowRow()));
@@ -359,7 +363,7 @@ class WmsSyncReconcileServiceImplTest {
         Date now = new Date();
         Date watermark = new Date(now.getTime() - 3600_000L);
         when(runMapper.selectById(RUN_ID)).thenReturn(run(WmsConstants.SYNC_SCOPE_TODAY, watermark, now));
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of());
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of());
         when(inventoryReader.queryInventory(any())).thenReturn(new LinkedHashMap<>());
 
         service.executeRunForTest(RUN_ID);
@@ -378,7 +382,7 @@ class WmsSyncReconcileServiceImplTest {
         WmsSyncRun run = run(WmsConstants.SYNC_SCOPE_WAREHOUSE, now, now);
         run.setWarehouseCodes("D.01");
         when(runMapper.selectById(RUN_ID)).thenReturn(run);
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of(
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of(
                 aggregate("D.01", "WMS-A", "M1", "L1", "10")));
         when(inventoryReader.queryInventory(any())).thenReturn(map("D.01|M1|L1", "10"));
         when(flowMapper.selectOutboundRows(any(), any())).thenReturn(List.of(
@@ -399,7 +403,7 @@ class WmsSyncReconcileServiceImplTest {
     void executeRun_fullWithEmptySnapshots_skipsErpQuery() {
         Date now = new Date();
         when(runMapper.selectById(RUN_ID)).thenReturn(run(WmsConstants.SYNC_SCOPE_FULL, now, now));
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of());
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of());
 
         service.executeRunForTest(RUN_ID);
 
@@ -419,7 +423,7 @@ class WmsSyncReconcileServiceImplTest {
         WmsSyncRun run = run(WmsConstants.SYNC_SCOPE_WAREHOUSE, now, now);
         run.setWarehouseCodes("D.05");
         when(runMapper.selectById(RUN_ID)).thenReturn(run);
-        when(inventoryMapper.selectReconcileAggregate(any(), any())).thenReturn(List.of());
+        when(inventoryMapper.selectReconcileAggregate(any(), any(), any())).thenReturn(List.of());
         when(inventoryReader.queryInventory(any())).thenReturn(map("D.05|M1|L1", "5"));
 
         service.executeRunForTest(RUN_ID);

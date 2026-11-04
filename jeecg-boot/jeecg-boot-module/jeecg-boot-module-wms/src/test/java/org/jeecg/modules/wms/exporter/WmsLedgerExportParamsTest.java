@@ -33,7 +33,8 @@ class WmsLedgerExportParamsTest {
         // 库龄用 DATEDIFF(NOW(), ...) 的话，跨午夜的长导出同一份文件里前后批次会差一天；
         // 导出必须把「快照日」钉死，让整份文件的库龄口径一致。
         WmsInventoryMapper mapper = mock(WmsInventoryMapper.class);
-        when(mapper.selectLedgerCursor(any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+        when(mapper.selectLedgerCursor(any(), any(), any(), any(), any(), any(), any(),
+                org.mockito.ArgumentMatchers.anyInt()))
                 .thenReturn(java.util.Collections.emptyList());
         WmsExcelWriter writer = mock(WmsExcelWriter.class);
         WmsInventoryLedgerQueryDTO query = new WmsInventoryLedgerQueryDTO();
