@@ -991,6 +991,18 @@ public final class WmsConstants {
     /** 不良处置方式：退货（受托不良生成采购退货单，`wms_defect_record.return_bill_no` 回存单号）。 */
     public static final String DEFECT_DISPOSAL_RETURN = "RETURN";
 
+    /** 不良记录状态：待处理（RETURN 登记后的初始态，等待退货；台账待办来源）。 */
+    public static final String DEFECT_STATUS_PENDING = "待处理";
+
+    /** 不良记录状态：已处置（SCRAP 落废品仓后的终态）。 */
+    public static final String DEFECT_STATUS_DISPOSED = "已处置";
+
+    /** 不良记录状态：已退货（采购退货单回写成功后的终态）。 */
+    public static final String DEFECT_STATUS_RETURNED = "已退货";
+
+    /** 受托不良退货失败告警标题。 */
+    public static final String DEFECT_RETURN_ALERT_TITLE = "受托不良退货失败告警";
+
     /**
      * 物料分类类型：原材料（V2.4 恢复外购/受托原材料入库）。
      *

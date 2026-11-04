@@ -71,6 +71,9 @@ class WmsProductionInboundServiceImplTest {
         WmsTestSupport.inject(service, "inventoryMapper", inventoryMapper);
         WmsTestSupport.inject(service, "locationService", locationService);
         WmsTestSupport.inject(service, "systemConfigService", systemConfigService);
+        // RK-005：提交 badQty>0 会写不良台账记录
+        WmsTestSupport.inject(service, "defectRecordMapper",
+                mock(org.jeecg.modules.wms.mapper.WmsDefectRecordMapper.class));
         WmsTestSupport.inject(service, "sysBaseAPI", sysBaseAPI);
     }
 

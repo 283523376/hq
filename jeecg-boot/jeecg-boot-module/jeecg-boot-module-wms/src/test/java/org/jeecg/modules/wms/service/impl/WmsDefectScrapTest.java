@@ -68,8 +68,16 @@ class WmsDefectScrapTest {
         inboundMapper = mock(WmsProductionInboundMapper.class);
         materialMapper = mock(WmsMaterialMapper.class);
         auditLogService = mock(IWmsAuditLogService.class);
+        // RK-005 扩展依赖：两类不良来源与退货（本测试类只覆盖 XT-001 报废，传 mock 占位即可）
         service = new WmsDefectServiceImpl(inventoryMapper, orderMapper, detailMapper,
-                locationMapper, warehouseMapper, inboundMapper, materialMapper, auditLogService);
+                locationMapper, warehouseMapper, inboundMapper, materialMapper, auditLogService,
+                mock(org.jeecg.modules.wms.mapper.WmsDefectRecordMapper.class),
+                mock(org.jeecg.modules.wms.mapper.WmsInboundOrderMapper.class),
+                mock(org.jeecg.modules.wms.service.IWmsSupplierService.class),
+                mock(org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReturnWriter.class),
+                mock(org.jeecg.modules.wms.sync.WmsKingdeeFormClient.class),
+                mock(org.jeecg.modules.wms.service.IWmsSystemConfigService.class),
+                mock(org.jeecg.common.system.api.ISysBaseAPI.class));
         WmsMaterial m = new WmsMaterial().setMaterialCode("M001").setMaterialName("螺丝").setUnit("个");
         m.setId("MAT1");
         when(materialMapper.selectById(anyString())).thenReturn(m);

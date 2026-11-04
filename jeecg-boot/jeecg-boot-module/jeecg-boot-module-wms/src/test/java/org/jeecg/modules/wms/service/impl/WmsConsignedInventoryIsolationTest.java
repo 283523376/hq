@@ -355,7 +355,14 @@ class WmsConsignedInventoryIsolationTest {
         IWmsAuditLogService auditLogService = mock(IWmsAuditLogService.class);
         WmsDefectServiceImpl service = new WmsDefectServiceImpl(inventoryMapper, orderMapper,
                 detailMapper, locationMapper, warehouseMapper, inboundMapper, materialMapper,
-                auditLogService);
+                auditLogService,
+                mock(org.jeecg.modules.wms.mapper.WmsDefectRecordMapper.class),
+                mock(org.jeecg.modules.wms.mapper.WmsInboundOrderMapper.class),
+                mock(org.jeecg.modules.wms.service.IWmsSupplierService.class),
+                mock(org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReturnWriter.class),
+                mock(org.jeecg.modules.wms.sync.WmsKingdeeFormClient.class),
+                mock(org.jeecg.modules.wms.service.IWmsSystemConfigService.class),
+                mock(org.jeecg.common.system.api.ISysBaseAPI.class));
 
         WmsWarehouse scrap = new WmsWarehouse().setWarehouseType(WmsConstants.WAREHOUSE_TYPE_SCRAP);
         scrap.setId("w-scrap");

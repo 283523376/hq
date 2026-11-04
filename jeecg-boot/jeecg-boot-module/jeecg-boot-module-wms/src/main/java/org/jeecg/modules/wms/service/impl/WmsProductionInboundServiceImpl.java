@@ -71,6 +71,10 @@ public class WmsProductionInboundServiceImpl
     @Autowired
     private org.jeecg.modules.wms.service.IWmsSystemConfigService systemConfigService;
 
+    /** RK-005：提交即写生产不良台账记录（来源单号=入库单号），保证不良可追溯。 */
+    @Autowired
+    private org.jeecg.modules.wms.mapper.WmsDefectRecordMapper defectRecordMapper;
+
     @Autowired
     private ISysBaseAPI sysBaseAPI;
 
@@ -210,6 +214,9 @@ public class WmsProductionInboundServiceImpl
                     .setBatchNo(batchNo)
                     .setContainerCode("")
                     .setQuantity(bad));
+            // RK-005：生产不良写台账记录（处置已随本次提交落到废品仓，故直接置已处置），
+            // 来源单号=入库单号——不良品台账按这个单号追溯到本次提交
+            recordProductionDefect(record, order, batchNo, bad, dto.getDefectRemark());
         }
         log.info("生产入库提交：单号={}，工单={}，良品={}，不良品={}，状态={}",
                 record.getInboundNo(), order.getWorkOrderNo(), good, bad, record.getStatus());
@@ -477,6 +484,36 @@ public class WmsProductionInboundServiceImpl
                 .setBatchNo(record.getBatchNo())
                 .setContainerCode(containerCode)
                 .setQuantity(record.getGoodQty()));
+    }
+
+    /**
+     * RK-005：生产不良写台账记录（{@code wms_defect_record}，来源 PRODUCTION）。
+     *
+     * <p>不良库存已随本次提交落入废品仓，故处置方式=SCRAP、状态=已处置；
+     * 来源单号=入库单号，不良品台账凭它追溯回本次提交。直接用 Mapper 而不走
+     * {@code IWmsDefectService}：登记口径与受托来源不同（不扣现成库存），
+     * 且避免服务间相互依赖。
+     */
+    private void recordProductionDefect(WmsProductionInbound record, WmsWorkOrder order,
+                                        String batchNo, BigDecimal bad, String defectRemark) {
+        Date now = new Date();
+        org.jeecg.modules.wms.entity.WmsDefectRecord defect =
+                new org.jeecg.modules.wms.entity.WmsDefectRecord()
+                        .setSourceType(WmsConstants.DEFECT_SOURCE_PRODUCTION)
+                        .setSourceBillNo(record.getInboundNo())
+                        .setMaterialCode(order.getMaterialCode())
+                        .setBatchNo(batchNo)
+                        .setQty(bad)
+                        .setReason(oConvertUtils.isEmpty(defectRemark) ? null : defectRemark.trim())
+                        .setDisposalType(WmsConstants.DEFECT_DISPOSAL_SCRAP)
+                        .setStatus(WmsConstants.DEFECT_STATUS_DISPOSED);
+        defect.setCreateBy(record.getOperator());
+        defect.setCreateTime(now);
+        defect.setUpdateBy(record.getOperator());
+        defect.setUpdateTime(now);
+        defectRecordMapper.insert(defect);
+        log.info("生产不良台账登记：入库单={}，物料={}，批次={}，数量={}",
+                record.getInboundNo(), order.getMaterialCode(), batchNo, bad);
     }
 
     // ------------------------------------------------------------ 查询
