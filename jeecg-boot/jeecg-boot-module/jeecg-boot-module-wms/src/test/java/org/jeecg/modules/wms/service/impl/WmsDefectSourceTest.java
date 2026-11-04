@@ -413,6 +413,23 @@ class WmsDefectSourceTest {
         assertEquals(WmsConstants.DEFECT_STATUS_RETURNED, patchCaptor.getValue().getStatus());
     }
 
+    /** 沿用退货单时，本次待退物料不在已回写记录中 → 必须告警提示 ERP 补录，不能静默置已退货。 */
+    @Test
+    void return_reusesBillNo_warnsWhenPendingMaterialNotCovered() {
+        stubConsignorChain();
+        when(defectRecordMapper.selectById("R2")).thenReturn(pendingRecord("R2", "M002", "B2", "3"));
+        WmsDefectRecord returnedEarlier = pendingRecord("R0", "M001", "B1", "1");
+        returnedEarlier.setReturnBillNo("TH100");
+        when(defectRecordMapper.selectList(any()))
+                .thenReturn(List.of(returnedEarlier))
+                .thenReturn(List.of(pendingRecord("R2", "M002", "B2", "3")));
+
+        WmsDefectRecord result = service.returnToConsignor("R2", "tester");
+
+        assertEquals("TH100", result.getReturnBillNo());
+        verify(sysBaseAPI).sendSysAnnouncement(any());
+    }
+
     /** 金蝶查重命中（上次保存成功但本地回存失败）→ 不重复开单，置已退货并告警。 */
     @Test
     void return_existsByReferenceTrue_skipsWriteAndAlerts() {

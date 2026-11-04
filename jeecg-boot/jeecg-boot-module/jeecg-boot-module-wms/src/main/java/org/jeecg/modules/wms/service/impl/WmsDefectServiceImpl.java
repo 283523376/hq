@@ -54,8 +54,10 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * @Description: 不良品处置（XT-001）+ 两类不良来源与退货（RK-005）。
@@ -465,6 +467,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         if (!returned.isEmpty()) {
             String billNo = returned.get(0).getReturnBillNo();
             markReturned(pending, billNo, operator);
+            warnUncoveredByReturnedBill(sourceBillNo, billNo, pending, returned);
             log.info("受托不良退货沿用已有退货单：来源单={}，退货单={}，本次聚合 {} 条记录",
                     sourceBillNo, billNo, pending.size());
             return applyReturned(record, billNo);
@@ -480,7 +483,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             // ERP 侧凭 FNote=来源单:<来源单号> 可定位到该单
             markReturned(pending, null, operator);
             String warn = "金蝶已存在来源单[" + sourceBillNo + "]的采购退货单（FNote=来源单:" + sourceBillNo
-                    + "），本地未回存单号，已按已退货处理，请人工在金蝶核对单号并回填";
+                    + "），本地未回存单号，已按已退货处理，请人工在金蝶核对单号并回填。"
+                    + uncoveredHint(pending, null);
             log.warn(warn);
             alert(warn);
             return applyReturned(record, null);
@@ -746,6 +750,51 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
                     + WmsConfigKey.KD_FORM_PURCHASE_RETURN.getKey() + "），不能退货");
         }
         return formId.trim();
+    }
+
+    /**
+     * 沿用已有退货单时，提示「本次待退记录里哪些物料/批次不在已回写的记录中」。
+     *
+     * <p>Writer 一张单只能带一条分录，同来源单不同物料会出现「金蝶单不含该行但本地已置已退货」，
+     * 必须告警让人去 ERP 补录，不能静默。
+     */
+    private void warnUncoveredByReturnedBill(String sourceBillNo, String billNo,
+                                             List<WmsDefectRecord> pending, List<WmsDefectRecord> returned) {
+        String hint = uncoveredHint(pending, returned);
+        if (hint.isEmpty()) {
+            return;
+        }
+        String warn = "受托不良退货沿用已有退货单[" + billNo + "]（来源单[" + sourceBillNo + "]）。" + hint;
+        log.warn(warn);
+        alert(warn);
+    }
+
+    /**
+     * @param returned 已回写退货单的记录；为 null 时表示「金蝶已有单但本地无从得知分录」，按全部待退提示
+     * @return 需人工补录的提示；无需提示时返回空串
+     */
+    private String uncoveredHint(List<WmsDefectRecord> pending, List<WmsDefectRecord> returned) {
+        Set<String> covered = new HashSet<>();
+        if (returned != null) {
+            for (WmsDefectRecord r : returned) {
+                covered.add(returnKey(r));
+            }
+        }
+        List<String> missing = new ArrayList<>();
+        for (WmsDefectRecord r : pending) {
+            if (!covered.contains(returnKey(r))) {
+                missing.add(r.getMaterialCode() + "/批次[" + trimToEmpty(r.getBatchNo()) + "]/数量 "
+                        + nvl(r.getQty()).stripTrailingZeros().toPlainString());
+            }
+        }
+        if (missing.isEmpty()) {
+            return "";
+        }
+        return "以下物料行未包含在该退货单中，需人工在金蝶补录：" + String.join("；", missing);
+    }
+
+    private String returnKey(WmsDefectRecord r) {
+        return trimToEmpty(r.getMaterialCode()) + "|" + trimToEmpty(r.getBatchNo());
     }
 
     /** 站内告警；告警设施自身异常不得掩盖业务失败。 */
