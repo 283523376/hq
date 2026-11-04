@@ -42,15 +42,15 @@
 
       <a-row :gutter="16">
         <a-col :span="8">
-          <a-form-item :label="supplierLabel" :required="supplierRequired">
+          <a-form-item :label="partnerLabel" :required="partnerRequired">
             <a-select
-              v-model:value="form.supplierId"
+              v-model:value="form.partnerId"
               show-search
               allow-clear
               option-filter-prop="label"
-              :options="supplierOptions"
-              :loading="supplierLoading"
-              :placeholder="`选择${supplierLabel}（复用供应商档案）`"
+              :options="partnerOptions"
+              :loading="partnerLoading"
+              :placeholder="`选择${partnerLabel}（${isConsigned ? '客户档案' : '供应商档案'}）`"
             />
             <div v-if="showSupplierWarning" class="raw-inbound__required-hint">
               金蝶采购入库单必须有供应商
@@ -109,7 +109,7 @@
 <script lang="ts" setup>
   import { computed, reactive, ref, watch } from 'vue';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import { receiveRawInbound, searchMaterialOptions, listSupplierOptions } from '../raw.api';
+  import { receiveRawInbound, searchMaterialOptions, listSupplierOptions, listCustomerOptions } from '../raw.api';
   import { HANDLING_TYPE_OPTIONS, SOURCE_TYPE_OPTIONS } from '../raw.data';
 
   const emit = defineEmits(['success']);
@@ -118,8 +118,11 @@
   const { createMessage } = useMessage();
 
   const submitting = ref(false);
-  const supplierLoading = ref(false);
+  const partnerLoading = ref(false);
+  /** 外购供应商档案 */
   const supplierOptions = ref<{ label: string; value: string }[]>([]);
+  /** 受托方客户档案（V2.4：受托方与金蝶一致，走客户 BD_Customer） */
+  const customerOptions = ref<{ label: string; value: string }[]>([]);
 
   const materialOptions = ref<{ label: string; value: string }[]>([]);
   const materialSearching = ref(false);
@@ -129,7 +132,8 @@
     sourceType: 'PURCHASE',
     handlingType: 'DIRECT',
     erpOrderNo: '',
-    supplierId: undefined as string | undefined,
+    /** 外购=供应商ID，受托=客户ID（提交时按来源类型分别落 supplierId / consignorId） */
+    partnerId: undefined as string | undefined,
   });
 
   type Row = {
@@ -148,17 +152,21 @@
     { title: '操作', key: 'action', width: 80 },
   ];
 
-  const supplierLabel = computed(() => (form.sourceType === 'CONSIGNED' ? '受托方' : '供应商'));
+  const isConsigned = computed(() => form.sourceType === 'CONSIGNED');
+  const partnerLabel = computed(() => (isConsigned.value ? '受托方' : '供应商'));
   /** 外购直入必须带供应商（金蝶采购入库单的 FSupplierId 必填）；受托一律必填受托方 */
-  const supplierRequired = computed(
-    () => form.sourceType === 'CONSIGNED' || (form.sourceType === 'PURCHASE' && form.handlingType === 'DIRECT')
+  const partnerRequired = computed(
+    () => isConsigned.value || (form.sourceType === 'PURCHASE' && form.handlingType === 'DIRECT')
   );
   const showSupplierWarning = computed(() => form.sourceType === 'PURCHASE' && form.handlingType === 'DIRECT');
+  /** 两种档案语义不同：受托方取客户档案，外购取供应商档案 */
+  const partnerOptions = computed(() => (isConsigned.value ? customerOptions.value : supplierOptions.value));
 
   watch(open, (visible) => {
     if (visible) {
       resetAll();
       void loadSuppliers();
+      void loadCustomers();
       void loadMaterialOptions();
     }
   });
@@ -167,13 +175,13 @@
     form.sourceType = 'PURCHASE';
     form.handlingType = 'DIRECT';
     form.erpOrderNo = '';
-    form.supplierId = undefined;
+    form.partnerId = undefined;
     rows.value = [{ _key: ++rowSeq, batchNo: '', quantity: 1 }];
   }
 
   /** 切换来源类型时清掉已选供应商/受托方——两种档案语义不同，不能沿用 */
   function handleSourceTypeChange() {
-    form.supplierId = undefined;
+    form.partnerId = undefined;
   }
 
   function addRow() {
@@ -185,7 +193,7 @@
   }
 
   async function loadSuppliers() {
-    supplierLoading.value = true;
+    partnerLoading.value = true;
     try {
       const list: any = await listSupplierOptions();
       supplierOptions.value = (list || []).map((s: any) => ({
@@ -195,7 +203,23 @@
     } catch (e) {
       // 供应商加载失败不阻塞登记，提交时后端会给出明确文案
     } finally {
-      supplierLoading.value = false;
+      partnerLoading.value = false;
+    }
+  }
+
+  /** 受托方客户档案（无客户档案时下拉为空，提交会被后端拒绝并给出明确文案） */
+  async function loadCustomers() {
+    partnerLoading.value = true;
+    try {
+      const list: any = await listCustomerOptions();
+      customerOptions.value = (list || []).map((c: any) => ({
+        label: `${c.customerCode} ${c.customerName}`,
+        value: c.id,
+      }));
+    } catch (e) {
+      // 客户加载失败不阻塞页面
+    } finally {
+      partnerLoading.value = false;
     }
   }
 
@@ -254,8 +278,8 @@
       createMessage.warning('ERP 订单号不能为空');
       return false;
     }
-    if (supplierRequired.value && !form.supplierId) {
-      createMessage.warning(`请选择${supplierLabel.value}`);
+    if (partnerRequired.value && !form.partnerId) {
+      createMessage.warning(`请选择${partnerLabel.value}`);
       return false;
     }
     if (!rows.value.length) {
@@ -293,8 +317,9 @@
         sourceType: form.sourceType,
         handlingType: form.handlingType,
         erpOrderNo: form.erpOrderNo.trim(),
-        supplierId: consigned ? undefined : form.supplierId,
-        consignorId: consigned ? form.supplierId : undefined,
+        // 外购写 supplier_*，受托写 consignor_*（客户档案）——两张主数据不混用
+        supplierId: consigned ? undefined : form.partnerId,
+        consignorId: consigned ? form.partnerId : undefined,
         details: rows.value.map((row) => ({
           materialId: row.materialId,
           quantity: Number(row.quantity),

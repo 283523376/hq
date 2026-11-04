@@ -5,11 +5,11 @@ import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsDefectInboundDTO;
 import org.jeecg.modules.wms.entity.WmsDefectRecord;
+import org.jeecg.modules.wms.entity.WmsCustomer;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.entity.WmsInventory;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsMaterial;
-import org.jeecg.modules.wms.entity.WmsSupplier;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.mapper.WmsDefectRecordMapper;
 import org.jeecg.modules.wms.mapper.WmsInboundOrderMapper;
@@ -21,12 +21,13 @@ import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsProductionInboundMapper;
 import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
-import org.jeecg.modules.wms.service.IWmsSupplierService;
+import org.jeecg.modules.wms.service.IWmsCustomerService;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReturnWriter;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
+import org.jeecg.modules.wms.sync.WmsWarehouseCodeResolver;
 import org.jeecg.modules.wms.dto.WmsProductionSubmitDTO;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
 import org.jeecg.modules.wms.mapper.WmsWorkOrderMapper;
@@ -73,7 +74,8 @@ class WmsDefectSourceTest {
     private IWmsAuditLogService auditLogService;
     private WmsDefectRecordMapper defectRecordMapper;
     private WmsInboundOrderMapper inboundOrderMapper;
-    private IWmsSupplierService supplierService;
+    private IWmsCustomerService customerService;
+    private WmsWarehouseCodeResolver warehouseResolver;
     private IWmsKingdeePurchaseReturnWriter returnWriter;
     private WmsKingdeeFormClient formClient;
     private IWmsSystemConfigService configService;
@@ -92,15 +94,16 @@ class WmsDefectSourceTest {
         auditLogService = mock(IWmsAuditLogService.class);
         defectRecordMapper = mock(WmsDefectRecordMapper.class);
         inboundOrderMapper = mock(WmsInboundOrderMapper.class);
-        supplierService = mock(IWmsSupplierService.class);
+        customerService = mock(IWmsCustomerService.class);
+        warehouseResolver = mock(WmsWarehouseCodeResolver.class);
         returnWriter = mock(IWmsKingdeePurchaseReturnWriter.class);
         formClient = mock(WmsKingdeeFormClient.class);
         configService = mock(IWmsSystemConfigService.class);
         sysBaseAPI = mock(ISysBaseAPI.class);
         service = new WmsDefectServiceImpl(inventoryMapper, orderMapper, detailMapper,
                 locationMapper, warehouseMapper, productionInboundMapper, materialMapper,
-                auditLogService, defectRecordMapper, inboundOrderMapper, supplierService,
-                returnWriter, formClient, configService, sysBaseAPI);
+                auditLogService, defectRecordMapper, inboundOrderMapper, customerService,
+                warehouseResolver, returnWriter, formClient, configService, sysBaseAPI);
         // 公共桩：物料、废品仓默认位回退链（defect.warehouse.code 未配置 → 废品仓 + FPC-DEFAULT）
         WmsMaterial material = new WmsMaterial().setMaterialCode("M001").setMaterialName("铜带").setUnit("米");
         material.setId("MAT1");
@@ -117,12 +120,16 @@ class WmsDefectSourceTest {
         when(materialMapper.selectOne(org.mockito.ArgumentMatchers
                 .<Wrapper<WmsMaterial>>any())).thenReturn(material);
         when(inventoryMapper.selectList(any())).thenReturn(List.of(consignedRow("IV-A", "S1", "100")));
+        // 退货仓库默认能解析（金蝶退料单 FStockId 必填）；缺仓库的负向用例单独覆盖
+        when(warehouseResolver.byInboundOrder(anyString())).thenReturn("WH01");
     }
 
     /** 退货用例公共桩：受托反查链（入库单 + 受托方）。 */
     private void stubConsignorChain() {
         when(inboundOrderMapper.selectOne(any())).thenReturn(consignedOrder());
-        when(supplierService.getById("S1")).thenReturn(supplier());
+        when(customerService.getById("S1")).thenReturn(customer());
+        // 退货仓库由来源入库单明细反查（金蝶退料单 FStockId 必填）
+        when(warehouseResolver.byInboundOrder("IO1")).thenReturn("WH01");
     }
 
     // ------------------------------------------------------------ 桩数据
@@ -144,13 +151,13 @@ class WmsDefectSourceTest {
         WmsInboundOrder o = new WmsInboundOrder()
                 .setOrderNo("SL20261104001")
                 .setSourceType(WmsConstants.INBOUND_SOURCE_CONSIGNED)
-                .setSupplierId("S1");
+                .setConsignorId("S1");
         o.setId("IO1");
         return o;
     }
 
-    private WmsSupplier supplier() {
-        WmsSupplier s = new WmsSupplier().setSupplierCode("C001").setSupplierName("受托方一");
+    private WmsCustomer customer() {
+        WmsCustomer s = new WmsCustomer().setCustomerCode("C001").setCustomerName("受托方一");
         s.setId("S1");
         return s;
     }
@@ -256,7 +263,9 @@ class WmsDefectSourceTest {
     @Test
     void consignedReturn_onlyRegistersRecord() {
         when(inboundOrderMapper.selectOne(any())).thenReturn(consignedOrder());
-        when(supplierService.getById("S1")).thenReturn(supplier());
+        when(customerService.getById("S1")).thenReturn(customer());
+        // 退货仓库由来源入库单明细反查（金蝶退料单 FStockId 必填）
+        when(warehouseResolver.byInboundOrder("IO1")).thenReturn("WH01");
 
         service.recordInbound(consignedDto(WmsConstants.DEFECT_DISPOSAL_RETURN, "3"), "tester");
 
@@ -279,7 +288,7 @@ class WmsDefectSourceTest {
 
         // 2) 单据缺少受托方
         WmsInboundOrder noSupplier = consignedOrder();
-        noSupplier.setSupplierId(null);
+        noSupplier.setConsignorId(null);
         when(inboundOrderMapper.selectOne(any())).thenReturn(noSupplier);
         RuntimeException e2 = assertThrows(RuntimeException.class,
                 () -> service.recordInbound(consignedDto(WmsConstants.DEFECT_DISPOSAL_SCRAP, "1"), "tester"));
@@ -287,7 +296,7 @@ class WmsDefectSourceTest {
 
         // 3) 受托方查无
         when(inboundOrderMapper.selectOne(any())).thenReturn(consignedOrder());
-        when(supplierService.getById("S1")).thenReturn(null);
+        when(customerService.getById("S1")).thenReturn(null);
         RuntimeException e3 = assertThrows(RuntimeException.class,
                 () -> service.recordInbound(consignedDto(WmsConstants.DEFECT_DISPOSAL_SCRAP, "1"), "tester"));
         assertTrue(e3.getMessage().contains("受托方不存在"), e3.getMessage());
@@ -364,13 +373,13 @@ class WmsDefectSourceTest {
                         pendingRecord("R2", "M001", "B1", "3")));       // 第二次调用：待处理记录
         when(returnWriter.isEnabled()).thenReturn(true);
         when(returnWriter.existsByReference("SL20261104001")).thenReturn(false);
-        when(returnWriter.write(any(), eq("C001"))).thenReturn(okResult("TH123"));
+        when(returnWriter.write(any(), eq("C001"), eq("WH01"))).thenReturn(okResult("TH123"));
         when(formClient.submit(eq("PUR_ReturnBill"), anyList())).thenReturn(okResult("TH123"));
 
         WmsDefectRecord result = service.returnToConsignor("R2", "tester");
 
         ArgumentCaptor<WmsDefectRecord> payloadCaptor = ArgumentCaptor.forClass(WmsDefectRecord.class);
-        verify(returnWriter).write(payloadCaptor.capture(), eq("C001"));
+        verify(returnWriter).write(payloadCaptor.capture(), eq("C001"), eq("WH01"));
         assertEquals(0, payloadCaptor.getValue().getQty().compareTo(new BigDecimal("5")));
         verify(formClient).submit("PUR_ReturnBill", List.of("TH123"));
         assertEquals("TH123", result.getReturnBillNo());
@@ -403,7 +412,7 @@ class WmsDefectSourceTest {
                 .thenReturn(List.of(pendingRecord("R1", "M001", "B1", "2")));
         when(returnWriter.isEnabled()).thenReturn(true);
         when(returnWriter.existsByReference("SL20261104001")).thenReturn(false);
-        when(returnWriter.write(any(), eq("C001"))).thenReturn(okResult("TH123"));
+        when(returnWriter.write(any(), eq("C001"), eq("WH01"))).thenReturn(okResult("TH123"));
         when(formClient.submit(eq("PUR_ReturnBill"), anyList())).thenReturn(okResult("TH123"));
 
         service.returnToConsignor("R1", "tester");
@@ -454,7 +463,27 @@ class WmsDefectSourceTest {
 
         assertTrue(e.getMessage().contains("受托库存不足"), e.getMessage());
         verify(inventoryMapper, never()).deductQuantity(anyString(), any());
-        verify(returnWriter, never()).write(any(), anyString());
+        verify(returnWriter, never()).write(any(), anyString(), anyString());
+        verify(defectRecordMapper, never()).updateById(any(WmsDefectRecord.class));
+    }
+
+    /** 来源入库单明细没有库位 → 无法确定金蝶退货仓库（PUR_MRB 的 FStockId 必填），拒绝开单。 */
+    @Test
+    void return_missingWarehouse_rejected() {
+        stubConsignorChain();
+        when(warehouseResolver.byInboundOrder("IO1")).thenReturn(null);
+        when(defectRecordMapper.selectById("R1")).thenReturn(pendingRecord("R1", "M001", "B1", "2"));
+        when(defectRecordMapper.selectList(any()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(pendingRecord("R1", "M001", "B1", "2")));
+        when(returnWriter.isEnabled()).thenReturn(true);
+        when(returnWriter.existsByReference("SL20261104001")).thenReturn(false);
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.returnToConsignor("R1", "tester"));
+
+        assertTrue(e.getMessage().contains("退货仓库"), e.getMessage());
+        verify(returnWriter, never()).write(any(), anyString(), anyString());
         verify(defectRecordMapper, never()).updateById(any(WmsDefectRecord.class));
     }
 
@@ -474,7 +503,7 @@ class WmsDefectSourceTest {
 
         assertEquals("TH100", result.getReturnBillNo());
         assertEquals(WmsConstants.DEFECT_STATUS_RETURNED, result.getStatus());
-        verify(returnWriter, never()).write(any(), anyString());
+        verify(returnWriter, never()).write(any(), anyString(), anyString());
         verify(returnWriter, never()).existsByReference(anyString());
         verify(formClient, never()).submit(anyString(), anyList());
         ArgumentCaptor<WmsDefectRecord> patchCaptor = ArgumentCaptor.forClass(WmsDefectRecord.class);
@@ -514,7 +543,7 @@ class WmsDefectSourceTest {
 
         WmsDefectRecord result = service.returnToConsignor("R1", "tester");
 
-        verify(returnWriter, never()).write(any(), anyString());
+        verify(returnWriter, never()).write(any(), anyString(), anyString());
         verify(formClient, never()).submit(anyString(), anyList());
         assertEquals(WmsConstants.DEFECT_STATUS_RETURNED, result.getStatus());
         assertNull(result.getReturnBillNo());
@@ -574,7 +603,7 @@ class WmsDefectSourceTest {
                 () -> service.returnToConsignor("R1", "tester"));
 
         assertTrue(e.getMessage().contains("受托入库单不存在"), e.getMessage());
-        verify(returnWriter, never()).write(any(), anyString());
+        verify(returnWriter, never()).write(any(), anyString(), anyString());
         verify(defectRecordMapper, never()).updateById(any(WmsDefectRecord.class));
     }
 
@@ -590,7 +619,9 @@ class WmsDefectSourceTest {
                         ? List.of()
                         : List.of(pendingRecord("R1", "M001", "B1", "1")));
         when(inboundOrderMapper.selectOne(any())).thenReturn(consignedOrder());
-        when(supplierService.getById("S1")).thenReturn(supplier());
+        when(customerService.getById("S1")).thenReturn(customer());
+        // 退货仓库由来源入库单明细反查（金蝶退料单 FStockId 必填）
+        when(warehouseResolver.byInboundOrder("IO1")).thenReturn("WH01");
         // isEnabled=false（mock 默认）
         RuntimeException e1 = assertThrows(RuntimeException.class,
                 () -> service.returnToConsignor("R1", "tester"));
@@ -612,17 +643,19 @@ class WmsDefectSourceTest {
                 .thenReturn(List.of())
                 .thenReturn(List.of(pendingRecord("R1", "M001", "B1", "1")));
         when(inboundOrderMapper.selectOne(any())).thenReturn(consignedOrder());
-        when(supplierService.getById("S1")).thenReturn(supplier());
+        when(customerService.getById("S1")).thenReturn(customer());
+        // 退货仓库由来源入库单明细反查（金蝶退料单 FStockId 必填）
+        when(warehouseResolver.byInboundOrder("IO1")).thenReturn("WH01");
         when(returnWriter.isEnabled()).thenReturn(true);
         when(returnWriter.existsByReference(anyString())).thenReturn(false);
-        when(returnWriter.write(any(), anyString())).thenReturn(WmsKingdeeResult.fail("金蝶接口失败"));
+        when(returnWriter.write(any(), anyString(), anyString())).thenReturn(WmsKingdeeResult.fail("金蝶接口失败"));
         when(formClient.submit(anyString(), anyList())).thenReturn(WmsKingdeeResult.fail("金蝶接口失败"));
 
         RuntimeException e = assertThrows(RuntimeException.class,
                 () -> service.returnToConsignor("R1", "tester"));
 
         assertTrue(e.getMessage().contains("已重试 3 次"), e.getMessage());
-        verify(returnWriter, times(3)).write(any(), anyString());
+        verify(returnWriter, times(3)).write(any(), anyString(), anyString());
         verify(sysBaseAPI).sendSysAnnouncement(any());
         verify(defectRecordMapper, never()).updateById(any(WmsDefectRecord.class));
     }
@@ -636,10 +669,12 @@ class WmsDefectSourceTest {
                 .thenReturn(List.of())
                 .thenReturn(List.of(pendingRecord("R1", "M001", "B1", "1")));
         when(inboundOrderMapper.selectOne(any())).thenReturn(consignedOrder());
-        when(supplierService.getById("S1")).thenReturn(supplier());
+        when(customerService.getById("S1")).thenReturn(customer());
+        // 退货仓库由来源入库单明细反查（金蝶退料单 FStockId 必填）
+        when(warehouseResolver.byInboundOrder("IO1")).thenReturn("WH01");
         when(returnWriter.isEnabled()).thenReturn(true);
         when(returnWriter.existsByReference(anyString())).thenReturn(false);
-        when(returnWriter.write(any(), anyString())).thenReturn(okResult("TH777"));
+        when(returnWriter.write(any(), anyString(), anyString())).thenReturn(okResult("TH777"));
         when(formClient.submit(anyString(), anyList()))
                 .thenReturn(WmsKingdeeResult.fail("金蝶提交失败"))
                 .thenReturn(okResult("TH777"));
@@ -647,7 +682,7 @@ class WmsDefectSourceTest {
         WmsDefectRecord result = service.returnToConsignor("R1", "tester");
 
         assertEquals("TH777", result.getReturnBillNo());
-        verify(returnWriter, times(1)).write(any(), anyString());
+        verify(returnWriter, times(1)).write(any(), anyString(), anyString());
         verify(formClient, times(2)).submit(anyString(), anyList());
     }
 

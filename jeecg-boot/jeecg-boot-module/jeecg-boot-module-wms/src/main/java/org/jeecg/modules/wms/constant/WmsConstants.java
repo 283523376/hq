@@ -509,7 +509,7 @@ public final class WmsConstants {
     public static final String AUDIT_BIZ_STOCKTAKE = "盘点单";
     /** 审计业务类型：系统配置项。 */
     public static final String AUDIT_BIZ_CONFIG = "系统配置";
-    /** 审计业务类型：主数据（物料/仓库/库位/分类/设备）。 */
+    /** 审计业务类型：主数据（物料/仓库/库位/分类/设备/客户）。 */
     public static final String AUDIT_BIZ_MASTER_DATA = "主数据";
     /** 审计业务类型：销售订单（ERP 只读快照）。 */
     public static final String AUDIT_BIZ_SALES_ORDER = "销售订单";
@@ -522,6 +522,8 @@ public final class WmsConstants {
     public static final String AUDIT_ACTION_CREATE = "创建";
     /** 审计动作：修改。 */
     public static final String AUDIT_ACTION_UPDATE = "修改";
+    /** 审计动作：删除（主数据逻辑删除，2026-11-04 新增）。 */
+    public static final String AUDIT_ACTION_DELETE = "删除";
     /** 审计动作：审核/确认。 */
     public static final String AUDIT_ACTION_AUDIT = "审核";
     /** 审计动作：作废（含 ERP 作废同步进来）。 */
@@ -1028,4 +1030,21 @@ public final class WmsConstants {
      * {@code saveDetails} 能落原材料分类，不改变既有分类口径。
      */
     public static final String CATEGORY_TYPE_RAW = "原材料";
+
+    // ==================== V2.4 金蝶单据类型编码（BOS 控制台实测） ====================
+
+    /**
+     * 金蝶采购入库单单据类型：标准采购入库（{@code STK_InStock}，2026-11-04 测试账套实测）。
+     */
+    public static final String KD_BILL_TYPE_PURCHASE_INBOUND = "RKD01_SYS";
+
+    /**
+     * 金蝶受托加工材料入库单单据类型（{@code STK_OEMInStock}，2026-11-04 测试账套实测）。
+     */
+    public static final String KD_BILL_TYPE_CONSIGNED_INBOUND = "STCLRK01_SYS";
+
+    /**
+     * 金蝶采购退料单单据类型（{@code PUR_MRB}，2026-11-04 测试账套实测）。
+     */
+    public static final String KD_BILL_TYPE_PURCHASE_RETURN = "TLD02_SYS";
 }

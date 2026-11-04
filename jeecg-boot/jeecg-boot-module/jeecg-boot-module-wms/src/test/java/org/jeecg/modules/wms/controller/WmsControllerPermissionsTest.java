@@ -34,6 +34,7 @@ class WmsControllerPermissionsTest {
             WmsMaterialController.class,
             WmsMaterialCategoryController.class,
             WmsSupplierController.class,
+            WmsCustomerController.class,
             WmsWarehouseController.class,
             WmsLocationController.class,
             WmsDeviceController.class,

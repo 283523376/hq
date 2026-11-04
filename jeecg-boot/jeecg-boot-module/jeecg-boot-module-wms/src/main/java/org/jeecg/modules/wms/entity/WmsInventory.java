@@ -55,8 +55,11 @@ public class WmsInventory extends JeecgEntity {
     @Schema(description = "库存所有权：OWNED 自有 / CONSIGNED 受托")
     private String ownershipType;
 
-    /** 受托方ID（wms_supplier.id）：ownershipType=CONSIGNED 时必填；自有为空串。 */
-    @Schema(description = "受托方ID")
+    /**
+     * 受托方ID（**wms_customer.id**，V2.4 起为客户档案）：ownershipType=CONSIGNED 时必填；
+     * 自有为空串（列类型保持 varchar(36) 不变）。
+     */
+    @Schema(description = "受托方ID（wms_customer.id）")
     private String consignorId;
 
     /**

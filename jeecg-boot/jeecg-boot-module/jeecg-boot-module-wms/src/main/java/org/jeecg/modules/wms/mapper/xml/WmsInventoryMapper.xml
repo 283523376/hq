@@ -155,8 +155,8 @@
           JOIN wms_material  m ON m.id = i.material_id  AND m.deleted_at = 0
           JOIN wms_location  l ON l.id = i.location_id  AND l.deleted_at = 0
           JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
-          <!-- 受托方名称：供应商档案可被逻辑删除，LEFT JOIN 保证受托行不会因档案缺失从台账里消失 -->
-          LEFT JOIN wms_supplier s ON s.id = i.consignor_id AND s.deleted_at = 0
+          <!-- 受托方名称：客户档案可被逻辑删除，LEFT JOIN 保证受托行不会因档案缺失从台账里消失 -->
+          LEFT JOIN wms_customer c ON c.id = i.consignor_id AND c.deleted_at = 0
     </sql>
 
     <sql id="ledgerColumns">
@@ -178,7 +178,7 @@
                (i.quantity - i.locked_qty) AS available_qty,
                i.ownership_type,
                i.consignor_id,
-               COALESCE(s.supplier_name, '') AS consignor_name,
+               COALESCE(c.customer_name, '') AS consignor_name,
                i.first_inbound_time,
                <choose>
                    <when test="q.asOfDate != null">

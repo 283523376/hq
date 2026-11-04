@@ -38,17 +38,34 @@ public class WmsInboundOrder extends JeecgEntity {
     @Schema(description = "采购订单号")
     private String purchaseOrderNo;
 
-    /** 供应商ID */
-    @Schema(description = "供应商ID")
+    /** 供应商ID（仅外购；受托单为空） */
+    @Schema(description = "供应商ID（仅外购）")
     private String supplierId;
 
-    /** 供应商编码（自采购订单带出的冗余） */
-    @Schema(description = "供应商编码")
+    /** 供应商编码（自采购订单带出的冗余；仅外购） */
+    @Schema(description = "供应商编码（仅外购）")
     private String supplierCode;
 
-    /** 供应商名称（自采购订单带出的冗余） */
-    @Schema(description = "供应商名称")
+    /** 供应商名称（自采购订单带出的冗余；仅外购） */
+    @Schema(description = "供应商名称（仅外购）")
     private String supplierName;
+
+    /**
+     * 受托方ID（wms_customer.id，仅受托）。
+     *
+     * <p>V2.4：受托方与金蝶保持一致——金蝶里受托方是「客户」，
+     * 故受托单只写 consignor_* 三列，supplier_* 只给外购用，两者不混用。
+     */
+    @Schema(description = "受托方ID（wms_customer.id，仅受托）")
+    private String consignorId;
+
+    /** 受托方编码（冗余，回写金蝶 FCustId；仅受托） */
+    @Schema(description = "受托方编码（仅受托）")
+    private String consignorCode;
+
+    /** 受托方名称（冗余，列表展示；仅受托） */
+    @Schema(description = "受托方名称（仅受托）")
+    private String consignorName;
 
     /** 单据状态：待检验/待分配/待上架/已入库/已审核/已拒收/检验不合格/作废 */
     @Schema(description = "单据状态")

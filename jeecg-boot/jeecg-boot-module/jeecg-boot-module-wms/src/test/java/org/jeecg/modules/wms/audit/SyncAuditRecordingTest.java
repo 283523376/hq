@@ -170,7 +170,7 @@ class SyncAuditRecordingTest {
         FakePurchaseReturnWriter writer = new FakePurchaseReturnWriter(
                 WmsKingdeeResult.ok("{}", null, "TH001", "erpId2"));
 
-        ((IWmsKingdeePurchaseReturnWriter) proxy(writer)).write(record, "C001");
+        ((IWmsKingdeePurchaseReturnWriter) proxy(writer)).write(record, "C001", "WH01");
 
         WmsAuditEvent event = capture();
         assertEquals("不良品记录", event.getBizType());
@@ -243,7 +243,7 @@ class SyncAuditRecordingTest {
         }
 
         @Override
-        public WmsKingdeeResult write(WmsDefectRecord record, String supplierNumber) {
+        public WmsKingdeeResult write(WmsDefectRecord record, String customerNumber, String warehouseCode) {
             return next;
         }
 

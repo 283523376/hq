@@ -22,13 +22,29 @@ import java.util.Map;
 /**
  * @Description: 受托加工材料入库单回写（V2.4 §3.2 受托入库）。
  *
- * <p><b>formId/字段需控制台确认</b>：金蝶受托加工材料入库单的 FormId、单据类型、必填
- * 基础资料随账套不同，本类只搭报文骨架，字段名以 BOS 在线控制台实测为准。
+ * <p><b>字段依据（2026-11-04 测试账套 6a9aaaadaf7ee6 实查 STK_OEMInStock）</b>：
+ * <ul>
+ *   <li>头：<b>{@code FCustId.FNumber}（客户，不是 FSupplierId）</b>、
+ *       {@code FStockOrgId.FNumber}、{@code FBillTypeID.FNumber}
+ *       （{@link WmsConstants#KD_BILL_TYPE_CONSIGNED_INBOUND}）、{@code FDate}、{@code FNote}；</li>
+ *   <li>数量字段：{@code FQty}（这个存在，与采购入库单的 FRealQty 不同）；</li>
+ *   <li>仓库：{@code FStockId.FNumber}、批次 {@code FLot.FNumber}。</li>
+ * </ul>
+ *
+ * <p><b>尚未真实试写验证（按 View / K3Cloud 惯例推导）</b>：
+ * <ol>
+ *   <li>分录实体键 {@code FOEMInStockEntry}——View 显示的是 {@code OEMInStockEntry}，
+ *       Save 侧按 K3Cloud 惯例加 {@code F} 前缀，**需一次试写确认**；</li>
+ *   <li>{@code FCustId} 按编码字典 {@code {FNumber: customer_code}} 绑定——金蝶 Save 的
+ *       基础资料绑定方式在采购入库单上已实测走编码，但受托单据未单独验证；</li>
+ *   <li>{@code FStockOrgId} 用配置 {@code default-org-number}（101）——受托单是否允许
+ *       跨组织、是否还需 {@code FOwnerId} 等字段，试写后才能定。</li>
+ * </ol>
  *
  * <p>口径：
  * <ul>
  *   <li><b>不传 {@code FBillNo} / {@code FID}</b>：单号与主键以 ERP 为准（2026-10-28 决策）；</li>
- *   <li>只传业务字段：日期、受托方、物料编码、实收数量、批次、备注；</li>
+ *   <li>只传业务字段：日期、受托方（客户）、物料编码、实收数量、批次、仓库、备注；</li>
  *   <li>数量取「实收数量」，为空回退「应收数量」——上架前调用时只有应收是常态；
  *       <b>短装行（数量 0）跳过</b>，负数仍报错；只有全部行都不可回写时才整单失败；</li>
  *   <li>日期取审核时间（{@code auditTime}），为空回退创建时间；</li>
@@ -49,20 +65,25 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
     private static final WmsConfigKey FORM_KEY = WmsConfigKey.KD_FORM_CONSIGNED_INBOUND;
     /** 备注长度上限：金蝶 FNote 超长会整单保存失败。 */
     private static final int NOTE_MAX_LENGTH = 500;
+    /** 分录实体键：View 显示 OEMInStockEntry，Save 侧按 K3Cloud 惯例加 F 前缀（待试写确认）。 */
+    static final String ENTRY_KEY = "FOEMInStockEntry";
 
     private final WmsKingdeeFormClient formClient;
     private final IWmsSystemConfigService configService;
     private final WmsInboundDetailMapper detailMapper;
     private final WmsKingdeeProperties properties;
+    private final WmsWarehouseCodeResolver warehouseResolver;
 
     public WmsKingdeeConsignedInboundWriterImpl(WmsKingdeeFormClient formClient,
                                                 IWmsSystemConfigService configService,
                                                 WmsInboundDetailMapper detailMapper,
-                                                WmsKingdeeProperties properties) {
+                                                WmsKingdeeProperties properties,
+                                                WmsWarehouseCodeResolver warehouseResolver) {
         this.formClient = formClient;
         this.configService = configService;
         this.detailMapper = detailMapper;
         this.properties = properties;
+        this.warehouseResolver = warehouseResolver;
     }
 
     @Override
@@ -113,35 +134,54 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
                         order.getOrderNo(), detail.getMaterialCode());
                 continue;
             }
-            entries.add(entry(detail, qty));
+            // 仓库逐行解析（明细 location_id 上架时写入）；解析不到显式失败，不省略必填字段
+            String stockCode = warehouseResolver.byLocation(detail.getLocationId());
+            if (oConvertUtils.isEmpty(stockCode)) {
+                return WmsKingdeeResult.fail("入库单[" + order.getOrderNo() + "]物料["
+                        + detail.getMaterialCode() + "]的库位/仓库编码缺失，无法回写金蝶" + BILL_NAME);
+            }
+            entries.add(entry(detail, qty, stockCode));
         }
         if (entries.isEmpty()) {
             return WmsKingdeeResult.fail("入库单[" + order.getOrderNo()
                     + "]没有可回写的明细行（短装或物料编码为空全部跳过），无需回写金蝶" + BILL_NAME);
         }
 
+        // 受托加工材料入库单头必须有库存组织；取现有配置 default-org-number（101）
+        String orgNumber = properties.getDefaultOrgNumber();
+        if (oConvertUtils.isEmpty(orgNumber) || orgNumber.trim().isEmpty()) {
+            return WmsKingdeeResult.fail("未配置金蝶默认组织（default-org-number），无法回写"
+                    + BILL_NAME);
+        }
+        // 受托方是「客户」：STK_OEMInStock 头字段实查为 FCustId，值取客户编码
+        String customer = order.getConsignorCode() == null ? "" : order.getConsignorCode().trim();
+        if (customer.isEmpty()) {
+            return WmsKingdeeResult.fail("入库单[" + order.getOrderNo()
+                    + "]缺少受托方客户编码（consignor_code），无法回写金蝶" + BILL_NAME);
+        }
+
         Map<String, Object> model = new LinkedHashMap<>();
         // 业务日期以审核（上架确认）时间为准，退回创建时间
         model.put("FDate", formatDate(order.getAuditTime() != null
                 ? order.getAuditTime() : order.getCreateTime()));
-        String supplier = order.getSupplierCode() == null ? "" : order.getSupplierCode().trim();
-        if (!supplier.isEmpty()) {
-            // 受托方：基础资料按编码绑定（2026-10-28 实测 {"Id":…} 会报必填项缺失）；
-            // 先 trim 再判空，纯空格不得发成 {FNumber: ""}
-            model.put("FSupplierId", dict(supplier));
-        }
+        model.put("FStockOrgId", dict(orgNumber.trim()));
+        model.put("FBillTypeID", dict(WmsConstants.KD_BILL_TYPE_CONSIGNED_INBOUND));
+        // 基础资料按编码绑定（2026-10-28 实测 {"Id":…} 会报必填项缺失）
+        model.put("FCustId", dict(customer));
         model.put("FNote", note(order));
-        model.put("FEntity", entries);
+        model.put(ENTRY_KEY, entries);
 
         log.info("回写金蝶{}({})：WMS 单号 {}，明细 {} 行", BILL_NAME, formId, order.getOrderNo(),
                 entries.size());
         return formClient.save(formId, model);
     }
 
-    private Map<String, Object> entry(WmsInboundDetail detail, BigDecimal qty) {
+    private Map<String, Object> entry(WmsInboundDetail detail, BigDecimal qty, String stockCode) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("FMaterialId", dict(detail.getMaterialCode()));
+        // STK_OEMInStock 的数量字段就是 FQty（与 STK_InStock 的 FRealQty 不同）
         entry.put("FQty", qty);
+        entry.put("FStockId", dict(stockCode));
         if (oConvertUtils.isNotEmpty(detail.getBatchNo())) {
             entry.put("FLot", dict(detail.getBatchNo()));
         }

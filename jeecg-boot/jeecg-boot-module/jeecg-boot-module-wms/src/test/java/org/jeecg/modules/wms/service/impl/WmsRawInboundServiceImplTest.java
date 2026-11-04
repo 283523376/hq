@@ -11,6 +11,7 @@ import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.entity.WmsSupplier;
+import org.jeecg.modules.wms.entity.WmsCustomer;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.mapper.WmsInboundDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsInboundOrderMapper;
@@ -19,6 +20,7 @@ import org.jeecg.modules.wms.mapper.WmsLocationMapper;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
 import org.jeecg.modules.wms.service.IWmsMaterialService;
 import org.jeecg.modules.wms.service.IWmsSupplierService;
+import org.jeecg.modules.wms.service.IWmsCustomerService;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
@@ -76,6 +78,7 @@ class WmsRawInboundServiceImplTest {
     private IWmsMaterialService materialService;
     private IWmsMaterialCategoryService categoryService;
     private IWmsSupplierService supplierService;
+    private IWmsCustomerService customerService;
     private WmsLocationMapper locationMapper;
     private IWmsWarehouseService warehouseService;
     private WmsInventoryMapper inventoryMapper;
@@ -95,6 +98,7 @@ class WmsRawInboundServiceImplTest {
         materialService = mock(IWmsMaterialService.class);
         categoryService = mock(IWmsMaterialCategoryService.class);
         supplierService = mock(IWmsSupplierService.class);
+        customerService = mock(IWmsCustomerService.class);
         locationMapper = mock(WmsLocationMapper.class);
         warehouseService = mock(IWmsWarehouseService.class);
         inventoryMapper = mock(WmsInventoryMapper.class);
@@ -105,7 +109,7 @@ class WmsRawInboundServiceImplTest {
         configService = mock(IWmsSystemConfigService.class);
 
         service = new WmsRawInboundServiceImpl(detailMapper, materialService, categoryService,
-                supplierService, locationMapper, warehouseService, inventoryMapper,
+                supplierService, customerService, locationMapper, warehouseService, inventoryMapper,
                 reader, purchaseWriter, consignedWriter, formClient, configService);
         WmsTestSupport.inject(service, "baseMapper", orderMapper);
         spy = Mockito.spy(service);
@@ -122,6 +126,7 @@ class WmsRawInboundServiceImplTest {
         when(inventoryMapper.upsertInventory(any(WmsInventory.class))).thenReturn(1);
         // V2.4 Task 9：外购必须带供应商，helper dto() 统一填 sup1
         when(supplierService.getById("sup1")).thenReturn(supplier());
+        when(customerService.getById("sup1")).thenReturn(customer());
     }
 
     // ------------------------------------------------------------------ 到货登记
@@ -180,10 +185,10 @@ class WmsRawInboundServiceImplTest {
     }
 
     @Test
-    void receiveConsignedDirectBindsConsignorAsSupplier() {
+    void receiveConsignedDirectBindsConsignorAsCustomer() {
         stubErpOrder(true);
         stubRawMaterial();
-        when(supplierService.getById("sup1")).thenReturn(supplier());
+        when(customerService.getById("sup1")).thenReturn(customer());
 
         WmsRawInboundDTO dto = dto(WmsConstants.INBOUND_SOURCE_CONSIGNED,
                 WmsConstants.INBOUND_HANDLING_DIRECT);
@@ -192,8 +197,11 @@ class WmsRawInboundServiceImplTest {
 
         assertEquals(WmsConstants.INBOUND_SOURCE_CONSIGNED, order.getSourceType());
         assertEquals(WmsConstants.INBOUND_TYPE_RAW_CONSIGNED, order.getInboundType());
-        assertEquals("sup1", order.getSupplierId());
-        assertEquals("SUP001", order.getSupplierCode());
+        // 受托方写 consignor_*（客户档案），supplier_* 只给外购
+        assertEquals("sup1", order.getConsignorId());
+        assertEquals("CUST001", order.getConsignorCode());
+        assertNull(order.getSupplierId());
+        assertNull(order.getSupplierCode());
         assertEquals(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE, order.getInboundStatus());
         verify(reader).queryConsignedOrder(ERP_ORDER_NO);
     }
@@ -519,8 +527,12 @@ class WmsRawInboundServiceImplTest {
                 .setInboundType(WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(sourceType)
                         ? WmsConstants.INBOUND_TYPE_RAW_CONSIGNED : WmsConstants.INBOUND_TYPE_RAW_PURCHASE)
                 .setInboundStatus(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE)
-                .setSyncStatus(WmsConstants.SYNC_STATUS_PENDING)
-                .setSupplierId(supplierId);
+                .setSyncStatus(WmsConstants.SYNC_STATUS_PENDING);
+        if (WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(sourceType)) {
+            order.setConsignorId(supplierId);
+        } else {
+            order.setSupplierId(supplierId);
+        }
         order.setCreateTime(new Date());
         order.setId("in1");
         when(orderMapper.selectById("in1")).thenReturn(order);
@@ -618,6 +630,15 @@ class WmsRawInboundServiceImplTest {
         supplier.setSupplierCode("SUP001");
         supplier.setSupplierName("供应商一");
         return supplier;
+    }
+
+    /** 受托方＝客户档案（V2.4：受托方与金蝶保持一致，不再复用供应商）。 */
+    private WmsCustomer customer() {
+        WmsCustomer customer = new WmsCustomer();
+        customer.setId("sup1");
+        customer.setCustomerCode("CUST001");
+        customer.setCustomerName("受托客户一");
+        return customer;
     }
 
     private WmsRawInboundDTO dto(String sourceType, String handlingType) {

@@ -52,7 +52,7 @@ public class WmsInventoryLedgerQueryDTO implements Serializable {
     @Schema(description = "库存类型：OWNED 自有（默认）/ CONSIGNED 受托")
     private String ownershipType;
 
-    /** 受托方ID（wms_supplier.id）：仅 ownershipType=CONSIGNED 时生效，自有库存忽略。 */
+    /** 受托方ID（wms_customer.id）：仅 ownershipType=CONSIGNED 时生效，自有库存忽略。 */
     @Schema(description = "受托方ID（仅受托库存筛选）")
     private String consignorId;
 

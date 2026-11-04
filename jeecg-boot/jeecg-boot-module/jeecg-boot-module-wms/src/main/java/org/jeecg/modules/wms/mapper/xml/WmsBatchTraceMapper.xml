@@ -46,7 +46,7 @@
                    l.location_code,
                    NULL AS container_code,
                    COALESCE(d.actual_quantity, d.quantity) AS qty,
-                   o.supplier_name AS counterparty,
+                   COALESCE(NULLIF(o.consignor_name, ''), o.supplier_name) AS counterparty,
                    o.create_by AS operator,
                    NULL AS remark
               FROM wms_inbound_detail d

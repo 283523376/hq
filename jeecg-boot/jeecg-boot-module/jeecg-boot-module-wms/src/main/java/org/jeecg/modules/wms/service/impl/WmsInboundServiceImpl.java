@@ -296,7 +296,9 @@ public class WmsInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper, Wm
             qw.like("order_no", orderNo.trim());
         }
         if (oConvertUtils.isNotEmpty(supplierName)) {
-            qw.like("supplier_name", supplierName.trim());
+            // V2.4：受托单的对方单位在 consignor_name（客户档案），与供应商共用同一个搜索框
+            String kw = supplierName.trim();
+            qw.and(w -> w.like("supplier_name", kw).or().like("consignor_name", kw));
         }
         qw.orderByDesc("create_time");
         return page(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNo, pageSize), qw);

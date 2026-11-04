@@ -36,10 +36,11 @@ public class WmsRawInboundDTO {
     private String erpOrderNo;
 
     /**
-     * 受托方ID（{@code wms_supplier.id}）：{@code sourceType=CONSIGNED} 时必填。
+     * 受托方ID（{@code wms_customer.id}，客户档案）：{@code sourceType=CONSIGNED} 时必填。
      *
-     * <p>同时作为入库单的供应商与受托库存行的 {@code consignor_id}——受托货权属该方，
-     * 退货/报废都按这个维度找账。
+     * <p>V2.4 起受托方与金蝶保持一致（金蝶里受托方是客户 BD_Customer），不再复用供应商档案。
+     * 落库进入库单的 {@code consignor_*} 三列，同时作为受托库存行的 {@code consignor_id}
+     * ——受托货权属该方，退货/报废都按这个维度找账。
      */
     private String consignorId;
 

@@ -16,8 +16,10 @@ enum Api {
  */
 export const list = (params?) => defHttp.get({ url: Api.list, params });
 
-/** 受托方下拉（复用启用中的供应商档案，仅库存类型=受托时参与筛选） */
-export const listSupplierOptions = () => defHttp.get({ url: '/wms/supplier/listAll' });
+/**
+ * 受托方下拉（V2.4：受托方与金蝶一致，走**客户档案**；仅库存类型=受托时参与筛选）。
+ */
+export const listCustomerOptions = () => defHttp.get({ url: '/wms/customer/listAll' });
 
 /**
  * 报废出库。

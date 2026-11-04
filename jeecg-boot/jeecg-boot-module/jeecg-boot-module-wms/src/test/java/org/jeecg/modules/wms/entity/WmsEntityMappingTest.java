@@ -91,6 +91,7 @@ class WmsEntityMappingTest {
         assertTimestampDeleteScheme(WmsMaterial.class);
         assertTimestampDeleteScheme(WmsMaterialCategory.class);
         assertTimestampDeleteScheme(WmsSupplier.class);
+        assertTimestampDeleteScheme(WmsCustomer.class);
         assertTimestampDeleteScheme(WmsOrder.class);
         // Phase B：BD-003 的三张表（V3.9.5_9，由"物理删除"并入统一方案）
         assertTimestampDeleteScheme(WmsWarehouse.class);

@@ -23,12 +23,15 @@ public interface IWmsKingdeePurchaseReturnWriter {
      * 把处置方式为退货的不良品记录回写为金蝶采购退货单（Save）。
      *
      * @param record         受托不良品记录（{@code disposal_type=RETURN}）
-     * @param supplierNumber 受托方（供应商）编码：调用方按 {@code record.sourceBillNo}
-     *                       反查入库单得到后传入——不良品记录本身不存受托方
+     * @param customerNumber 受托方（客户）编码：调用方按 {@code record.sourceBillNo}
+     *                       反查入库单的 {@code consignor_id} 得到客户档案后传入
+     *                       ——不良品记录本身不存受托方
+     * @param warehouseCode  退货仓库编码（{@code FStockId.FNumber}）：由调用方按来源入库单
+     *                       明细的货位反查 WMS 仓库得到（编码与金蝶 1:1）；必填
      * @return 金蝶保存结果；成功时 {@code number} 为 ERP 单号
      * @throws IllegalStateException 未配置采购退货单 formId
      */
-    WmsKingdeeResult write(WmsDefectRecord record, String supplierNumber);
+    WmsKingdeeResult write(WmsDefectRecord record, String customerNumber, String warehouseCode);
 
     /**
      * 幂等查重：按来源单号查这张退货单是否已经开过。

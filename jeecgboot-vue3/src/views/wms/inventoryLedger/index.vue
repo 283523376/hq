@@ -39,7 +39,7 @@
         <a-form-item v-if="query.ownershipType === 'CONSIGNED'" label="受托方">
           <a-select
             v-model:value="query.consignorId"
-            :options="supplierOptions"
+            :options="customerOptions"
             placeholder="全部受托方"
             allow-clear
             show-search
@@ -145,7 +145,7 @@
   import {
     createExportTask,
     deleteTask,
-    listSupplierOptions,
+    listCustomerOptions,
     listWarehouseOptions,
     queryLedger,
     queryTaskPage,
@@ -174,15 +174,15 @@
     onlyPositive: true,
   });
 
-  /** 受托方下拉（仅受托库存筛选时展示） */
-  const supplierOptions = ref<{ label: string; value: string }[]>([]);
+  /** 受托方下拉（仅受托库存筛选时展示；V2.4 起取客户档案） */
+  const customerOptions = ref<{ label: string; value: string }[]>([]);
 
-  async function fetchSupplierOptions() {
+  async function fetchCustomerOptions() {
     try {
-      const list: any = await listSupplierOptions();
-      supplierOptions.value = (list || []).map((s: any) => ({
-        label: `${s.supplierCode} ${s.supplierName}`,
-        value: s.id,
+      const list: any = await listCustomerOptions();
+      customerOptions.value = (list || []).map((c: any) => ({
+        label: `${c.customerCode} ${c.customerName}`,
+        value: c.id,
       }));
     } catch (e) {
       // 受托方加载失败只影响该筛选项，不影响台账查询
@@ -410,7 +410,7 @@
     fetchLedger();
     fetchTasks();
     fetchWarehouseOptions();
-    fetchSupplierOptions();
+    fetchCustomerOptions();
   });
 
   onUnmounted(() => {

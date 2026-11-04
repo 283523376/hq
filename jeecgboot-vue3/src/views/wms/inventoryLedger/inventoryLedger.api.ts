@@ -27,5 +27,7 @@ export const deleteTask = (id: string) =>
 /** 仓库下拉（含停用仓，台账要能看见停用仓里的存量） */
 export const listWarehouseOptions = (params) => defHttp.get({ url: Api.warehouseList, params });
 
-/** 受托方下拉（复用启用中的供应商档案，仅 `ownershipType=CONSIGNED` 时参与筛选） */
-export const listSupplierOptions = () => defHttp.get({ url: '/wms/supplier/listAll' });
+/**
+ * 受托方下拉（V2.4：受托方与金蝶一致，走**客户档案**；仅 `ownershipType=CONSIGNED` 时参与筛选）。
+ */
+export const listCustomerOptions = () => defHttp.get({ url: '/wms/customer/listAll' });

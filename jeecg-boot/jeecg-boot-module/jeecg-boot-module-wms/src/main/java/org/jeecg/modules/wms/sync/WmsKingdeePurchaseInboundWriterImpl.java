@@ -22,13 +22,21 @@ import java.util.Map;
 /**
  * @Description: 采购入库单回写（V2.4 §3.2 段差棒直入）。
  *
- * <p><b>formId/字段需控制台确认</b>：金蝶采购入库单的 FormId、单据类型、必填基础资料随
- * 账套不同，本类只搭报文骨架，字段名以 BOS 在线控制台实测为准。
+ * <p><b>字段依据（2026-11-04 测试账套 6a9aaaadaf7ee6 实查 STK_InStock）</b>：
+ * <ul>
+ *   <li>头：{@code FDate}、{@code FSupplierId.FNumber}、{@code FNote}、
+ *       {@code FBillTypeID.FNumber}（{@link WmsConstants#KD_BILL_TYPE_PURCHASE_INBOUND}）；</li>
+ *   <li>分录实体：{@code FEntity}；</li>
+ *   <li>数量字段：<b>{@code FRealQty}</b>（实查 FQty 不存在）；</li>
+ *   <li>仓库：{@code FStockId.FNumber}（WMS 仓库编码与金蝶 1:1）。</li>
+ * </ul>
+ * 尚未真实试写验证：分录内 {@code FStockId} 的层级（头还是分录）按现有真账套 Writer
+ * （生产入库/其他出库）的惯例放在分录内；若金蝶报「仓库不能为空」，需改挂到头上再试一次。
  *
  * <p>口径：
  * <ul>
  *   <li><b>不传 {@code FBillNo} / {@code FID}</b>：单号与主键以 ERP 为准（2026-10-28 决策）；</li>
- *   <li>只传业务字段：日期、供应商、物料编码、实收数量、批次、备注；</li>
+ *   <li>只传业务字段：日期、供应商、物料编码、实收数量、批次、仓库、备注；</li>
  *   <li>数量取「实收数量」，为空回退「应收数量」；<b>短装行（数量 0）跳过</b>，
  *       负数仍报错；只有全部行都不可回写时才整单失败——0 数量行让整单失败会造成
  *       「库存已入账、ERP 未回写」；</li>
@@ -55,15 +63,18 @@ public class WmsKingdeePurchaseInboundWriterImpl implements IWmsKingdeePurchaseI
     private final IWmsSystemConfigService configService;
     private final WmsInboundDetailMapper detailMapper;
     private final WmsKingdeeProperties properties;
+    private final WmsWarehouseCodeResolver warehouseResolver;
 
     public WmsKingdeePurchaseInboundWriterImpl(WmsKingdeeFormClient formClient,
                                                IWmsSystemConfigService configService,
                                                WmsInboundDetailMapper detailMapper,
-                                               WmsKingdeeProperties properties) {
+                                               WmsKingdeeProperties properties,
+                                               WmsWarehouseCodeResolver warehouseResolver) {
         this.formClient = formClient;
         this.configService = configService;
         this.detailMapper = detailMapper;
         this.properties = properties;
+        this.warehouseResolver = warehouseResolver;
     }
 
     @Override
@@ -115,7 +126,14 @@ public class WmsKingdeePurchaseInboundWriterImpl implements IWmsKingdeePurchaseI
                         order.getOrderNo(), detail.getMaterialCode());
                 continue;
             }
-            entries.add(entry(detail, qty));
+            // 仓库逐行解析：不同物料可能上架到不同库区（明细的 location_id 上架时写入）。
+            // 解析不到必须显式失败——FStockId 是金蝶必填，省略只会把错误推迟到 ERP 保存。
+            String stockCode = warehouseResolver.byLocation(detail.getLocationId());
+            if (oConvertUtils.isEmpty(stockCode)) {
+                return WmsKingdeeResult.fail("入库单[" + order.getOrderNo() + "]物料["
+                        + detail.getMaterialCode() + "]的库位/仓库编码缺失，无法回写金蝶" + BILL_NAME);
+            }
+            entries.add(entry(detail, qty, stockCode));
         }
         if (entries.isEmpty()) {
             return WmsKingdeeResult.fail("入库单[" + order.getOrderNo()
@@ -132,6 +150,7 @@ public class WmsKingdeePurchaseInboundWriterImpl implements IWmsKingdeePurchaseI
             // 先 trim 再判空，纯空格不得发成 {FNumber: ""}
             model.put("FSupplierId", dict(supplier));
         }
+        model.put("FBillTypeID", dict(WmsConstants.KD_BILL_TYPE_PURCHASE_INBOUND));
         model.put("FNote", note(order));
         model.put("FEntity", entries);
 
@@ -140,10 +159,12 @@ public class WmsKingdeePurchaseInboundWriterImpl implements IWmsKingdeePurchaseI
         return formClient.save(formId, model);
     }
 
-    private Map<String, Object> entry(WmsInboundDetail detail, BigDecimal qty) {
+    private Map<String, Object> entry(WmsInboundDetail detail, BigDecimal qty, String stockCode) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("FMaterialId", dict(detail.getMaterialCode()));
-        entry.put("FQty", qty);
+        // STK_InStock 实查只有 FRealQty（FQty 不存在）
+        entry.put("FRealQty", qty);
+        entry.put("FStockId", dict(stockCode));
         if (oConvertUtils.isNotEmpty(detail.getBatchNo())) {
             entry.put("FLot", dict(detail.getBatchNo()));
         }

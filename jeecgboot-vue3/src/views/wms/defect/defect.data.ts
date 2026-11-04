@@ -1,7 +1,7 @@
 import { h } from 'vue';
 import { Tag } from 'ant-design-vue';
 import { BasicColumn, FormSchema } from '/@/components/Table';
-import { listSupplierOptions } from './defect.api';
+import { listCustomerOptions } from './defect.api';
 
 /** 库存类型选项（后端 `WmsConstants.OWNERSHIP_*`）：默认只查自有，受托需显式切换 */
 export const OWNERSHIP_OPTIONS = [
@@ -57,8 +57,8 @@ export const searchFormSchema: FormSchema[] = [
     component: 'ApiSelect',
     colProps: { span: 6 },
     componentProps: {
-      api: listSupplierOptions,
-      labelField: 'supplierName',
+      api: listCustomerOptions,
+      labelField: 'customerName',
       valueField: 'id',
       placeholder: '仅「受托」库存生效',
       showSearch: true,

@@ -45,8 +45,16 @@ export const getRawInboundDetail = (id: string) => defHttp.get({ url: `/wms/inbo
 /** 空闲库位（按物料推导仓库类型） */
 export const listFreeLocations = (params) => defHttp.get({ url: '/wms/inbound/free-locations', params });
 
-/** 启用中的供应商档案（受托方复用供应商档案，用户已确认） */
+/** 启用中的供应商档案（仅外购来源使用） */
 export const listSupplierOptions = () => defHttp.get({ url: '/wms/supplier/listAll' });
+
+/**
+ * 启用中的客户档案（**受托方**）。
+ *
+ * V2.4 口径：受托方与金蝶保持一致——金蝶里受托方是客户（BD_Customer），
+ * 因此 WMS 受托方走客户档案，不再复用供应商档案。
+ */
+export const listCustomerOptions = () => defHttp.get({ url: '/wms/customer/listAll' });
 
 /**
  * 物料远程搜索（到货明细选择用）。

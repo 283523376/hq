@@ -132,7 +132,14 @@ export const columns: BasicColumn[] = [
   { title: 'ERP 订单号', align: 'center', dataIndex: 'purchaseOrderNo', width: 180 },
   { title: 'ERP 单号', align: 'center', dataIndex: 'erpBillNo', width: 190 },
   { title: '同步失败原因', align: 'left', dataIndex: 'lastSyncError', width: 220, ellipsis: true },
-  { title: '供应商 / 受托方', align: 'center', dataIndex: 'supplierName', width: 180 },
+  {
+    title: '供应商 / 受托方',
+    align: 'center',
+    dataIndex: 'supplierName',
+    width: 180,
+    // 外购看 supplier_name，受托看 consignor_name（V2.4：受托方是客户档案）
+    customRender: ({ record }) => record?.consignorName || record?.supplierName || '—',
+  },
   { title: '创建时间', align: 'center', dataIndex: 'createTime', width: 170 },
 ];
 
@@ -149,7 +156,7 @@ export const searchFormSchema: FormSchema[] = [
     field: 'supplierName',
     component: 'JInput',
     colProps: { span: 6 },
-    componentProps: { placeholder: '按名称模糊匹配' },
+    componentProps: { placeholder: '供应商或受托方名称，模糊匹配' },
   },
   { label: '状态', field: 'inboundStatus', component: 'Select', colProps: { span: 6 }, componentProps: { options: INBOUND_STATUS_OPTIONS } },
 ];

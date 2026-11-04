@@ -17,6 +17,7 @@ import org.jeecg.modules.wms.dto.WmsDefectInboundDTO;
 import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.dto.WmsAuditEvent;
 import org.jeecg.modules.wms.dto.WmsScrapDTO;
+import org.jeecg.modules.wms.entity.WmsCustomer;
 import org.jeecg.modules.wms.entity.WmsDefectRecord;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.entity.WmsInventory;
@@ -24,7 +25,6 @@ import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
-import org.jeecg.modules.wms.entity.WmsSupplier;
 import org.jeecg.modules.wms.entity.WmsWarehouse;
 import org.jeecg.modules.wms.mapper.WmsInventoryMapper;
 import org.jeecg.modules.wms.entity.WmsMaterial;
@@ -37,12 +37,13 @@ import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsProductionInboundMapper;
 import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.jeecg.modules.wms.service.IWmsCustomerService;
 import org.jeecg.modules.wms.service.IWmsDefectService;
-import org.jeecg.modules.wms.service.IWmsSupplierService;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReturnWriter;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
+import org.jeecg.modules.wms.sync.WmsWarehouseCodeResolver;
 import org.jeecg.modules.wms.vo.WmsDefectLedgerVO;
 import org.jeecg.modules.wms.vo.WmsInventoryLedgerVO;
 import org.jeecg.modules.wms.vo.WmsScrapResultVO;
@@ -73,7 +74,7 @@ import java.util.Set;
  * <ul>
  *   <li><b>生产不良</b>：入自有废品仓（与生产入库提交的不良落仓同一套库位解析）；</li>
  *   <li><b>受托不良</b>：来源单号必须等于受托入库单号——受托方不在记录里存，
- *       一律按 来源单号 → 入库单 → supplier_id 反查（Task 1 Ruling）；
+ *       一律按 来源单号 → 入库单 → consignor_id 反查客户档案（Task 1 Ruling；V2.4 起为客户）；
  *       SCRAP 扣受托库存（物料+批次+受托方匹配）后入废品仓仍记 CONSIGNED，不转自有；
  *       RETURN 只登记（待处理），退货时聚合同来源单记录共用一张采购退货单。</li>
  * </ul>
@@ -98,7 +99,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
     private final IWmsAuditLogService auditLogService;
     private final WmsDefectRecordMapper defectRecordMapper;
     private final WmsInboundOrderMapper inboundOrderMapper;
-    private final IWmsSupplierService supplierService;
+    private final IWmsCustomerService customerService;
+    private final WmsWarehouseCodeResolver warehouseResolver;
     private final IWmsKingdeePurchaseReturnWriter purchaseReturnWriter;
     private final WmsKingdeeFormClient formClient;
     private final IWmsSystemConfigService configService;
@@ -119,7 +121,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
                                 IWmsAuditLogService auditLogService,
                                 WmsDefectRecordMapper defectRecordMapper,
                                 WmsInboundOrderMapper inboundOrderMapper,
-                                IWmsSupplierService supplierService,
+                                IWmsCustomerService customerService,
+                                WmsWarehouseCodeResolver warehouseResolver,
                                 IWmsKingdeePurchaseReturnWriter purchaseReturnWriter,
                                 WmsKingdeeFormClient formClient,
                                 IWmsSystemConfigService configService,
@@ -134,7 +137,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         this.auditLogService = auditLogService;
         this.defectRecordMapper = defectRecordMapper;
         this.inboundOrderMapper = inboundOrderMapper;
-        this.supplierService = supplierService;
+        this.customerService = customerService;
+        this.warehouseResolver = warehouseResolver;
         this.purchaseReturnWriter = purchaseReturnWriter;
         this.formClient = formClient;
         this.configService = configService;
@@ -376,13 +380,14 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
     /** 受托不良：必须能反查入库单与受托方；SCRAP 扣受托库存后入废品仓（不转自有），RETURN 只登记。 */
     private void recordConsigned(String sourceBillNo, WmsMaterial material, String batchNo, BigDecimal qty,
                                  String reason, String disposalType, String operator, Date now) {
-        WmsSupplier consignor = resolveConsignor(sourceBillNo);
+        ConsignorRef ref = resolveConsignor(sourceBillNo);
+        WmsCustomer consignor = ref.customer();
         if (WmsConstants.DEFECT_DISPOSAL_RETURN.equals(disposalType)) {
             // 退货只登记台账（待处理）：不扣库存、不写废品仓，等 returnToConsignor 统一回写金蝶
             insertDefectRecord(buildRecord(WmsConstants.DEFECT_SOURCE_CONSIGNED, sourceBillNo, material,
                     batchNo, qty, reason, disposalType, operator, now), WmsConstants.DEFECT_STATUS_PENDING);
             log.info("受托不良登记（待退货）：来源单={}，物料={}，批次={}，数量={}，受托方={}",
-                    sourceBillNo, material.getMaterialCode(), batchNo, qty, consignor.getSupplierCode());
+                    sourceBillNo, material.getMaterialCode(), batchNo, qty, consignor.getCustomerCode());
             return;
         }
         deductConsignedInventory(sourceBillNo, material, batchNo, qty, consignor);
@@ -390,7 +395,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         insertDefectRecord(buildRecord(WmsConstants.DEFECT_SOURCE_CONSIGNED, sourceBillNo, material,
                 batchNo, qty, reason, disposalType, operator, now), WmsConstants.DEFECT_STATUS_DISPOSED);
         log.info("受托不良登记（入废品仓）：来源单={}，物料={}，批次={}，数量={}，受托方={}，仍记受托不转自有",
-                sourceBillNo, material.getMaterialCode(), batchNo, qty, consignor.getSupplierCode());
+                sourceBillNo, material.getMaterialCode(), batchNo, qty, consignor.getCustomerCode());
     }
 
     /**
@@ -398,7 +403,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
      * 绝不能扣到自有头上），FIFO 逐行扣，总量不足拒绝、并发被抢抛错回滚。
      */
     private void deductConsignedInventory(String sourceBillNo, WmsMaterial material, String batchNo,
-                                          BigDecimal qty, WmsSupplier consignor) {
+                                          BigDecimal qty, WmsCustomer consignor) {
         List<WmsInventory> rows = inventoryMapper.selectList(Wrappers.<WmsInventory>query()
                 .eq("material_id", material.getId())
                 .eq("batch_no", batchNo)
@@ -415,7 +420,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             }
         }
         if (totalAvailable.compareTo(qty) < 0) {
-            throw new RuntimeException("受托库存不足：受托方[" + consignor.getSupplierCode() + "]物料["
+            throw new RuntimeException("受托库存不足：受托方[" + consignor.getCustomerCode() + "]物料["
                     + material.getMaterialCode() + "]批次[" + batchNo + "]可用 "
                     + totalAvailable.stripTrailingZeros().toPlainString() + "，需求 "
                     + qty.stripTrailingZeros().toPlainString());
@@ -435,7 +440,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             remaining = remaining.subtract(deduct);
         }
         log.info("受托不良扣减受托库存：来源单={}，物料={}，批次={}，数量={}，受托方={}",
-                sourceBillNo, material.getMaterialCode(), batchNo, qty, consignor.getSupplierCode());
+                sourceBillNo, material.getMaterialCode(), batchNo, qty, consignor.getCustomerCode());
     }
 
     /**
@@ -445,7 +450,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
      * 否则会静默少扣。数量不足由 {@link #deductConsignedInventory} 抛错，事务整体回滚。
      */
     private void deductReturnedInventory(String sourceBillNo, List<WmsDefectRecord> records,
-                                         WmsSupplier consignor) {
+                                         WmsCustomer consignor) {
         Map<String, BigDecimal> qtyByKey = new java.util.LinkedHashMap<>();
         Map<String, WmsDefectRecord> sampleByKey = new java.util.LinkedHashMap<>();
         for (WmsDefectRecord r : records) {
@@ -474,7 +479,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             deductConsignedInventory(sourceBillNo, material, batchNo, entry.getValue(), consignor);
         }
         log.info("受托不良退货扣减受托库存：来源单={}，受托方={}，共 {} 个物料/批次组合",
-                sourceBillNo, consignor.getSupplierCode(), qtyByKey.size());
+                sourceBillNo, consignor.getCustomerCode(), qtyByKey.size());
     }
 
     /** 待退记录是否物料+批次一致（一致才能聚合成一条分录）。 */
@@ -506,7 +511,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             // 受托方全靠来源单号反查，缺了就永远定位不到受托人
             throw new RuntimeException("不良记录缺少来源单号，无法定位受托方");
         }
-        WmsSupplier consignor = resolveConsignor(sourceBillNo);
+        ConsignorRef ref = resolveConsignor(sourceBillNo);
+        WmsCustomer consignor = ref.customer();
 
         // 同来源单的 RETURN 记录聚合共用一张退货单：已有退货单号的直接沿用（不重复开单）
         List<WmsDefectRecord> returned = defectRecordMapper.selectList(Wrappers.<WmsDefectRecord>query()
@@ -553,6 +559,13 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             return applyReturned(record, null);
         }
 
+        // 退货仓库由来源入库单明细的货位反查（金蝶退料单 FStockId 必填）；
+        // 沿用在已有退货单时不写 ERP，故只在真正要开单的分支校验
+        if (oConvertUtils.isEmpty(ref.warehouseCode())) {
+            throw new RuntimeException("受托入库单[" + sourceBillNo
+                    + "]的明细没有库位/仓库信息，无法确定金蝶退货仓库，不能退货");
+        }
+
         // 聚合口径：物料+批次一致的待退记录合成一条分录（数量合计）开一张单；
         // 物料/批次不一致时 Writer 一单只能一条分录，只回写触发记录，其余记录留待处理。
         // 先定范围再聚合：聚合会改写首条记录的数量，扣库存必须按原始数量算。
@@ -567,7 +580,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         for (int attempt = 1; attempt <= RETURN_MAX_ATTEMPTS; attempt++) {
             try {
                 if (billNo == null) {
-                    WmsKingdeeResult saved = purchaseReturnWriter.write(payload, consignor.getSupplierCode());
+                    WmsKingdeeResult saved = purchaseReturnWriter.write(payload,
+                            consignor.getCustomerCode(), ref.warehouseCode());
                     if (saved == null || !saved.isSuccess() || oConvertUtils.isEmpty(saved.getNumber())) {
                         throw new IllegalStateException("金蝶保存失败："
                                 + (saved == null ? "无返回" : saved.getMessage()));
@@ -625,13 +639,25 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
     // ------------------------------------------------------------ RK-005 内部支撑
 
     /**
+     * 受托方客户档案 + 退货仓库编码（由来源入库单反查）。
+     *
+     * @param customer      客户档案（受托方）
+     * @param warehouseCode 退货仓库编码；来源入库单明细没有库位时为 null（仅退货回写需要）
+     */
+    private record ConsignorRef(WmsCustomer customer, String warehouseCode) {
+    }
+
+    /**
      * 按来源单号反查受托入库单与受托方。
      *
      * <p>受托方不落在不良记录里（{@code wms_defect_record} 无 consignor 列，Task 1 Ruling），
-     * 全靠 来源单号 → 入库单 → supplier_id 这根链条；任一环节缺失都必须拒绝，
+     * 全靠 来源单号 → 入库单 → consignor_id 这根链条；任一环节缺失都必须拒绝，
      * 否则扣错库存、退货单找不到收货人。
+     *
+     * <p>V2.4：{@code consignor_id} 指向**客户档案**（wms_customer），与金蝶受托方口径一致；
+     * 不再借用 {@code supplier_id}（那只给外购）。
      */
-    private WmsSupplier resolveConsignor(String sourceBillNo) {
+    private ConsignorRef resolveConsignor(String sourceBillNo) {
         WmsInboundOrder order = inboundOrderMapper.selectOne(Wrappers.<WmsInboundOrder>query()
                 .eq("order_no", sourceBillNo).last("LIMIT 1"));
         if (order == null) {
@@ -640,17 +666,17 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         if (!WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(order.getSourceType())) {
             throw new RuntimeException("来源入库单[" + sourceBillNo + "]不是受托入库单，不能按受托不良处置");
         }
-        if (oConvertUtils.isEmpty(order.getSupplierId())) {
+        if (oConvertUtils.isEmpty(order.getConsignorId())) {
             throw new RuntimeException("受托入库单[" + sourceBillNo + "]缺少受托方，无法登记受托不良");
         }
-        WmsSupplier supplier = supplierService.getById(order.getSupplierId());
-        if (supplier == null) {
-            throw new RuntimeException("受托方不存在（" + order.getSupplierId() + "），无法登记受托不良");
+        WmsCustomer customer = customerService.getById(order.getConsignorId());
+        if (customer == null) {
+            throw new RuntimeException("受托方不存在（" + order.getConsignorId() + "），无法登记受托不良");
         }
-        if (oConvertUtils.isEmpty(supplier.getSupplierCode())) {
-            throw new RuntimeException("受托方[" + supplier.getSupplierName() + "]缺少供应商编码，无法回写金蝶");
+        if (oConvertUtils.isEmpty(customer.getCustomerCode())) {
+            throw new RuntimeException("受托方[" + customer.getCustomerName() + "]缺少客户编码，无法回写金蝶");
         }
-        return supplier;
+        return new ConsignorRef(customer, warehouseResolver.byInboundOrder(order.getId()));
     }
 
     /**

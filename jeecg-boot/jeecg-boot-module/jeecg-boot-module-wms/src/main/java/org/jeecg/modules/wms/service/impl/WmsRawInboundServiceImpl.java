@@ -13,6 +13,7 @@ import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsPutawayDTO;
 import org.jeecg.modules.wms.dto.WmsRawInboundDTO;
+import org.jeecg.modules.wms.entity.WmsCustomer;
 import org.jeecg.modules.wms.entity.WmsInboundDetail;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.entity.WmsInventory;
@@ -25,6 +26,7 @@ import org.jeecg.modules.wms.mapper.WmsInboundDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsInboundOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsInventoryMapper;
 import org.jeecg.modules.wms.mapper.WmsLocationMapper;
+import org.jeecg.modules.wms.service.IWmsCustomerService;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
 import org.jeecg.modules.wms.service.IWmsMaterialService;
 import org.jeecg.modules.wms.service.IWmsRawInboundService;
@@ -88,6 +90,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
     private final IWmsMaterialService materialService;
     private final IWmsMaterialCategoryService categoryService;
     private final IWmsSupplierService supplierService;
+    private final IWmsCustomerService customerService;
     private final WmsLocationMapper locationMapper;
     private final IWmsWarehouseService warehouseService;
     private final WmsInventoryMapper inventoryMapper;
@@ -101,6 +104,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
                                     IWmsMaterialService materialService,
                                     IWmsMaterialCategoryService categoryService,
                                     IWmsSupplierService supplierService,
+                                    IWmsCustomerService customerService,
                                     WmsLocationMapper locationMapper,
                                     IWmsWarehouseService warehouseService,
                                     WmsInventoryMapper inventoryMapper,
@@ -113,6 +117,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         this.materialService = materialService;
         this.categoryService = categoryService;
         this.supplierService = supplierService;
+        this.customerService = customerService;
         this.locationMapper = locationMapper;
         this.warehouseService = warehouseService;
         this.inventoryMapper = inventoryMapper;
@@ -169,13 +174,18 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         // 1) ERP 订单校验：金蝶侧查不到这张单就不允许登记（开关关/未配 formId 同样失败）
         queryErpOrder(consigned, erpOrderNo);
 
-        // 2) 供应商 / 受托方
-        String supplierId = consigned ? consignorId : trim(dto.getSupplierId());
+        // 2) 供应商（外购）/ 受托方（受托，客户档案）：两种来源写不同的三列，不混用
         WmsSupplier supplier = null;
-        if (!supplierId.isEmpty()) {
-            supplier = supplierService.getById(supplierId);
+        WmsCustomer customer = null;
+        if (consigned) {
+            customer = customerService.getById(consignorId);
+            if (customer == null) {
+                throw new RuntimeException("受托方不存在");
+            }
+        } else if (!trim(dto.getSupplierId()).isEmpty()) {
+            supplier = supplierService.getById(trim(dto.getSupplierId()));
             if (supplier == null) {
-                throw new RuntimeException(consigned ? "受托方不存在" : "供应商不存在");
+                throw new RuntimeException("供应商不存在");
             }
         }
 
@@ -188,9 +198,13 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
                         : WmsConstants.INBOUND_TYPE_RAW_PURCHASE)
                 .setSourceType(sourceType)
                 .setPurchaseOrderNo(erpOrderNo)
-                .setSupplierId(supplierId.isEmpty() ? null : supplierId)
+                // supplier_* 只给外购；受托单不写，避免与 consignor_* 混用造成歧义
+                .setSupplierId(supplier == null ? null : supplier.getId())
                 .setSupplierCode(supplier == null ? null : supplier.getSupplierCode())
                 .setSupplierName(supplier == null ? null : supplier.getSupplierName())
+                .setConsignorId(customer == null ? null : customer.getId())
+                .setConsignorCode(customer == null ? null : customer.getCustomerCode())
+                .setConsignorName(customer == null ? null : customer.getCustomerName())
                 .setSyncStatus(direct ? WmsConstants.SYNC_STATUS_PENDING : WmsConstants.SYNC_STATUS_NOT_REQUIRED);
         if (direct) {
             // 跳过检验：直接待分配，等无检验上架
@@ -319,7 +333,8 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         // 金蝶配置前置校验：未启用或 formId 为空必须在写库存之前失败（不静默跳过）
         String formId = requireKingdeeReady(order);
         boolean consigned = WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(order.getSourceType());
-        String consignorId = trim(order.getSupplierId());
+        // V2.4：受托方在 consignor_id（客户档案），不再借用 supplier_id
+        String consignorId = trim(order.getConsignorId());
         if (consigned && consignorId.isEmpty()) {
             throw new RuntimeException("受托入库单缺少受托方，不能上架");
         }
@@ -693,7 +708,9 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
                     .or().like("purchase_order_no", kw));
         }
         if (oConvertUtils.isNotEmpty(supplierName)) {
-            qw.like("supplier_name", supplierName.trim());
+            // 列表只有一个「供应商/受托方」搜索框：外购看 supplier_name，受托看 consignor_name
+            String kw = supplierName.trim();
+            qw.and(w -> w.like("supplier_name", kw).or().like("consignor_name", kw));
         }
         qw.orderByDesc("create_time");
         return page(new Page<>(pageNo, pageSize), qw);
