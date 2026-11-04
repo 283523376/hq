@@ -56,6 +56,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -142,7 +143,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
 
     @Override
     public IPage<WmsDefectLedgerVO> pageLedger(int pageNo, int pageSize, String materialKeyword,
-                                               String batchNo, String locationCode) {
+                                               String batchNo, String locationCode,
+                                               String ownershipType, String consignorId) {
         List<WmsWarehouse> scraps = warehouseMapper.selectList(new LambdaQueryWrapper<WmsWarehouse>()
                 .eq(WmsWarehouse::getWarehouseType, WmsConstants.WAREHOUSE_TYPE_SCRAP));
         Page<WmsDefectLedgerVO> result = new Page<>(pageNo, pageSize);
@@ -163,8 +165,11 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             query.setLocationCode(locationCode);
             // 报废只关心还有量的行；0 量的行留在库里但没处置价值
             query.setOnlyPositive(Boolean.TRUE);
-            // 不良品台账默认只列自有库存；受托不良按受托方独立记账（V2.4 后续），不能混进自有台账
-            query.setOwnershipType(WmsConstants.OWNERSHIP_OWNED);
+            // 默认只列自有库存（受托货不属于企业，不能混进自有台账）；
+            // 显式传 CONSIGNED 才看受托不良——它们入废品仓后仍记受托所有权，
+            // 若不支持切换就永远无法在不良品模块内看到并处置。
+            query.setOwnershipType(resolveOwnershipType(ownershipType));
+            query.setConsignorId(oConvertUtils.isEmpty(consignorId) ? null : consignorId.trim());
             IPage<WmsInventoryLedgerVO> page = inventoryMapper.selectLedgerPage(
                     new Page<>(pageNo, pageSize), query);
             if (page != null && page.getRecords() != null) {
@@ -177,6 +182,12 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         result.setRecords(rows);
         result.setTotal(total);
         return result;
+    }
+
+    /** 只认 CONSIGNED，其余（含 null/空串/非法值）一律按 OWNED——绝不能把受托货算进自有台账。 */
+    private String resolveOwnershipType(String ownershipType) {
+        return WmsConstants.OWNERSHIP_CONSIGNED.equals(trimToEmpty(ownershipType))
+                ? WmsConstants.OWNERSHIP_CONSIGNED : WmsConstants.OWNERSHIP_OWNED;
     }
 
     private WmsDefectLedgerVO toLedgerRow(WmsInventoryLedgerVO row) {
@@ -195,6 +206,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
                 .setLockedQty(locked)
                 .setAvailableQty(qty.subtract(locked))
                 .setUnit(row.getUnit())
+                .setOwnershipType(row.getOwnershipType())
+                .setConsignorName(row.getConsignorName())
                 .setFirstInboundTime(row.getFirstInboundTime());
     }
 
@@ -425,6 +438,53 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
                 sourceBillNo, material.getMaterialCode(), batchNo, qty, consignor.getSupplierCode());
     }
 
+    /**
+     * 退货离库时扣减受托库存：与 SCRAP 同口径（物料+批次+受托方），按物料+批次聚合数量后逐组扣。
+     *
+     * <p>不良记录只存物料编码（无 materialId），必须先按编码解析物料；解析不到直接拒绝，
+     * 否则会静默少扣。数量不足由 {@link #deductConsignedInventory} 抛错，事务整体回滚。
+     */
+    private void deductReturnedInventory(String sourceBillNo, List<WmsDefectRecord> records,
+                                         WmsSupplier consignor) {
+        Map<String, BigDecimal> qtyByKey = new java.util.LinkedHashMap<>();
+        Map<String, WmsDefectRecord> sampleByKey = new java.util.LinkedHashMap<>();
+        for (WmsDefectRecord r : records) {
+            if (r == null) {
+                continue;
+            }
+            String key = trimToEmpty(r.getMaterialCode()) + "|" + trimToEmpty(r.getBatchNo());
+            qtyByKey.merge(key, nvl(r.getQty()), BigDecimal::add);
+            sampleByKey.putIfAbsent(key, r);
+        }
+        for (Map.Entry<String, BigDecimal> entry : qtyByKey.entrySet()) {
+            WmsDefectRecord sample = sampleByKey.get(entry.getKey());
+            String materialCode = trimToEmpty(sample.getMaterialCode());
+            String batchNo = trimToEmpty(sample.getBatchNo());
+            if (materialCode.isEmpty()) {
+                throw new RuntimeException("不良记录缺少物料编码，无法扣减受托库存");
+            }
+            if (batchNo.isEmpty()) {
+                throw new RuntimeException("不良记录[" + materialCode + "]缺少批次号，无法扣减受托库存");
+            }
+            WmsMaterial material = materialMapper.selectOne(Wrappers.<WmsMaterial>query()
+                    .eq("material_code", materialCode).last("LIMIT 1"));
+            if (material == null) {
+                throw new RuntimeException("物料[" + materialCode + "]不存在，无法扣减受托库存");
+            }
+            deductConsignedInventory(sourceBillNo, material, batchNo, entry.getValue(), consignor);
+        }
+        log.info("受托不良退货扣减受托库存：来源单={}，受托方={}，共 {} 个物料/批次组合",
+                sourceBillNo, consignor.getSupplierCode(), qtyByKey.size());
+    }
+
+    /** 待退记录是否物料+批次一致（一致才能聚合成一条分录）。 */
+    private boolean isSameMaterialBatch(List<WmsDefectRecord> pending) {
+        WmsDefectRecord first = pending.get(0);
+        return pending.stream().allMatch(r ->
+                Objects.equals(r.getMaterialCode(), first.getMaterialCode())
+                        && Objects.equals(r.getBatchNo(), first.getBatchNo()));
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public WmsDefectRecord returnToConsignor(String recordId, String operator) {
@@ -466,6 +526,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
 
         if (!returned.isEmpty()) {
             String billNo = returned.get(0).getReturnBillNo();
+            // 货已离库：扣减受托库存必须与置「已退货」同事务，否则账实不符且后续能重复扣这批
+            deductReturnedInventory(sourceBillNo, pending, consignor);
             markReturned(pending, billNo, operator);
             warnUncoveredByReturnedBill(sourceBillNo, billNo, pending, returned);
             log.info("受托不良退货沿用已有退货单：来源单={}，退货单={}，本次聚合 {} 条记录",
@@ -481,6 +543,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             // 上次 Save 成功但本地回存被回滚（进程中断/提交失败）：ERP 已有单，
             // Writer 不提供单号查询，再 write 必然重复开单——置已退货、单号留空并告警，
             // ERP 侧凭 FNote=来源单:<来源单号> 可定位到该单
+            deductReturnedInventory(sourceBillNo, pending, consignor);
             markReturned(pending, null, operator);
             String warn = "金蝶已存在来源单[" + sourceBillNo + "]的采购退货单（FNote=来源单:" + sourceBillNo
                     + "），本地未回存单号，已按已退货处理，请人工在金蝶核对单号并回填。"
@@ -490,11 +553,15 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             return applyReturned(record, null);
         }
 
-        // 聚合载荷：物料+批次一致的待退记录合成一条分录（数量合计）开一张单；
-        // 物料/批次不一致时 Writer 一单只能一条分录，只回写触发记录，其余记录留待处理
+        // 聚合口径：物料+批次一致的待退记录合成一条分录（数量合计）开一张单；
+        // 物料/批次不一致时 Writer 一单只能一条分录，只回写触发记录，其余记录留待处理。
+        // 先定范围再聚合：聚合会改写首条记录的数量，扣库存必须按原始数量算。
+        List<WmsDefectRecord> scope = isSameMaterialBatch(pending)
+                ? pending : List.of(record);
+        // 退货成功前扣减受托库存：货已离库，账必须同事务记掉；
+        // 不足直接抛错回滚——绝不能出现「已退货 + 金蝶单已开 + 库存没动」的账实不符。
+        deductReturnedInventory(sourceBillNo, scope, consignor);
         WmsDefectRecord payload = buildReturnPayload(pending, record);
-        List<WmsDefectRecord> scope = payload == record
-                ? List.of(record) : pending;
         String billNo = null;
         String lastError = null;
         for (int attempt = 1; attempt <= RETURN_MAX_ATTEMPTS; attempt++) {
@@ -592,10 +659,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
      */
     private WmsDefectRecord buildReturnPayload(List<WmsDefectRecord> pending, WmsDefectRecord trigger) {
         WmsDefectRecord first = pending.get(0);
-        boolean sameMaterialBatch = pending.stream().allMatch(r ->
-                Objects.equals(r.getMaterialCode(), first.getMaterialCode())
-                        && Objects.equals(r.getBatchNo(), first.getBatchNo()));
-        if (!sameMaterialBatch) {
+        if (!isSameMaterialBatch(pending)) {
             log.warn("来源单下存在不同物料/批次的不良退货记录，本次仅回写触发记录 {}，"
                     + "其余记录请逐条退货（各自生成独立退货单）", trigger.getId());
             return trigger;

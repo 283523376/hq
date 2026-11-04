@@ -221,6 +221,38 @@ class WmsRawInboundServiceImplTest {
         verify(inventoryMapper, never()).upsertInventory(any(WmsInventory.class));
     }
 
+    /** I3：同一 ERP 订单重复登记 → 拒绝并带上已存在单号，不落新单也不查金蝶。 */
+    @Test
+    void receiveRejectsDuplicateErpOrder() {
+        WmsInboundOrder existing = new WmsInboundOrder()
+                .setOrderNo("SL202611040009")
+                .setSourceType(WmsConstants.INBOUND_SOURCE_PURCHASE)
+                .setPurchaseOrderNo(ERP_ORDER_NO);
+        when(orderMapper.selectList(any())).thenReturn(List.of(existing));
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> spy.receive(dto(WmsConstants.INBOUND_SOURCE_PURCHASE,
+                        WmsConstants.INBOUND_HANDLING_DIRECT), OPERATOR));
+
+        assertTrue(e.getMessage().contains("已登记"), e.getMessage());
+        assertTrue(e.getMessage().contains("SL202611040009"), e.getMessage());
+        // 判重在 ERP 查询与落单之前，不能白调金蝶、更不能落第二张单
+        verify(reader, never()).queryPurchaseOrder(anyString());
+        verify(orderMapper, never()).insert(any(WmsInboundOrder.class));
+
+        // 判重条件必须包含「来源类型 + ERP 订单号 + 非作废」
+        org.mockito.ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<WmsInboundOrder>>
+                captor = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(orderMapper).selectList(captor.capture());
+        com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<WmsInboundOrder> qw =
+                (com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<WmsInboundOrder>) captor.getValue();
+        String sql = qw.getSqlSegment();
+        assertTrue(sql.contains("source_type") && sql.contains("purchase_order_no")
+                && sql.contains("inbound_status"), sql);
+        assertTrue(qw.getParamNameValuePairs().values().contains(WmsConstants.INBOUND_STATUS_VOIDED),
+                "必须排除作废单，否则作废后无法重新登记");
+    }
+
     @Test
     void receiveRejectsUnknownSourceOrHandlingType() {
         WmsRawInboundDTO badSource = dto("OTHER", WmsConstants.INBOUND_HANDLING_DIRECT);
@@ -263,7 +295,13 @@ class WmsRawInboundServiceImplTest {
                 .thenReturn(WmsKingdeeResult.ok("{}", null, "CGRK001", "erpId1"));
         when(formClient.submit(anyString(), any())).thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
 
-        spy.putawayRaw("in1", putawayDto(), OPERATOR);
+        org.jeecg.modules.wms.vo.WmsRawPutawayResultVO result =
+                spy.putawayRaw("in1", putawayDto(), OPERATOR);
+
+        // C1：上架必须把同步结果返回给前端，否则用户永远看不到回写失败
+        assertEquals(WmsConstants.SYNC_STATUS_SUCCESS, result.getSyncStatus());
+        assertEquals("CGRK001", result.getErpBillNo());
+        assertNull(result.getLastSyncError());
 
         ArgumentCaptor<WmsInventory> inv = ArgumentCaptor.forClass(WmsInventory.class);
         verify(inventoryMapper).upsertInventory(inv.capture());
@@ -345,10 +383,14 @@ class WmsRawInboundServiceImplTest {
         when(formClient.submit(anyString(), any()))
                 .thenReturn(WmsKingdeeResult.fail("单据未配置工作流"));
 
-        spy.putawayRaw("in1", putawayDto(), OPERATOR);
+        org.jeecg.modules.wms.vo.WmsRawPutawayResultVO result =
+                spy.putawayRaw("in1", putawayDto(), OPERATOR);
 
-        // 库存照常入账（不因 Submit 失败回滚）
+        // 库存照常入账（不因 Submit 失败回滚），但结果对象必须带出失败
         verify(inventoryMapper).upsertInventory(any(WmsInventory.class));
+        assertEquals(WmsConstants.SYNC_STATUS_FAILED, result.getSyncStatus());
+        assertTrue(result.getLastSyncError().contains("单据未配置工作流"), result.getLastSyncError());
+        assertEquals("CGRK002", result.getErpBillNo());
 
         WmsInboundOrder sync = captureSyncUpdate();
         assertEquals(WmsConstants.SYNC_STATUS_FAILED, sync.getSyncStatus());
@@ -358,7 +400,116 @@ class WmsRawInboundServiceImplTest {
         assertNull(sync.getErpSyncTime());
     }
 
+    // ------------------------------------------------------------------ 重试回写（C1 补偿入口）
+
+    /** 幂等：已经同步成功 → 直接返回，不重复开单、不重复提交。 */
+    @Test
+    void resyncAlreadySuccess_isIdempotent() {
+        auditedOrder(WmsConstants.SYNC_STATUS_SUCCESS, "CGRK001");
+
+        org.jeecg.modules.wms.vo.WmsRawPutawayResultVO result = spy.resync("in1", OPERATOR);
+
+        assertEquals(WmsConstants.SYNC_STATUS_SUCCESS, result.getSyncStatus());
+        assertEquals("CGRK001", result.getErpBillNo());
+        verify(purchaseWriter, never()).write(any());
+        verify(formClient, never()).submit(anyString(), any());
+        verify(orderMapper, never()).updateById(any(WmsInboundOrder.class));
+    }
+
+    /** 已有 ERP 单号（上次 Save 成功、Submit 失败）→ 只补提交，绝不重复 Save。 */
+    @Test
+    void resyncWithExistingBill_onlySubmits() {
+        auditedOrder(WmsConstants.SYNC_STATUS_FAILED, "CGRK002");
+        when(purchaseWriter.isEnabled()).thenReturn(true);
+        when(configService.getString(eq(WmsConfigKey.KD_FORM_PURCHASE_INBOUND.getKey()), anyString()))
+                .thenReturn("PUR_IN");
+        when(formClient.submit("PUR_IN", List.of("CGRK002")))
+                .thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
+
+        org.jeecg.modules.wms.vo.WmsRawPutawayResultVO result = spy.resync("in1", OPERATOR);
+
+        verify(purchaseWriter, never()).write(any());
+        verify(formClient).submit("PUR_IN", List.of("CGRK002"));
+        assertEquals(WmsConstants.SYNC_STATUS_SUCCESS, result.getSyncStatus());
+        assertEquals("CGRK002", result.getErpBillNo());
+
+        WmsInboundOrder patch = captureSyncUpdate();
+        assertEquals(WmsConstants.SYNC_STATUS_SUCCESS, patch.getSyncStatus());
+        assertNotNull(patch.getErpSyncTime());
+    }
+
+    /** 没有 ERP 单号（上次 Save 就失败）→ 走完整 Save→Submit→回存。 */
+    @Test
+    void resyncWithoutBill_doesFullSaveAndSubmit() {
+        WmsInboundOrder order = auditedOrder(WmsConstants.SYNC_STATUS_FAILED, null);
+        when(purchaseWriter.isEnabled()).thenReturn(true);
+        when(configService.getString(eq(WmsConfigKey.KD_FORM_PURCHASE_INBOUND.getKey()), anyString()))
+                .thenReturn("PUR_IN");
+        when(purchaseWriter.write(order)).thenReturn(WmsKingdeeResult.ok("{}", null, "CGRK003", "id3"));
+        when(formClient.submit("PUR_IN", List.of("CGRK003")))
+                .thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
+
+        org.jeecg.modules.wms.vo.WmsRawPutawayResultVO result = spy.resync("in1", OPERATOR);
+
+        verify(purchaseWriter).write(order);
+        verify(formClient).submit("PUR_IN", List.of("CGRK003"));
+        assertEquals(WmsConstants.SYNC_STATUS_SUCCESS, result.getSyncStatus());
+        assertEquals("CGRK003", result.getErpBillNo());
+    }
+
+    /** 非「已审核」单据不能重试回写（上架前没有库存，回写会做成无货的入库单）。 */
+    @Test
+    void resyncRequiresAuditedStatus() {
+        WmsInboundOrder order = pendingDirectOrder(WmsConstants.INBOUND_SOURCE_PURCHASE, null);
+        order.setSyncStatus(WmsConstants.SYNC_STATUS_FAILED);
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> spy.resync("in1", OPERATOR));
+
+        assertTrue(e.getMessage().contains("仅已审核"), e.getMessage());
+        verify(formClient, never()).submit(anyString(), any());
+    }
+
+    /** 大改小登记即终态、原材料不入库存，不存在可回写的入库单。 */
+    @Test
+    void resyncRejectsConvertOrder() {
+        auditedOrder(WmsConstants.SYNC_STATUS_NOT_REQUIRED, null);
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> spy.resync("in1", OPERATOR));
+
+        assertTrue(e.getMessage().contains("无需同步"), e.getMessage());
+        verify(purchaseWriter, never()).write(any());
+    }
+
+    /** 旧通道单据（source_type 为空）不属于本端点。 */
+    @Test
+    void resyncRejectsNonRawOrder() {
+        WmsInboundOrder legacy = new WmsInboundOrder()
+                .setOrderNo("RK001")
+                .setInboundStatus(WmsConstants.INBOUND_STATUS_AUDITED)
+                .setSyncStatus(WmsConstants.SYNC_STATUS_FAILED);
+        legacy.setId("in1");
+        when(orderMapper.selectById("in1")).thenReturn(legacy);
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> spy.resync("in1", OPERATOR));
+
+        assertTrue(e.getMessage().contains("不是外购/受托"), e.getMessage());
+    }
+
     // ------------------------------------------------------------------ 辅助
+
+    /** 一张「已审核」的直入单（补偿入口只接受这个状态）。 */
+    private WmsInboundOrder auditedOrder(String syncStatus, String erpBillNo) {
+        WmsInboundOrder order = new WmsInboundOrder()
+                .setOrderNo("SL202611040001")
+                .setSourceType(WmsConstants.INBOUND_SOURCE_PURCHASE)
+                .setInboundType(WmsConstants.INBOUND_TYPE_RAW_PURCHASE)
+                .setInboundStatus(WmsConstants.INBOUND_STATUS_AUDITED)
+                .setSyncStatus(syncStatus)
+                .setErpBillNo(erpBillNo);
+        order.setId("in1");
+        when(orderMapper.selectById("in1")).thenReturn(order);
+        return order;
+    }
 
     /** 构造一张「待分配」的直入单（省去走 receive）。 */
     private WmsInboundOrder pendingDirectOrder(String sourceType, String supplierId) {

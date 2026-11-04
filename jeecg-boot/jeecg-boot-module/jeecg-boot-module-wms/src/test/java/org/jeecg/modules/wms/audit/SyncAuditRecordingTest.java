@@ -1,11 +1,16 @@
 package org.jeecg.modules.wms.audit;
 
 import org.jeecg.modules.wms.dto.WmsAuditEvent;
+import org.jeecg.modules.wms.entity.WmsDefectRecord;
+import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.sync.IWmsKingdeeInboundWriter;
 import org.jeecg.modules.wms.sync.IWmsKingdeeOutstockWriter;
+import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseInboundWriter;
+import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReturnWriter;
+import org.jeecg.modules.wms.sync.WmsKingdeeResult;
 import org.jeecg.modules.wms.sync.WmsOrderSyncResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -120,6 +125,60 @@ class SyncAuditRecordingTest {
         assertEquals("失败", capture().getResult());
     }
 
+    /**
+     * V2.4 新回写器返回 {@link WmsKingdeeResult}（不是 WmsOrderSyncResult）：
+     * 采购入库回写同样必须留审计行，并把 ERP 单号带进 after_value。
+     */
+    @Test
+    void kingdeeResultInboundWriteback_recordsAuditWithErpNumber() {
+        WmsInboundOrder order = new WmsInboundOrder().setOrderNo("SL001").setSyncStatus("待同步");
+        FakePurchaseInboundWriter writer = new FakePurchaseInboundWriter(
+                WmsKingdeeResult.ok("{}", null, "CGRK001", "erpId1"));
+
+        ((IWmsKingdeePurchaseInboundWriter) proxy(writer)).write(order);
+
+        WmsAuditEvent event = capture();
+        assertEquals("入库单", event.getBizType());
+        assertEquals("SL001", event.getBizNo());
+        assertEquals("回写ERP", event.getAction());
+        assertEquals("回写ERP", event.getChannel());
+        assertEquals("成功", event.getResult());
+        assertTrue(String.valueOf(event.getAfterValue()).contains("CGRK001"),
+                "ERP 单号必须能从 after_value 看出来：" + event.getAfterValue());
+    }
+
+    /** WmsKingdeeResult 失败：金蝶原始错误必须落审计，不能只剩一个「失败」。 */
+    @Test
+    void kingdeeResultInboundWriteback_recordsFailureWithErpError() {
+        WmsInboundOrder order = new WmsInboundOrder().setOrderNo("SL002");
+        FakePurchaseInboundWriter writer = new FakePurchaseInboundWriter(
+                WmsKingdeeResult.fail("保存失败：必填项 FSupplierId 不能为空"));
+
+        ((IWmsKingdeePurchaseInboundWriter) proxy(writer)).write(order);
+
+        WmsAuditEvent event = capture();
+        assertEquals("SL002", event.getBizNo());
+        assertEquals("失败", event.getResult());
+        assertTrue(event.getErrorMsg().contains("FSupplierId"), "实际：" + event.getErrorMsg());
+    }
+
+    /** 采购退货回写的业务类型是不良品记录，单号取来源单号。 */
+    @Test
+    void purchaseReturnWriteback_recordsDefectRecordBiz() {
+        WmsDefectRecord record = new WmsDefectRecord()
+                .setSourceBillNo("SL001").setDisposalType("RETURN");
+        FakePurchaseReturnWriter writer = new FakePurchaseReturnWriter(
+                WmsKingdeeResult.ok("{}", null, "TH001", "erpId2"));
+
+        ((IWmsKingdeePurchaseReturnWriter) proxy(writer)).write(record, "C001");
+
+        WmsAuditEvent event = capture();
+        assertEquals("不良品记录", event.getBizType());
+        assertEquals("SL001", event.getBizNo());
+        assertEquals("成功", event.getResult());
+        assertTrue(String.valueOf(event.getAfterValue()).contains("TH001"), String.valueOf(event.getAfterValue()));
+    }
+
     /** 审计服务写库失败不影响回写结果。 */
     @Test
     void auditFailure_doesNotAffectWriteback() {
@@ -150,6 +209,47 @@ class SyncAuditRecordingTest {
                 inbound.setErpBillNo(erpBillNo);
             }
             return next;
+        }
+    }
+
+    static class FakePurchaseInboundWriter implements IWmsKingdeePurchaseInboundWriter {
+        private final WmsKingdeeResult next;
+
+        FakePurchaseInboundWriter(WmsKingdeeResult next) {
+            this.next = next;
+        }
+
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+
+        @Override
+        public WmsKingdeeResult write(WmsInboundOrder order) {
+            return next;
+        }
+    }
+
+    static class FakePurchaseReturnWriter implements IWmsKingdeePurchaseReturnWriter {
+        private final WmsKingdeeResult next;
+
+        FakePurchaseReturnWriter(WmsKingdeeResult next) {
+            this.next = next;
+        }
+
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+
+        @Override
+        public WmsKingdeeResult write(WmsDefectRecord record, String supplierNumber) {
+            return next;
+        }
+
+        @Override
+        public boolean existsByReference(String ref) {
+            return false;
         }
     }
 

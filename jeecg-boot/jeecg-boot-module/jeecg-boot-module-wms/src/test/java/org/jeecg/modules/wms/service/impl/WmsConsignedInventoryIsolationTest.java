@@ -369,7 +369,7 @@ class WmsConsignedInventoryIsolationTest {
         when(warehouseMapper.selectList(any())).thenReturn(List.of(scrap));
         when(inventoryMapper.selectLedgerPage(any(), any())).thenReturn(new Page<>());
 
-        service.pageLedger(1, 20, null, null, null);
+        service.pageLedger(1, 20, null, null, null, null, null);
 
         ArgumentCaptor<WmsInventoryLedgerQueryDTO> captor =
                 ArgumentCaptor.forClass(WmsInventoryLedgerQueryDTO.class);

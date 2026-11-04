@@ -38,10 +38,13 @@
   import { Modal } from 'ant-design-vue';
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
-  import { columns, isConvertOrder, searchFormSchema } from './raw.data';
-  import { listRawInbound } from './raw.api';
+  import { useMessage } from '/@/hooks/web/useMessage';
+  import { columns, isConvertOrder, isSyncFailed, searchFormSchema } from './raw.data';
+  import { listRawInbound, resyncRawInbound } from './raw.api';
   import RawReceiveModal from './components/RawReceiveModal.vue';
   import RawPutawayModal from './components/RawPutawayModal.vue';
+
+  const { createMessage } = useMessage();
 
   const { tableContext } = useListPage({
     tableProps: {
@@ -72,11 +75,34 @@
         onClick: () => openPutaway(record),
       });
     }
+    if (isSyncFailed(record)) {
+      // 补偿入口：上架时金蝶回写失败的单，用户在这里补一次
+      actions.push({
+        label: '重试回写',
+        auth: 'wms:inbound:consigned',
+        color: 'error',
+        onClick: () => handleResync(record),
+      });
+    }
     if (isConvertOrder(record)) {
       // 大改小没有上架动作，给一个显式口径入口，避免用户以为单据卡住了
       actions.push({ label: '口径说明', onClick: () => showConvertTip(record) });
     }
     return actions;
+  }
+
+  async function handleResync(record: any) {
+    const result: any = await resyncRawInbound(record.id);
+    if (result?.syncStatus === '同步成功') {
+      createMessage.success(`回写成功${result.erpBillNo ? `：${result.erpBillNo}` : ''}`);
+    } else {
+      Modal.warning({
+        title: '回写仍未成功',
+        content: `原因：${result?.lastSyncError || '未知错误'}。请检查金蝶配置或单据状态后重试。`,
+        okText: '知道了',
+      });
+    }
+    reload();
   }
 
   function showConvertTip(record: any) {

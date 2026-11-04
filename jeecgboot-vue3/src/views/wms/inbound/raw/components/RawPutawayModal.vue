@@ -44,6 +44,7 @@
 
 <script lang="ts" setup>
   import { ref, watch } from 'vue';
+  import { Modal } from 'ant-design-vue';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { getRawInboundDetail, listFreeLocations, putawayRawInbound } from '../raw.api';
 
@@ -127,16 +128,27 @@
     }
     submitting.value = true;
     try {
-      await putawayRawInbound(props.record.id, {
+      const result: any = await putawayRawInbound(props.record.id, {
         details: rows.value.map((r) => ({
           detailId: r.detailId,
           actualQuantity: Number(r.actualQuantity),
           locationId: r.locationId,
         })),
       });
-      createMessage.success('上架成功，库存已入账并触发 ERP 回写');
       open.value = false;
       emit('success');
+      // 库存入账与金蝶回写是两个独立结果：回写失败绝不可以说成「已回写」
+      if (result?.syncStatus === '同步成功') {
+        createMessage.success(`上架成功，已回写金蝶${result.erpBillNo ? `：${result.erpBillNo}` : ''}`);
+      } else {
+        Modal.warning({
+          title: '上架成功，但金蝶回写失败',
+          content: `库存已入账（不影响账面），回写原因：${
+            result?.lastSyncError || '未知错误'
+          }。请在原材料入库列表找到该单，点「重试回写」。`,
+          okText: '知道了',
+        });
+      }
     } finally {
       submitting.value = false;
     }

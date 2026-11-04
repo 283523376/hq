@@ -13,9 +13,23 @@ export const receiveRawInbound = (params) =>
   // 页面要按处理方式拼不同的成功文案，关掉默认绿条避免两条提示同时弹
   defHttp.post({ url: `${RAW}/receive`, params }, { successMessageMode: 'none' });
 
-/** 上架（仅 DIRECT 单；入参为 `WmsPutawayDTO`） */
+/**
+ * 上架（仅 DIRECT 单；入参为 `WmsPutawayDTO`）。
+ *
+ * 返回 `{ syncStatus, erpBillNo, lastSyncError }`：**库存入账与金蝶回写是两个结果**，
+ * 回写失败不会抛错（库存已入账）。页面必须按返回值分支提示，不能写死「已触发回写」。
+ */
 export const putawayRawInbound = (id: string, params) =>
   defHttp.post({ url: `${RAW}/${id}/putaway`, params }, { successMessageMode: 'none' });
+
+/**
+ * 重试回写（补偿入口）。
+ *
+ * 只对「已审核」且非大改小的单有效；已有金蝶单号的只补提交，已同步成功的幂等返回。
+ * 返回与上架同款的 `{ syncStatus, erpBillNo, lastSyncError }`。
+ */
+export const resyncRawInbound = (id: string) =>
+  defHttp.post({ url: `${RAW}/${id}/resync` }, { successMessageMode: 'none' });
 
 /**
  * 原材料入库单分页（`source_type` 为 PURCHASE/CONSIGNED 的单据）。

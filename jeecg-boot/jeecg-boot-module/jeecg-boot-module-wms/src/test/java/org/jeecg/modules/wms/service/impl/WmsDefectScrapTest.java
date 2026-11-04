@@ -3,6 +3,7 @@ package org.jeecg.modules.wms.service.impl;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.dto.WmsScrapDTO;
 import org.jeecg.modules.wms.entity.WmsInventory;
 import org.jeecg.modules.wms.entity.WmsLocation;
@@ -209,10 +210,39 @@ class WmsDefectScrapTest {
         when(warehouseMapper.selectList(any())).thenReturn(List.of(scrap));
         when(inventoryMapper.selectLedgerPage(any(), any())).thenReturn(new Page<>());
 
-        service.pageLedger(1, 10, null, null, null);
+        service.pageLedger(1, 10, null, null, null, null, null);
 
         // 必须按「废品仓」这个条件去查库区，而不是把所有库存都捞出来
         verify(warehouseMapper).selectList(any());
         verify(inventoryMapper).selectLedgerPage(any(), any());
+    }
+
+    /** 受托不良入废品仓后仍记 CONSIGNED：必须能按库存类型/受托方筛出来，否则永远无法在模块内处置。 */
+    @Test
+    void ledger_consignedFilterPassesOwnershipAndConsignor() {
+        when(warehouseMapper.selectList(any())).thenReturn(List.of(scrapWarehouse()));
+        when(inventoryMapper.selectLedgerPage(any(), any())).thenReturn(new Page<>());
+
+        service.pageLedger(1, 10, null, null, null, WmsConstants.OWNERSHIP_CONSIGNED, " sup1 ");
+
+        ArgumentCaptor<WmsInventoryLedgerQueryDTO> captor =
+                ArgumentCaptor.forClass(WmsInventoryLedgerQueryDTO.class);
+        verify(inventoryMapper).selectLedgerPage(any(), captor.capture());
+        assertEquals(WmsConstants.OWNERSHIP_CONSIGNED, captor.getValue().getOwnershipType());
+        assertEquals("sup1", captor.getValue().getConsignorId());
+    }
+
+    /** 非法/空的库存类型按 OWNED 处理：绝不能把受托货算进自有台账。 */
+    @Test
+    void ledger_blankOwnershipDefaultsToOwned() {
+        when(warehouseMapper.selectList(any())).thenReturn(List.of(scrapWarehouse()));
+        when(inventoryMapper.selectLedgerPage(any(), any())).thenReturn(new Page<>());
+
+        service.pageLedger(1, 10, null, null, null, " BAD ", null);
+
+        ArgumentCaptor<WmsInventoryLedgerQueryDTO> captor =
+                ArgumentCaptor.forClass(WmsInventoryLedgerQueryDTO.class);
+        verify(inventoryMapper).selectLedgerPage(any(), captor.capture());
+        assertEquals(WmsConstants.OWNERSHIP_OWNED, captor.getValue().getOwnershipType());
     }
 }

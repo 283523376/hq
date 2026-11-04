@@ -13,6 +13,7 @@ import org.jeecg.modules.wms.dto.WmsRawInboundDTO;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.service.IWmsRawInboundService;
 import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsRawPutawayResultVO;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -53,8 +54,10 @@ public class WmsRawInboundController {
             @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
             @RequestParam(name = "sourceType", required = false) String sourceType,
             @RequestParam(name = "inboundStatus", required = false) String inboundStatus,
-            @RequestParam(name = "orderNo", required = false) String orderNo) {
-        return Result.OK(rawInboundService.listPage(pageNo, pageSize, sourceType, inboundStatus, orderNo));
+            @RequestParam(name = "orderNo", required = false) String orderNo,
+            @RequestParam(name = "supplierName", required = false) String supplierName) {
+        return Result.OK(rawInboundService.listPage(pageNo, pageSize, sourceType, inboundStatus,
+                orderNo, supplierName));
     }
 
     @Operation(summary = "原材料入库-到货登记（外购/受托 × 段差棒直入/大改小）")
@@ -76,12 +79,30 @@ public class WmsRawInboundController {
     @RequiresPermissions("wms:inbound:consigned")
     @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_INBOUND, action = WmsConstants.AUDIT_ACTION_PUTAWAY,
             bizNoSpEL = "#id")
-    public Result<Void> putaway(@PathVariable("id") String id, @RequestBody WmsPutawayDTO dto) {
+    public Result<WmsRawPutawayResultVO> putaway(@PathVariable("id") String id, @RequestBody WmsPutawayDTO dto) {
         try {
-            rawInboundService.putawayRaw(id, dto, WmsUtils.currentUsername());
-            return Result.OK("上架成功", null);
+            // 回写失败不回滚库存，结果对象带同步状态返回，由前端如实提示
+            return Result.OK("上架成功", rawInboundService.putawayRaw(id, dto, WmsUtils.currentUsername()));
         } catch (RuntimeException e) {
             log.warn("原材料上架失败：id={}，{}", id, e.getMessage());
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @Operation(summary = "原材料入库-重试回写金蝶（补偿入口，失败单据用）")
+    @PostMapping(value = "/{id}/resync")
+    @RequiresPermissions("wms:inbound:consigned")
+    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_INBOUND, action = WmsConstants.AUDIT_ACTION_WRITE_BACK,
+            bizNoSpEL = "#id")
+    public Result<WmsRawPutawayResultVO> resync(@PathVariable("id") String id) {
+        try {
+            WmsRawPutawayResultVO result = rawInboundService.resync(id, WmsUtils.currentUsername());
+            // 回写失败不算接口失败（库存/单据状态不受影响），但 message 不能谎报成功
+            String message = WmsConstants.SYNC_STATUS_SUCCESS.equals(result.getSyncStatus())
+                    ? "回写成功" : "回写失败";
+            return Result.OK(message, result);
+        } catch (RuntimeException e) {
+            log.warn("原材料重试回写失败：id={}，{}", id, e.getMessage());
             return Result.error(e.getMessage());
         }
     }

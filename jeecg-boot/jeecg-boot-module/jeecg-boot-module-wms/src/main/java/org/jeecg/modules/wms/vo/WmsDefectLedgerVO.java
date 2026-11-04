@@ -56,6 +56,12 @@ public class WmsDefectLedgerVO {
     @Schema(description = "单位")
     private String unit;
 
+    @Schema(description = "库存类型：OWNED 自有（默认）/ CONSIGNED 受托")
+    private String ownershipType;
+
+    @Schema(description = "受托方名称（仅受托库存行有值）")
+    private String consignorName;
+
     @Schema(description = "批次首次入库时间（货龄起算点）")
     private Date firstInboundTime;
 

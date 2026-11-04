@@ -5,6 +5,7 @@ import org.jeecg.common.system.base.service.JeecgService;
 import org.jeecg.modules.wms.dto.WmsPutawayDTO;
 import org.jeecg.modules.wms.dto.WmsRawInboundDTO;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
+import org.jeecg.modules.wms.vo.WmsRawPutawayResultVO;
 
 /**
  * 外购/受托原材料到货登记与段差棒直入（RK-001 V2.4，spec §3.2）。
@@ -47,9 +48,24 @@ public interface IWmsRawInboundService extends JeecgService<WmsInboundOrder> {
      * @param inboundId 入库单ID
      * @param dto       上架明细（实收数量、库位）
      * @param operator  操作人
+     * @return 落库后的同步结果（含同步状态、ERP 单号、失败原因）；回写失败不抛异常
      * @throws RuntimeException 单据/状态/库位/物料校验失败，或金蝶配置未就绪
      */
-    void putawayRaw(String inboundId, WmsPutawayDTO dto, String operator);
+    WmsRawPutawayResultVO putawayRaw(String inboundId, WmsPutawayDTO dto, String operator);
+
+    /**
+     * 重试回写金蝶（补偿入口）：只允许 {@code source_type} 非空且「已审核」的单据。
+     *
+     * <p>幂等：{@code sync_status=同步成功} 的直接返回当前结果，不重复开单。
+     * 已有 {@code erp_bill_no} 的只补 Submit；没有的走完整 Save→Submit→回存。
+     * 大改小（CONVERT）单据登记即终态、无需同步，显式拒绝。
+     *
+     * @param inboundId 入库单ID
+     * @param operator  操作人
+     * @return 本次回写后的同步结果；回写失败照样返回结果对象（不抛异常）
+     * @throws RuntimeException 单据不存在/不是原材料通道/状态不允许/金蝶配置未就绪
+     */
+    WmsRawPutawayResultVO resync(String inboundId, String operator);
 
     /**
      * 原材料入库单分页：<b>只含 {@code source_type} 为 PURCHASE/CONSIGNED 的单据</b>。
@@ -59,8 +75,9 @@ public interface IWmsRawInboundService extends JeecgService<WmsInboundOrder> {
      *
      * @param sourceType    来源类型（PURCHASE/CONSIGNED），空=不限
      * @param inboundStatus 单据状态，空=不限
-     * @param orderNo       入库单号/ERP 单号，任意连续子串模糊
+     * @param orderNo       入库单号/ERP 单号/ERP 订单号，任意连续子串模糊
+     * @param supplierName  供应商/受托方名称，模糊
      */
     IPage<WmsInboundOrder> listPage(int pageNo, int pageSize, String sourceType,
-                                    String inboundStatus, String orderNo);
+                                    String inboundStatus, String orderNo, String supplierName);
 }

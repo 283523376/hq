@@ -74,6 +74,20 @@ export function handlingTypeLabel(record: any): string {
   return isConvertOrder(record) ? '大改小' : '段差棒直入';
 }
 
+/** 同步状态颜色（后端 `WmsConstants.SYNC_STATUS_*`） */
+const syncStatusColor: Record<string, string> = {
+  同步成功: 'success',
+  同步失败: 'error',
+  待同步: 'orange',
+  同步中: 'processing',
+  无需同步: 'default',
+};
+
+/** 回写失败的单据需要补偿入口：「重试回写」按钮按此判断 */
+export function isSyncFailed(record: any): boolean {
+  return record?.syncStatus === '同步失败';
+}
+
 export const columns: BasicColumn[] = [
   { title: '入库单号', align: 'center', dataIndex: 'orderNo', width: 200 },
   {
@@ -102,7 +116,22 @@ export const columns: BasicColumn[] = [
     width: 110,
     customRender: ({ text }) => h(Tag, { color: statusColor[text] || 'default' }, () => text),
   },
-  { title: 'ERP 单号', align: 'center', dataIndex: 'purchaseOrderNo', width: 180 },
+  {
+    title: '同步状态',
+    align: 'center',
+    dataIndex: 'syncStatus',
+    width: 110,
+    customRender: ({ text }) => {
+      if (!text) {
+        return h('span', '-');
+      }
+      return h(Tag, { color: syncStatusColor[text] || 'default' }, () => text);
+    },
+  },
+  // 「ERP 订单号」= 到货登记时校验的金蝶订单；「ERP 单号」= 本次回写生成的单据
+  { title: 'ERP 订单号', align: 'center', dataIndex: 'purchaseOrderNo', width: 180 },
+  { title: 'ERP 单号', align: 'center', dataIndex: 'erpBillNo', width: 190 },
+  { title: '同步失败原因', align: 'left', dataIndex: 'lastSyncError', width: 220, ellipsis: true },
   { title: '供应商 / 受托方', align: 'center', dataIndex: 'supplierName', width: 180 },
   { title: '创建时间', align: 'center', dataIndex: 'createTime', width: 170 },
 ];
@@ -113,7 +142,7 @@ export const searchFormSchema: FormSchema[] = [
     field: 'orderNo',
     component: 'JInput',
     colProps: { span: 6 },
-    componentProps: { placeholder: '支持任意连续子串' },
+    componentProps: { placeholder: '入库单号/ERP 单号/ERP 订单号' },
   },
   {
     label: '供应商/受托方',

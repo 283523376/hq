@@ -8,8 +8,16 @@ enum Api {
   records = '/wms/defect/records',
 }
 
-/** 不良品台账（只含废品仓，实时查询） */
+/**
+ * 不良品台账（只含废品仓，实时查询）。
+ *
+ * 支持 `ownershipType`（OWNED 默认 / CONSIGNED）与 `consignorId`：
+ * 受托不良入废品仓后仍记受托所有权，不显式传 CONSIGNED 就看不到这些行。
+ */
 export const list = (params?) => defHttp.get({ url: Api.list, params });
+
+/** 受托方下拉（复用启用中的供应商档案，仅库存类型=受托时参与筛选） */
+export const listSupplierOptions = () => defHttp.get({ url: '/wms/supplier/listAll' });
 
 /**
  * 报废出库。

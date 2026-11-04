@@ -1,6 +1,13 @@
 import { h } from 'vue';
 import { Tag } from 'ant-design-vue';
 import { BasicColumn, FormSchema } from '/@/components/Table';
+import { listSupplierOptions } from './defect.api';
+
+/** 库存类型选项（后端 `WmsConstants.OWNERSHIP_*`）：默认只查自有，受托需显式切换 */
+export const OWNERSHIP_OPTIONS = [
+  { label: '自有（OWNED）', value: 'OWNED' },
+  { label: '受托（CONSIGNED）', value: 'CONSIGNED' },
+];
 
 /** 废品仓台账列 */
 export const columns: BasicColumn[] = [
@@ -8,6 +15,15 @@ export const columns: BasicColumn[] = [
   { title: '物料名称', align: 'center', dataIndex: 'materialName', width: 150 },
   { title: '规格', align: 'center', dataIndex: 'spec', width: 160, ellipsis: true },
   { title: '批次', align: 'center', dataIndex: 'batchNo', width: 130 },
+  {
+    title: '库存类型',
+    align: 'center',
+    dataIndex: 'ownershipType',
+    width: 100,
+    customRender: ({ text }) =>
+      h(Tag, { color: text === 'CONSIGNED' ? 'purple' : 'blue' }, () => (text === 'CONSIGNED' ? '受托' : '自有')),
+  },
+  { title: '受托方', align: 'center', dataIndex: 'consignorName', width: 160 },
   { title: '仓库', align: 'center', dataIndex: 'warehouseName', width: 120 },
   { title: '库位', align: 'center', dataIndex: 'locationCode', width: 130 },
   { title: '当前数量', align: 'center', dataIndex: 'quantity', width: 100 },
@@ -27,6 +43,28 @@ export const searchFormSchema: FormSchema[] = [
   },
   { label: '批次', field: 'batchNo', component: 'JInput', colProps: { span: 6 } },
   { label: '库位', field: 'locationCode', component: 'JInput', colProps: { span: 6 } },
+  // 受托不良入废品仓后仍记 CONSIGNED，不切到「受托」就永远看不到；查询条件只对受托生效
+  {
+    label: '库存类型',
+    field: 'ownershipType',
+    component: 'Select',
+    colProps: { span: 6 },
+    componentProps: { options: OWNERSHIP_OPTIONS, placeholder: '默认自有' },
+  },
+  {
+    label: '受托方',
+    field: 'consignorId',
+    component: 'ApiSelect',
+    colProps: { span: 6 },
+    componentProps: {
+      api: listSupplierOptions,
+      labelField: 'supplierName',
+      valueField: 'id',
+      placeholder: '仅「受托」库存生效',
+      showSearch: true,
+      optionFilterProp: 'label',
+    },
+  },
 ];
 
 /** 不良品来源类型（后端 `WmsConstants.DEFECT_SOURCE_*`） */

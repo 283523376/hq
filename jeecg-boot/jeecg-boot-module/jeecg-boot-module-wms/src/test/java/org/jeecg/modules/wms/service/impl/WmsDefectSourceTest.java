@@ -113,6 +113,10 @@ class WmsDefectSourceTest {
                 .<Wrapper<WmsLocation>>any())).thenReturn(scrapLocation());
         // 扣减默认成功（自定义 SQL 的并发保护由实现保证，单测桩返回 1 行）
         when(inventoryMapper.deductQuantity(anyString(), any())).thenReturn(1);
+        // I1：退货离库要按物料编码解析物料并扣受托库存，公共桩给足量行（个别用例自行覆盖）
+        when(materialMapper.selectOne(org.mockito.ArgumentMatchers
+                .<Wrapper<WmsMaterial>>any())).thenReturn(material);
+        when(inventoryMapper.selectList(any())).thenReturn(List.of(consignedRow("IV-A", "S1", "100")));
     }
 
     /** 退货用例公共桩：受托反查链（入库单 + 受托方）。 */
@@ -385,6 +389,73 @@ class WmsDefectSourceTest {
         }
         assertEquals(java.util.Set.of("R1", "R2"), ids);
         assertEquals(2, returnedPatches);
+    }
+
+    /**
+     * I1：退货成功必须扣减受托库存（货已离库），且匹配条件是 物料+批次+CONSIGNED+受托方。
+     */
+    @Test
+    void return_deductsConsignedInventory() {
+        stubConsignorChain();
+        when(defectRecordMapper.selectById("R1")).thenReturn(pendingRecord("R1", "M001", "B1", "2"));
+        when(defectRecordMapper.selectList(any()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(pendingRecord("R1", "M001", "B1", "2")));
+        when(returnWriter.isEnabled()).thenReturn(true);
+        when(returnWriter.existsByReference("SL20261104001")).thenReturn(false);
+        when(returnWriter.write(any(), eq("C001"))).thenReturn(okResult("TH123"));
+        when(formClient.submit(eq("PUR_ReturnBill"), anyList())).thenReturn(okResult("TH123"));
+
+        service.returnToConsignor("R1", "tester");
+
+        ArgumentCaptor<Wrapper<WmsInventory>> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(inventoryMapper).selectList(wrapperCaptor.capture());
+        com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<WmsInventory> qw =
+                (com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<WmsInventory>) wrapperCaptor.getValue();
+        // 先取 SQL 片段：MP 的参数是懒登记的，不先 render 则 paramNameValuePairs 为空
+        qw.getSqlSegment();
+        java.util.Collection<Object> params = qw.getParamNameValuePairs().values();
+        assertTrue(params.contains("S1") && params.contains("B1")
+                && params.contains("MAT1") && params.contains(WmsConstants.OWNERSHIP_CONSIGNED),
+                params.toString());
+        verify(inventoryMapper).deductQuantity("IV-A", new BigDecimal("2"));
+    }
+
+    /** I1：同一来源单已退货沿用单号时，货同样离库，也必须扣减受托库存。 */
+    @Test
+    void return_reuseExistingBill_alsoDeductsConsignedInventory() {
+        stubConsignorChain();
+        when(defectRecordMapper.selectById("R1")).thenReturn(pendingRecord("R1", "M001", "B1", "2"));
+        WmsDefectRecord returnedEarlier = pendingRecord("R0", "M001", "B1", "1");
+        returnedEarlier.setReturnBillNo("TH100");
+        when(defectRecordMapper.selectList(any()))
+                .thenReturn(List.of(returnedEarlier))
+                .thenReturn(List.of(pendingRecord("R1", "M001", "B1", "2")));
+
+        service.returnToConsignor("R1", "tester");
+
+        verify(inventoryMapper).deductQuantity("IV-A", new BigDecimal("2"));
+    }
+
+    /** I1：受托库存不足 → 拒绝退货并回滚，绝不先开金蝶单或置已退货。 */
+    @Test
+    void return_insufficientConsignedStock_rejected() {
+        stubConsignorChain();
+        when(defectRecordMapper.selectById("R1")).thenReturn(pendingRecord("R1", "M001", "B1", "3"));
+        when(defectRecordMapper.selectList(any()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(pendingRecord("R1", "M001", "B1", "3")));
+        when(inventoryMapper.selectList(any())).thenReturn(List.of(consignedRow("IV-A", "S1", "2")));
+        when(returnWriter.isEnabled()).thenReturn(true);
+        when(returnWriter.existsByReference(anyString())).thenReturn(false);
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.returnToConsignor("R1", "tester"));
+
+        assertTrue(e.getMessage().contains("受托库存不足"), e.getMessage());
+        verify(inventoryMapper, never()).deductQuantity(anyString(), any());
+        verify(returnWriter, never()).write(any(), anyString());
+        verify(defectRecordMapper, never()).updateById(any(WmsDefectRecord.class));
     }
 
     /** 退货沿用：同来源单已有退货单号 → 直接回存，不再调金蝶。 */

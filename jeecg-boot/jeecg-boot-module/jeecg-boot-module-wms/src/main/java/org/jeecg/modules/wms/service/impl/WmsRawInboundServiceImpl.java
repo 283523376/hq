@@ -37,6 +37,7 @@ import org.jeecg.modules.wms.sync.IWmsKingdeeRawOrderReader;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
 import org.jeecg.modules.wms.util.WmsInboundRouting;
+import org.jeecg.modules.wms.vo.WmsRawPutawayResultVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -147,6 +148,9 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         if (dto.getDetails() == null || dto.getDetails().isEmpty()) {
             throw new RuntimeException("到货明细不能为空");
         }
+        // 幂等：同一 ERP 订单只允许登记一次，否则会产生两张单 → 各上架一次 → 库存翻倍 + 两张金蝶单。
+        // 不加唯一索引（历史数据可能同号多条、source_type 可空），在服务层按「未作废」判重。
+        requireNotRegistered(sourceType, erpOrderNo);
 
         boolean consigned = WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(sourceType);
         boolean direct = WmsConstants.INBOUND_HANDLING_DIRECT.equals(handlingType);
@@ -217,6 +221,25 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         return order;
     }
 
+    /**
+     * 同一来源类型下同一 ERP 订单只允许有一张未作废单据。
+     *
+     * <p>用 {@code selectList + LIMIT 1} 而不是 {@code selectOne}：历史数据可能同号多条，
+     * {@code selectOne} 会直接抛 TooManyResultsException，把「已登记」误报成系统错误。
+     */
+    private void requireNotRegistered(String sourceType, String erpOrderNo) {
+        List<WmsInboundOrder> existing = baseMapper.selectList(Wrappers.<WmsInboundOrder>query()
+                .eq("source_type", sourceType)
+                .eq("purchase_order_no", erpOrderNo)
+                .ne("inbound_status", WmsConstants.INBOUND_STATUS_VOIDED)
+                .orderByDesc("create_time")
+                .last("LIMIT 1"));
+        if (existing != null && !existing.isEmpty()) {
+            throw new RuntimeException("该 ERP 订单已登记，入库单号：" + existing.get(0).getOrderNo()
+                    + "，请勿重复登记");
+        }
+    }
+
     /** 查金蝶订单：开关关闭显式失败；查不到行视为订单不存在。 */
     private void queryErpOrder(boolean consigned, String erpOrderNo) {
         if (!rawOrderReader.isEnabled()) {
@@ -275,7 +298,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void putawayRaw(String inboundId, WmsPutawayDTO dto, String operator) {
+    public WmsRawPutawayResultVO putawayRaw(String inboundId, WmsPutawayDTO dto, String operator) {
         if (oConvertUtils.isEmpty(inboundId)) {
             throw new RuntimeException("入库单ID不能为空");
         }
@@ -342,10 +365,53 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
             detailMapper.updateById(detail);
         }
 
-        // 回写金蝶：失败不回滚库存（库存与单据状态已生效），只落同步失败
-        syncToKingdee(order, formId, consigned, now);
-        log.info("原材料上架完成：单号={}，来源={}，状态={}", order.getOrderNo(),
-                order.getSourceType(), WmsConstants.INBOUND_STATUS_AUDITED);
+        // 回写金蝶：失败不回滚库存（库存与单据状态已生效），只落同步失败；
+        // 结果必须随响应返回，前端才能如实告知用户「库存已入账但回写失败」。
+        WmsRawPutawayResultVO result = syncToKingdee(order, formId, consigned, now);
+        log.info("原材料上架完成：单号={}，来源={}，状态={}，同步={}", order.getOrderNo(),
+                order.getSourceType(), WmsConstants.INBOUND_STATUS_AUDITED, result.getSyncStatus());
+        return result;
+    }
+
+    // ------------------------------------------------------------ 回写补偿
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public WmsRawPutawayResultVO resync(String inboundId, String operator) {
+        if (oConvertUtils.isEmpty(inboundId)) {
+            throw new RuntimeException("入库单ID不能为空");
+        }
+        WmsInboundOrder order = getById(inboundId);
+        if (order == null) {
+            throw new RuntimeException("单据不存在");
+        }
+        if (!WmsConstants.INBOUND_SOURCE_PURCHASE.equals(order.getSourceType())
+                && !WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(order.getSourceType())) {
+            throw new RuntimeException("该单据不是外购/受托原材料到货单，不能重试回写");
+        }
+        if (!WmsConstants.INBOUND_STATUS_AUDITED.equals(order.getInboundStatus())) {
+            throw new RuntimeException("仅已审核单据可重试回写");
+        }
+        // 幂等：已经同步成功的直接返回，绝不重复开单
+        if (WmsConstants.SYNC_STATUS_SUCCESS.equals(order.getSyncStatus())) {
+            return resultOf(order);
+        }
+        // 大改小（CONVERT）登记即终态、原材料不入 WMS 库存，不存在可回写的入库单
+        if (WmsConstants.SYNC_STATUS_NOT_REQUIRED.equals(order.getSyncStatus())) {
+            throw new RuntimeException("该单据无需同步（大改小登记即终态），不能重试回写");
+        }
+
+        String formId = requireKingdeeReady(order);
+        boolean consigned = WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(order.getSourceType());
+        Date now = new Date();
+        String erpBillNo = trim(order.getErpBillNo());
+        if (!erpBillNo.isEmpty()) {
+            // 上次 Save 已建出草稿：只补 Submit，不能再 Save（会重复开单）
+            log.info("原材料回写重试：单号={}，已有金蝶单={}，只补提交", order.getOrderNo(), erpBillNo);
+            return submitExisting(order, formId, erpBillNo, now);
+        }
+        log.info("原材料回写重试：单号={}，完整 Save→Submit", order.getOrderNo());
+        return syncToKingdee(order, formId, consigned, now);
     }
 
     /** 上架明细预校验（纯校验不写库）：覆盖全部明细、数量非负、至少一行大于 0。 */
@@ -466,7 +532,8 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
      * Save 成功但 Submit 失败时仍回存 {@code erp_bill_no}——ERP 侧已存在该草稿，
      * 不记单号会导致重试时重复建单。
      */
-    private void syncToKingdee(WmsInboundOrder order, String formId, boolean consigned, Date now) {
+    private WmsRawPutawayResultVO syncToKingdee(WmsInboundOrder order, String formId,
+                                                boolean consigned, Date now) {
         WmsInboundOrder syncUpdate = new WmsInboundOrder();
         syncUpdate.setId(order.getId());
         try {
@@ -500,6 +567,45 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         syncUpdate.setLastSyncTime(now);
         order.setSyncStatus(syncUpdate.getSyncStatus());
         updateById(syncUpdate);
+        return resultOf(syncUpdate);
+    }
+
+    /**
+     * 已有金蝶单据时只补提交（Save 已建出草稿，再调 Writer 会重复开单）。
+     *
+     * <p>失败同样只落同步状态，不抛异常——与上架同口径，前端按返回值分支提示。
+     */
+    private WmsRawPutawayResultVO submitExisting(WmsInboundOrder order, String formId,
+                                                 String erpBillNo, Date now) {
+        WmsInboundOrder syncUpdate = new WmsInboundOrder();
+        syncUpdate.setId(order.getId());
+        syncUpdate.setErpBillNo(erpBillNo);
+        try {
+            WmsKingdeeResult submitted = formClient.submit(formId, List.of(erpBillNo));
+            if (submitted == null || !submitted.isSuccess()) {
+                throw new IllegalStateException(failText(submitted, "金蝶提交失败"));
+            }
+            syncUpdate.setErpSyncTime(now);
+            syncUpdate.setSyncStatus(WmsConstants.SYNC_STATUS_SUCCESS);
+            syncUpdate.setLastSyncError(null);
+            order.setErpSyncTime(now);
+        } catch (Exception e) {
+            log.error("入库单[{}]补提交金蝶失败：{}", order.getOrderNo(), e.getMessage(), e);
+            syncUpdate.setSyncStatus(WmsConstants.SYNC_STATUS_FAILED);
+            syncUpdate.setLastSyncError(truncate(e.getMessage()));
+        }
+        syncUpdate.setLastSyncTime(now);
+        order.setSyncStatus(syncUpdate.getSyncStatus());
+        updateById(syncUpdate);
+        return resultOf(syncUpdate);
+    }
+
+    /** 单据/补丁对象 → 上架结果 VO。 */
+    private WmsRawPutawayResultVO resultOf(WmsInboundOrder order) {
+        return new WmsRawPutawayResultVO()
+                .setSyncStatus(order.getSyncStatus())
+                .setErpBillNo(order.getErpBillNo())
+                .setLastSyncError(order.getLastSyncError());
     }
 
     private String failText(WmsKingdeeResult result, String fallback) {
@@ -567,7 +673,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
 
     @Override
     public IPage<WmsInboundOrder> listPage(int pageNo, int pageSize, String sourceType,
-                                           String inboundStatus, String orderNo) {
+                                           String inboundStatus, String orderNo, String supplierName) {
         QueryWrapper<WmsInboundOrder> qw = new QueryWrapper<>();
         // 只取原材料通道的单据：source_type 为空的都是旧采购收料/生产入库，不属本页
         if (oConvertUtils.isNotEmpty(sourceType)) {
@@ -581,7 +687,13 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         }
         if (oConvertUtils.isNotEmpty(orderNo)) {
             String kw = orderNo.trim();
-            qw.and(w -> w.like("order_no", kw).or().like("erp_bill_no", kw));
+            // purchase_order_no 是列表「ERP 订单号」列展示的字段，必须一起纳入搜索，
+            // 否则用户照着列表上看到的号去搜会得到全量
+            qw.and(w -> w.like("order_no", kw).or().like("erp_bill_no", kw)
+                    .or().like("purchase_order_no", kw));
+        }
+        if (oConvertUtils.isNotEmpty(supplierName)) {
+            qw.like("supplier_name", supplierName.trim());
         }
         qw.orderByDesc("create_time");
         return page(new Page<>(pageNo, pageSize), qw);

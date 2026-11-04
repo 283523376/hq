@@ -21,6 +21,7 @@ import org.jeecg.modules.wms.service.IWmsInboundService;
 import org.jeecg.modules.wms.service.IWmsOutboundService;
 import org.jeecg.modules.wms.service.IWmsRawInboundService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.jeecg.modules.wms.vo.WmsRawPutawayResultVO;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -84,6 +85,8 @@ class WmsGapControllerTest {
                     true, WmsConstants.AUDIT_BIZ_INBOUND, WmsConstants.AUDIT_ACTION_CREATE),
             new Endpoint(WmsRawInboundController.class, "putaway", "wms:inbound:consigned",
                     true, WmsConstants.AUDIT_BIZ_INBOUND, WmsConstants.AUDIT_ACTION_PUTAWAY),
+            new Endpoint(WmsRawInboundController.class, "resync", "wms:inbound:consigned",
+                    true, WmsConstants.AUDIT_BIZ_INBOUND, WmsConstants.AUDIT_ACTION_WRITE_BACK),
             new Endpoint(WmsConversionController.class, "create", "wms:conversion:create",
                     true, WmsConstants.AUDIT_BIZ_CONVERSION, WmsConstants.AUDIT_ACTION_CREATE),
             new Endpoint(WmsConversionController.class, "complete", "wms:conversion:execute",
@@ -156,14 +159,15 @@ class WmsGapControllerTest {
     @Test
     void rawInboundPage_forwardsFiltersToService() {
         IWmsRawInboundService service = mock(IWmsRawInboundService.class);
-        when(service.listPage(1, 10, "CONSIGNED", "待分配", "RK001"))
+        when(service.listPage(1, 10, "CONSIGNED", "待分配", "RK001", "受托方一"))
                 .thenReturn(new Page<>(1, 10));
         WmsRawInboundController controller = new WmsRawInboundController(service);
 
-        Result<IPage<WmsInboundOrder>> result = controller.page(1, 10, "CONSIGNED", "待分配", "RK001");
+        Result<IPage<WmsInboundOrder>> result = controller.page(1, 10, "CONSIGNED", "待分配",
+                "RK001", "受托方一");
 
         assertTrue(result.isSuccess(), result.getMessage());
-        verify(service).listPage(1, 10, "CONSIGNED", "待分配", "RK001");
+        verify(service).listPage(1, 10, "CONSIGNED", "待分配", "RK001", "受托方一");
     }
 
     @Test
@@ -173,10 +177,23 @@ class WmsGapControllerTest {
                 .when(service).putawayRaw(eq("in1"), any(WmsPutawayDTO.class), any());
         WmsRawInboundController controller = new WmsRawInboundController(service);
 
-        Result<Void> result = controller.putaway("in1", new WmsPutawayDTO());
+        Result<WmsRawPutawayResultVO> result = controller.putaway("in1", new WmsPutawayDTO());
 
         assertEquals(500, result.getCode());
         assertEquals("库位不可用", result.getMessage());
+    }
+
+    /** 重试回写失败也必须原样透出原因（补偿入口不能静默失败）。 */
+    @Test
+    void rawInboundResync_passesErrorTextThrough() {
+        IWmsRawInboundService service = mock(IWmsRawInboundService.class);
+        when(service.resync(eq("in1"), any())).thenThrow(new RuntimeException("仅已审核单据可重试回写"));
+        WmsRawInboundController controller = new WmsRawInboundController(service);
+
+        Result<WmsRawPutawayResultVO> result = controller.resync("in1");
+
+        assertEquals(500, result.getCode());
+        assertEquals("仅已审核单据可重试回写", result.getMessage());
     }
 
     @Test

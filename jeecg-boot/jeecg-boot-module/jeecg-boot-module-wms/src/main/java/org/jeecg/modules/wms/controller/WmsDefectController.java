@@ -49,8 +49,11 @@ public class WmsDefectController {
             @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
             @RequestParam(name = "materialKeyword", required = false) String materialKeyword,
             @RequestParam(name = "batchNo", required = false) String batchNo,
-            @RequestParam(name = "locationCode", required = false) String locationCode) {
-        return Result.OK(defectService.pageLedger(pageNo, pageSize, materialKeyword, batchNo, locationCode));
+            @RequestParam(name = "locationCode", required = false) String locationCode,
+            @RequestParam(name = "ownershipType", required = false) String ownershipType,
+            @RequestParam(name = "consignorId", required = false) String consignorId) {
+        return Result.OK(defectService.pageLedger(pageNo, pageSize, materialKeyword, batchNo,
+                locationCode, ownershipType, consignorId));
     }
 
     @Operation(summary = "不良品-报废出库")

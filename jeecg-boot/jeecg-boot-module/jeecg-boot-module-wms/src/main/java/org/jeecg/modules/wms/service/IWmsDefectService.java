@@ -21,12 +21,18 @@ public interface IWmsDefectService {
     /**
      * 不良品台账：只返回**废品仓**的当前库存行（实时查询，不存快照）。
      *
+     * <p>支持按库存类型筛选：默认 {@code OWNED}（自有），显式传 {@code CONSIGNED} 才看受托行
+     * ——受托不良入废品仓后仍记受托所有权，不筛出来就永远无法在本模块内处置。
+     *
      * @param materialKeyword 物料编码/名称模糊
      * @param batchNo         批次模糊
      * @param locationCode    库位编码模糊
+     * @param ownershipType   库存类型：OWNED（默认）/ CONSIGNED
+     * @param consignorId     受托方ID（仅 CONSIGNED 时生效）
      */
     IPage<WmsDefectLedgerVO> pageLedger(int pageNo, int pageSize, String materialKeyword,
-                                        String batchNo, String locationCode);
+                                        String batchNo, String locationCode,
+                                        String ownershipType, String consignorId);
 
     /**
      * 报废出库：扣减库存 + 建「报废出库」单（一步到位已完成）+ 审计留痕。
