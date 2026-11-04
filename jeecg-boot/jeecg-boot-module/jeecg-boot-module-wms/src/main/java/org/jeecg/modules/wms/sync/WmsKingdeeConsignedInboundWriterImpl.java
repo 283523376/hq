@@ -231,7 +231,9 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
         pushData.put("EntryIds", "");
         // CustomParams 必须是字典：传 [] 会报「不能转换为字典类型」
         pushData.put("CustomParams", new LinkedHashMap<String, Object>());
-        pushData.put("IsEnableDefaultRule", "true");
+        // 必须为 false：为 true 时金蝶要求另给 TargetFormId，只给 RuleId 会报
+        // 「启用默认转换规则，目标单据FormId必填！」（2026-11-04 真账套实测）
+        pushData.put("IsEnableDefaultRule", "false");
         pushData.put("IsDraftWhenSaveFail", "true");
         pushData.put("TargetFormId", "");
         pushData.put("TargetBillTypeId", "");
