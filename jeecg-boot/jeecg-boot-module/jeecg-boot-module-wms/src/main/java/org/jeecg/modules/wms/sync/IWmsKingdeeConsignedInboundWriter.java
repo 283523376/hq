@@ -20,10 +20,14 @@ public interface IWmsKingdeeConsignedInboundWriter {
     boolean isEnabled();
 
     /**
-     * 把受托到货的 WMS 入库单回写为金蝶受托加工材料入库单（Save）。
+     * 把受托到货的 WMS 入库单回写为金蝶受托加工材料入库单（Push → Save → Submit）。
+     *
+     * <p>必须先「销售订单下推」再 Save：源单关联、货主/保管者等字段只能由转换规则带出，
+     * 直接 Save 必然失败（2026-11-04 真账套实测）。因此本方法的成功结果表示单据已提交，
+     * 调用方<strong>不应再次 Submit</strong>。
      *
      * @param order WMS 入库单（{@code source_type=CONSIGNED}）
-     * @return 金蝶保存结果；成功时 {@code number} 为 ERP 单号
+     * @return 金蝶提交结果；成功时 {@code number} 为 ERP 单号
      * @throws IllegalStateException 未配置受托加工材料入库单 formId
      */
     WmsKingdeeResult write(WmsInboundOrder order);

@@ -546,6 +546,9 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
      * 失败记 {@code sync_status=同步失败} 与 {@code last_sync_error}，不中断上架。
      * Save 成功但 Submit 失败时仍回存 {@code erp_bill_no}——ERP 侧已存在该草稿，
      * 不记单号会导致重试时重复建单。
+     *
+     * <p><b>受托入库单的 Writer 内部已完成 Submit</b>（Push→Save→Submit，2026-11-04 真账套实测），
+     * 这里不能再提交一次：对已提交单据重复 Submit 会被金蝶拒绝，把成功流程记成「同步失败」。
      */
     private WmsRawPutawayResultVO syncToKingdee(WmsInboundOrder order, String formId,
                                                 boolean consigned, Date now) {
@@ -564,9 +567,11 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
             }
             syncUpdate.setErpBillNo(erpBillNo);
 
-            WmsKingdeeResult submitted = formClient.submit(formId, List.of(erpBillNo));
-            if (submitted == null || !submitted.isSuccess()) {
-                throw new IllegalStateException(failText(submitted, "金蝶提交失败"));
+            if (!consigned) {
+                WmsKingdeeResult submitted = formClient.submit(formId, List.of(erpBillNo));
+                if (submitted == null || !submitted.isSuccess()) {
+                    throw new IllegalStateException(failText(submitted, "金蝶提交失败"));
+                }
             }
             syncUpdate.setErpSyncTime(now);
             syncUpdate.setSyncStatus(WmsConstants.SYNC_STATUS_SUCCESS);

@@ -334,7 +334,6 @@ class WmsRawInboundServiceImplTest {
         stubPutawayReady(order, WmsConstants.INBOUND_SOURCE_CONSIGNED);
         when(consignedWriter.write(order))
                 .thenReturn(WmsKingdeeResult.ok("{}", null, "STD001", "erpId2"));
-        when(formClient.submit(anyString(), any())).thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
 
         spy.putawayRaw("in1", putawayDto(), OPERATOR);
 
@@ -343,7 +342,8 @@ class WmsRawInboundServiceImplTest {
         assertEquals(WmsConstants.OWNERSHIP_CONSIGNED, inv.getValue().getOwnershipType());
         assertEquals("sup1", inv.getValue().getConsignorId());
 
-        verify(formClient).submit("STD_IN", List.of("STD001"));
+        // 受托入库 Writer 内部已完成 Push→Save→Submit，服务层不得再提交一次
+        verify(formClient, never()).submit(anyString(), any());
         verify(purchaseWriter, never()).write(any());
         assertEquals("STD001", captureSyncUpdate().getErpBillNo());
     }

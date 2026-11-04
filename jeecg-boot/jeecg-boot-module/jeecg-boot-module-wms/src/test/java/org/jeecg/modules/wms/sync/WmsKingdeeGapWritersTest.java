@@ -6,6 +6,7 @@ import org.jeecg.modules.wms.entity.WmsDefectRecord;
 import org.jeecg.modules.wms.entity.WmsInboundDetail;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.mapper.WmsInboundDetailMapper;
+import org.jeecg.modules.wms.service.IWmsMaterialService;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,6 +55,7 @@ class WmsKingdeeGapWritersTest {
     private WmsInboundDetailMapper detailMapper;
     private WmsKingdeeProperties properties;
     private WmsWarehouseCodeResolver warehouseResolver;
+    private IWmsMaterialService materialService;
 
     private WmsKingdeeRawOrderReaderImpl reader;
     private WmsKingdeeConsignedInboundWriterImpl consignedWriter;
@@ -66,6 +68,9 @@ class WmsKingdeeGapWritersTest {
         configService = mock(IWmsSystemConfigService.class);
         detailMapper = mock(WmsInboundDetailMapper.class);
         warehouseResolver = mock(WmsWarehouseCodeResolver.class);
+        materialService = mock(IWmsMaterialService.class);
+        // 单位必填（真账套实测）：默认所有物料单位为 Pcs
+        when(materialService.list(org.mockito.ArgumentMatchers.<com.baomidou.mybatisplus.core.conditions.Wrapper<org.jeecg.modules.wms.entity.WmsMaterial>>any())).thenReturn(List.of(new org.jeecg.modules.wms.entity.WmsMaterial().setUnit("Pcs")));
         properties = new WmsKingdeeProperties();
         properties.setEnabled(true);
         properties.setDefaultOrgNumber("101");
@@ -73,7 +78,7 @@ class WmsKingdeeGapWritersTest {
         when(warehouseResolver.byLocation(anyString())).thenReturn("WH01");
         reader = new WmsKingdeeRawOrderReaderImpl(formClient, configService, properties);
         consignedWriter = new WmsKingdeeConsignedInboundWriterImpl(
-                formClient, configService, detailMapper, properties, warehouseResolver);
+                formClient, configService, detailMapper, properties, warehouseResolver, materialService);
         purchaseInboundWriter = new WmsKingdeePurchaseInboundWriterImpl(
                 formClient, configService, detailMapper, properties, warehouseResolver);
         purchaseReturnWriter = new WmsKingdeePurchaseReturnWriterImpl(
@@ -88,6 +93,20 @@ class WmsKingdeeGapWritersTest {
 
     private void stubConfig(WmsConfigKey key, String formId) {
         when(configService.getString(eq(key.getKey()), anyString())).thenReturn(formId);
+    }
+
+    /**
+     * 受托入库的源单查询 + 下推桩（默认成功）。
+     *
+     * <p>实测链路：{@code SAL_SaleOrder} 查 FID → Push（RuleId=Sal_Order-STK_OEMInStock）
+     * → Save 到草稿 → Submit。源单内码 1001，草稿单号 STCLRK001437 / FID 1437。
+     */
+    private void stubConsignedSourceAndPush() {
+        when(formClient.executeBillQuery(eq(WmsKingdeeConsignedInboundWriterImpl.SOURCE_FORM_ID),
+                anyString(), contains("XSDD001"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("1001", "XSDD001")), null, null));
+        when(formClient.push(eq(WmsKingdeeConsignedInboundWriterImpl.SOURCE_FORM_ID), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", null, "STCLRK001437", "1437"));
     }
 
     // ------------------------------------------------------------------ 未配置：显式失败
@@ -125,6 +144,7 @@ class WmsKingdeeGapWritersTest {
 
         assertTrue(e.getMessage().contains("受托加工材料入库单"), e.getMessage());
         assertTrue(e.getMessage().contains(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND.getKey()), e.getMessage());
+        verify(formClient, never()).push(anyString(), any());
         verify(formClient, never()).save(anyString(), any());
     }
 
@@ -215,19 +235,44 @@ class WmsKingdeeGapWritersTest {
         assertEquals(Map.of("FNumber", "B001"), entry.get("FLot"));
     }
 
+    /**
+     * 受托入库全链路：销售订单 Push → 草稿 Save → Submit（2026-11-04 真账套实测口径）。
+     *
+     * <p>字段名是实测结论，改动这里等于改金蝶报文：{@code FBillEntry} 分录键、
+     * {@code FQty}+{@code FBaseQty} 成对、{@code FStockID}/{@code FStockStatusID} 大写 ID、
+     * 货主 {@code BD_Customer}、保管者 {@code BD_KeeperOrg}。
+     */
     @Test
-    void consignedInboundWriterShouldBuildBusinessPayloadWithoutBillNo() {
-        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "SUB_ConsignedInbound");
+    void consignedInboundWriterShouldPushThenSaveThenSubmit() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "STK_OEMInStock");
         when(detailMapper.selectList(any())).thenReturn(List.of(detail("WA.2", "5", null, null)));
-        when(formClient.save(eq("SUB_ConsignedInbound"), any())).thenReturn(
-                WmsKingdeeResult.ok("{}", null, "STRK0001", "1002"));
+        stubConsignedSourceAndPush();
+        when(formClient.save(eq("STK_OEMInStock"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "STCLRK001437", "1437"));
+        when(formClient.submit(eq("STK_OEMInStock"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "STCLRK001437", "1437"));
 
         WmsKingdeeResult result = consignedWriter.write(consignedOrder());
 
-        assertTrue(result.isSuccess());
+        assertTrue(result.isSuccess(), result.getMessage());
+        assertEquals("STCLRK001437", result.getNumber());
+
+        // 1) Push：顶层 FormId 必须是源单，Ids 是内码，Numbers 必须为空
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> pushCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(formClient).push(eq("SAL_SaleOrder"), pushCaptor.capture());
+        Map<String, Object> push = pushCaptor.getValue();
+        assertEquals("Sal_Order-STK_OEMInStock", push.get("RuleId"));
+        assertEquals("1001", push.get("Ids"), "Push 只认源单内码，不能传编号");
+        assertTrue(((List<?>) push.get("Numbers")).isEmpty(), "Numbers 必须为空，传编号会报编码值不存在");
+        assertEquals("", push.get("EntryIds"));
+        assertTrue(push.get("CustomParams") instanceof Map, "CustomParams 必须是字典，传 [] 会报类型错误");
+
+        // 2) Save：带 FID 定位草稿，明细写入 FBillEntry
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
-        verify(formClient).save(eq("SUB_ConsignedInbound"), modelCaptor.capture());
+        verify(formClient).save(eq("STK_OEMInStock"), modelCaptor.capture());
         Map<String, Object> model = modelCaptor.getValue();
+        assertEquals("1437", model.get("FID"), "Save 必须带 Push 返回的草稿内码");
         assertFalse(model.containsKey("FBillNo"), "单号以 ERP 为准，不得传 FBillNo");
         // 受托方是客户：头字段 FCustId（不是 FSupplierId）
         assertEquals(Map.of("FNumber", "CUST01"), model.get("FCustId"));
@@ -236,11 +281,95 @@ class WmsKingdeeGapWritersTest {
         assertEquals(Map.of("FNumber", WmsConstants.KD_BILL_TYPE_CONSIGNED_INBOUND),
                 model.get("FBillTypeID"));
         Map<String, Object> entry = firstEntry(model, WmsKingdeeConsignedInboundWriterImpl.ENTRY_KEY);
+        assertEquals("FBillEntry", WmsKingdeeConsignedInboundWriterImpl.ENTRY_KEY);
         assertEquals(Map.of("FNumber", "WA.2"), entry.get("FMaterialId"));
-        // 无实收数量时回退应收数量；该单据数量字段为 FQty
+        // 无实收数量时回退应收数量；FQty 与 FBaseQty 必须成对
         assertEquals(new BigDecimal("5"), entry.get("FQty"));
-        assertEquals(Map.of("FNumber", "WH01"), entry.get("FStockId"));
+        assertEquals(new BigDecimal("5"), entry.get("FBaseQty"), "缺 FBaseQty 会报实收数量（基本单位）必须大于 0");
+        assertEquals(Map.of("FNumber", "Pcs"), entry.get("FUnitId"));
+        assertEquals(Map.of("FNumber", "WH01"), entry.get("FStockID"), "仓库字段名是大写 ID");
+        assertEquals(Map.of("FNumber", "KCZT01_SYS"), entry.get("FStockStatusID"),
+                "库存状态字段名是大写 ID");
+        assertEquals("BD_Customer", entry.get("FOwnerTypeId"), "受托材料货权属于客户");
+        assertEquals(Map.of("FNumber", "CUST01"), entry.get("FOwnerId"));
+        assertEquals("BD_KeeperOrg", entry.get("FKeeperTypeId"));
+        assertEquals(Map.of("FNumber", "101"), entry.get("FKeeperId"));
         assertFalse(entry.containsKey("FLot"), "无批次不得传空批次");
+        assertFalse(entry.containsKey("FStockId"), "小写 FStockId 会被当成没传");
+
+        // 3) Submit：用 Save 返回的单号
+        verify(formClient).submit("STK_OEMInStock", List.of("STCLRK001437"));
+    }
+
+    /** 源单查不到：显式失败，绝不 Push 出一张无源单的草稿。 */
+    @Test
+    void consignedInboundWriterShouldFailWhenSourceOrderMissing() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "STK_OEMInStock");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("WA.2", "5", null, null)));
+        when(formClient.executeBillQuery(eq(WmsKingdeeConsignedInboundWriterImpl.SOURCE_FORM_ID),
+                anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+
+        WmsKingdeeResult result = consignedWriter.write(consignedOrder());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("金蝶未找到受托加工销售订单：XSDD001"),
+                result.getMessage());
+        verify(formClient, never()).push(anyString(), any());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    /** Push 失败：金蝶原文透传，不发缺转换规则字段的 Save。 */
+    @Test
+    void consignedInboundWriterShouldPassThroughPushFailure() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "STK_OEMInStock");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("WA.2", "5", null, null)));
+        when(formClient.executeBillQuery(eq(WmsKingdeeConsignedInboundWriterImpl.SOURCE_FORM_ID),
+                anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("1001", "XSDD001")), null, null));
+        when(formClient.push(eq(WmsKingdeeConsignedInboundWriterImpl.SOURCE_FORM_ID), any()))
+                .thenReturn(WmsKingdeeResult.fail("转换规则的源单与FormId值不一致",
+                        "{\"Result\":{\"ResponseStatus\":{\"Errors\":[{\"Message\":\"转换规则的源单与FormId值不一致\"}]}}}"));
+
+        WmsKingdeeResult result = consignedWriter.write(consignedOrder());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("转换规则的源单与FormId值不一致"), result.getMessage());
+        verify(formClient, never()).save(anyString(), any());
+        verify(formClient, never()).submit(anyString(), any());
+    }
+
+    /** Save 失败：透传金蝶文案，并把已下推的草稿单号带出来供人工清理（不自动删单）。 */
+    @Test
+    void consignedInboundWriterShouldPassThroughSaveFailure() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "STK_OEMInStock");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("WA.2", "5", null, null)));
+        stubConsignedSourceAndPush();
+        when(formClient.save(eq("STK_OEMInStock"), any())).thenReturn(
+                WmsKingdeeResult.fail("实收数量（基本单位）必须大于 0"));
+
+        WmsKingdeeResult result = consignedWriter.write(consignedOrder());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("实收数量（基本单位）必须大于 0"), result.getMessage());
+        assertTrue(result.getMessage().contains("STCLRK001437"),
+                "失败文案必须带出草稿单号便于人工清理：" + result.getMessage());
+        verify(formClient, never()).submit(anyString(), any());
+    }
+
+    /** 仓库解析不到：本地显式失败，连 Push 都不发（避免留下无仓库的草稿）。 */
+    @Test
+    void consignedInboundWriterShouldFailWhenWarehouseUnresolved() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "STK_OEMInStock");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("WA.2", "5", null, null)));
+        when(warehouseResolver.byLocation("LOC1")).thenReturn(null);
+
+        WmsKingdeeResult result = consignedWriter.write(consignedOrder());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("仓库编码"), result.getMessage());
+        verify(formClient, never()).push(anyString(), any());
+        verify(formClient, never()).save(anyString(), any());
     }
 
     @Test
@@ -300,20 +429,24 @@ class WmsKingdeeGapWritersTest {
 
     @Test
     void consignedInboundWriterShouldSkipShortPickRows() {
-        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "SUB_ConsignedInbound");
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "STK_OEMInStock");
         when(detailMapper.selectList(any())).thenReturn(List.of(
                 detail("WA.1", "0", null, null),
                 detail("WA.2", "3", null, null)));
-        when(formClient.save(eq("SUB_ConsignedInbound"), any())).thenReturn(
-                WmsKingdeeResult.ok("{}", null, "STRK0002", "1005"));
+        stubConsignedSourceAndPush();
+        when(formClient.save(eq("STK_OEMInStock"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "STCLRK001438", "1438"));
+        when(formClient.submit(eq("STK_OEMInStock"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "STCLRK001438", "1438"));
 
         WmsKingdeeResult result = consignedWriter.write(consignedOrder());
 
-        assertTrue(result.isSuccess());
+        assertTrue(result.isSuccess(), result.getMessage());
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
-        verify(formClient).save(eq("SUB_ConsignedInbound"), modelCaptor.capture());
+        verify(formClient).save(eq("STK_OEMInStock"), modelCaptor.capture());
         assertEquals(1, ((List<?>) modelCaptor.getValue()
                 .get(WmsKingdeeConsignedInboundWriterImpl.ENTRY_KEY)).size());
+        verify(formClient).submit("STK_OEMInStock", List.of("STCLRK001438"));
     }
 
     /** 全部行都是 0：没有可回写内容，显式失败（不是「静默成功」）。 */
@@ -456,7 +589,7 @@ class WmsKingdeeGapWritersTest {
     /** 受托入库缺客户编码 → 显式失败（不能发出没有 FCustId 的受托单）。 */
     @Test
     void consignedInboundWriterShouldFailWhenCustomerCodeMissing() {
-        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "SUB_ConsignedInbound");
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "STK_OEMInStock");
         when(detailMapper.selectList(any())).thenReturn(List.of(detail("WA.1", "2", null, null)));
         WmsInboundOrder order = consignedOrder();
         order.setConsignorCode("  ");
@@ -465,6 +598,7 @@ class WmsKingdeeGapWritersTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.getMessage().contains("客户编码"), result.getMessage());
+        verify(formClient, never()).push(anyString(), any());
         verify(formClient, never()).save(anyString(), any());
     }
 
@@ -641,7 +775,10 @@ class WmsKingdeeGapWritersTest {
     }
 
     private WmsInboundOrder consignedOrder() {
-        return inboundOrder(WmsConstants.INBOUND_SOURCE_CONSIGNED);
+        WmsInboundOrder order = inboundOrder(WmsConstants.INBOUND_SOURCE_CONSIGNED);
+        // 受托单的 purchase_order_no 存的是受托加工销售订单号——它是 Push 的源单
+        order.setPurchaseOrderNo("XSDD001");
+        return order;
     }
 
     private WmsInboundOrder inboundOrder(String sourceType) {
