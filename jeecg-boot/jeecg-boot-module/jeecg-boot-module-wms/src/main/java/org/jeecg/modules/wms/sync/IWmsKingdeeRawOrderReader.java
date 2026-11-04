@@ -13,6 +13,13 @@ package org.jeecg.modules.wms.sync;
 public interface IWmsKingdeeRawOrderReader {
 
     /**
+     * 金蝶同步总开关（{@code wms.sync.erp.kingdee.enabled}）。
+     *
+     * <p>给调用方判断是否值得发起查询；实现自身不因开关关闭而伪造空结果。
+     */
+    boolean isEnabled();
+
+    /**
      * 查询采购订单（按单据编号）。
      *
      * @param billNo 采购订单号

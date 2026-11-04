@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConfigKey;
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsInboundDetail;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
 import org.jeecg.modules.wms.mapper.WmsInboundDetailMapper;
@@ -28,12 +29,14 @@ import java.util.Map;
  * <ul>
  *   <li><b>不传 {@code FBillNo} / {@code FID}</b>：单号与主键以 ERP 为准（2026-10-28 决策）；</li>
  *   <li>只传业务字段：日期、受托方、物料编码、实收数量、批次、备注；</li>
- *   <li>数量取「实收数量」，为空回退「应收数量」——上架前调用时只有应收是常态；</li>
+ *   <li>数量取「实收数量」，为空回退「应收数量」——上架前调用时只有应收是常态；
+ *       <b>短装行（数量 0）跳过</b>，负数仍报错；只有全部行都不可回写时才整单失败；</li>
+ *   <li>日期取审核时间（{@code auditTime}），为空回退创建时间；</li>
  *   <li>明细为空显式失败，不发空报文（金蝶只会报「分录不能为空」，本地报错更好排查）。</li>
  * </ul>
  *
- * <p>本类不判断 {@code wms.sync.erp.kingdee.enabled}，也不返回 mock 成功：
- * 开关由调用方在发起前判断，骨架层不制造「假成功」。
+ * <p>{@link #isEnabled()} 暴露 {@code wms.sync.erp.kingdee.enabled} 供调用方发起前判断；
+ * Writer 不因开关关闭而返回 mock 成功。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-11-04
@@ -50,19 +53,32 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
     private final WmsKingdeeFormClient formClient;
     private final IWmsSystemConfigService configService;
     private final WmsInboundDetailMapper detailMapper;
+    private final WmsKingdeeProperties properties;
 
     public WmsKingdeeConsignedInboundWriterImpl(WmsKingdeeFormClient formClient,
                                                 IWmsSystemConfigService configService,
-                                                WmsInboundDetailMapper detailMapper) {
+                                                WmsInboundDetailMapper detailMapper,
+                                                WmsKingdeeProperties properties) {
         this.formClient = formClient;
         this.configService = configService;
         this.detailMapper = detailMapper;
+        this.properties = properties;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return properties.isEnabled();
     }
 
     @Override
     public WmsKingdeeResult write(WmsInboundOrder order) {
         if (order == null || oConvertUtils.isEmpty(order.getId())) {
             throw new IllegalArgumentException(BILL_NAME + "回写缺少 WMS 入库单（id 为空）");
+        }
+        if (!WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(order.getSourceType())) {
+            throw new IllegalArgumentException("入库单[" + order.getOrderNo() + "]来源类型为["
+                    + order.getSourceType() + "]，不能回写" + BILL_NAME
+                    + "（要求 source_type=CONSIGNED）");
         }
         // formId 必须最先校验：未配置时连明细都不该查
         String formId = requireFormId();
@@ -76,16 +92,37 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
 
         List<Map<String, Object>> entries = new ArrayList<>();
         for (WmsInboundDetail detail : details) {
+            if (oConvertUtils.isEmpty(detail.getMaterialCode())) {
+                log.warn("入库单[{}]存在物料编码为空的明细行，跳过回写（明细 id={}）",
+                        order.getOrderNo(), detail.getId());
+                continue;
+            }
             BigDecimal qty = qtyOf(detail);
-            if (qty == null || qty.signum() <= 0) {
+            if (qty == null) {
                 return WmsKingdeeResult.fail("入库单[" + order.getOrderNo() + "]物料["
-                        + detail.getMaterialCode() + "]数量为空或非正数，无法回写金蝶" + BILL_NAME);
+                        + detail.getMaterialCode() + "]数量为空，无法回写金蝶" + BILL_NAME);
+            }
+            if (qty.signum() < 0) {
+                return WmsKingdeeResult.fail("入库单[" + order.getOrderNo() + "]物料["
+                        + detail.getMaterialCode() + "]数量为负（" + qty + "），无法回写金蝶" + BILL_NAME);
+            }
+            if (qty.signum() == 0) {
+                // 短装行：库存侧已按跳过处理，ERP 也不应出现 0 数量分录
+                log.info("入库单[{}]物料[{}]数量为 0（短装），跳过该行回写",
+                        order.getOrderNo(), detail.getMaterialCode());
+                continue;
             }
             entries.add(entry(detail, qty));
         }
+        if (entries.isEmpty()) {
+            return WmsKingdeeResult.fail("入库单[" + order.getOrderNo()
+                    + "]没有可回写的明细行（短装或物料编码为空全部跳过），无需回写金蝶" + BILL_NAME);
+        }
 
         Map<String, Object> model = new LinkedHashMap<>();
-        model.put("FDate", formatDate(order.getCreateTime()));
+        // 业务日期以审核（上架确认）时间为准，退回创建时间
+        model.put("FDate", formatDate(order.getAuditTime() != null
+                ? order.getAuditTime() : order.getCreateTime()));
         if (oConvertUtils.isNotEmpty(order.getSupplierCode())) {
             // 受托方：基础资料按编码绑定（2026-10-28 实测 {"Id":…} 会报必填项缺失）
             model.put("FSupplierId", dict(order.getSupplierCode()));

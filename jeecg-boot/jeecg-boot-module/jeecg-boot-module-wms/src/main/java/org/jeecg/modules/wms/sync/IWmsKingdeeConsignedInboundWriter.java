@@ -13,6 +13,13 @@ import org.jeecg.modules.wms.entity.WmsInboundOrder;
 public interface IWmsKingdeeConsignedInboundWriter {
 
     /**
+     * 金蝶同步总开关（{@code wms.sync.erp.kingdee.enabled}）。
+     *
+     * <p>给调用方判断是否发起回写；Writer 不因开关关闭而返回 mock 成功。
+     */
+    boolean isEnabled();
+
+    /**
      * 把受托到货的 WMS 入库单回写为金蝶受托加工材料入库单（Save）。
      *
      * @param order WMS 入库单（{@code source_type=CONSIGNED}）

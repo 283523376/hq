@@ -13,6 +13,13 @@ import org.jeecg.modules.wms.entity.WmsInboundOrder;
 public interface IWmsKingdeePurchaseInboundWriter {
 
     /**
+     * 金蝶同步总开关（{@code wms.sync.erp.kingdee.enabled}）。
+     *
+     * <p>给调用方判断是否发起回写；Writer 不因开关关闭而返回 mock 成功。
+     */
+    boolean isEnabled();
+
+    /**
      * 把段差棒直入的 WMS 采购入库单回写为金蝶采购入库单（Save）。
      *
      * @param order WMS 入库单（{@code source_type=PURCHASE}）

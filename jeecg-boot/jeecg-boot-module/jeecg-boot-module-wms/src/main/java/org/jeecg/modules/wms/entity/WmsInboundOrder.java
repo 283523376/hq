@@ -74,6 +74,14 @@ public class WmsInboundOrder extends JeecgEntity {
     @Schema(description = "最后一次同步尝试时间")
     private java.util.Date lastSyncTime;
 
+    /** 回写的金蝶单据号（ERP 为准，Save 成功后回存，用于幂等） */
+    @Schema(description = "回写的金蝶单据号（ERP 为准）")
+    private String erpBillNo;
+
+    /** 最后一次回写金蝶成功时间 */
+    @Schema(description = "最后一次回写金蝶成功时间")
+    private java.util.Date erpSyncTime;
+
     /** 入库来源类型：PURCHASE 外购 / CONSIGNED 受托。 */
     @Schema(description = "入库来源类型：PURCHASE 外购 / CONSIGNED 受托")
     private String sourceType;

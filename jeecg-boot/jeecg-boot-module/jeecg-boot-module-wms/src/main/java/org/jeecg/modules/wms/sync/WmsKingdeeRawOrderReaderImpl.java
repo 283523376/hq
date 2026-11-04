@@ -15,8 +15,9 @@ import org.springframework.stereotype.Service;
  * {@link WmsConfigKey#KD_FORM_CONSIGNED_ORDER}，<b>未配置一律抛错</b>：
  * 返回空结果会让到货登记误判成「ERP 没有这张单」，比直接失败更难排查。
  *
- * <p>本类不判断 {@code wms.sync.erp.kingdee.enabled}：开关语义是「是否调用 ERP」，
- * 由调用方（到货登记服务）在发起前自行判断，Reader 不在这里伪造空结果。
+ * <p>本类通过 {@link #isEnabled()} 暴露 {@code wms.sync.erp.kingdee.enabled}：
+ * 开关语义是「是否调用 ERP」，由调用方（到货登记服务）在发起前自行判断；
+ * 查询方法不因开关关闭而伪造空结果。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-11-04
@@ -39,11 +40,19 @@ public class WmsKingdeeRawOrderReaderImpl implements IWmsKingdeeRawOrderReader {
 
     private final WmsKingdeeFormClient formClient;
     private final IWmsSystemConfigService configService;
+    private final WmsKingdeeProperties properties;
 
     public WmsKingdeeRawOrderReaderImpl(WmsKingdeeFormClient formClient,
-                                        IWmsSystemConfigService configService) {
+                                        IWmsSystemConfigService configService,
+                                        WmsKingdeeProperties properties) {
         this.formClient = formClient;
         this.configService = configService;
+        this.properties = properties;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return properties.isEnabled();
     }
 
     @Override

@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.sync;
 
 import org.jeecg.modules.wms.constant.WmsConfigKey;
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsDefectRecord;
 import org.jeecg.modules.wms.entity.WmsInboundDetail;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -33,12 +35,13 @@ import static org.mockito.Mockito.when;
 /**
  * @Description: 金蝶采购/受托/退货单据可配置 Reader/Writer 骨架单测（V2.4 spec §6）。
  *
- * <p>锁两件事：
+ * <p>锁三件事：
  * <ol>
  *   <li>formId 未配置时必须显式抛错，<b>不得返回空结果或静默成功</b>——静默会让「假成功」
  *       一路走到月末结账；</li>
  *   <li>formId 配置后，调用的是配置的单据、报文只含业务字段（不传 {@code FBillNo}，
- *       单号以 ERP 为准）。</li>
+ *       单号以 ERP 为准）；</li>
+ *   <li>短装（0 数量）行跳过而不是整单失败，否则会出现「库存已入账、ERP 未回写」。</li>
  * </ol>
  *
  * @Author: 永鑫WMS
@@ -49,6 +52,7 @@ class WmsKingdeeGapWritersTest {
     private WmsKingdeeFormClient formClient;
     private IWmsSystemConfigService configService;
     private WmsInboundDetailMapper detailMapper;
+    private WmsKingdeeProperties properties;
 
     private WmsKingdeeRawOrderReaderImpl reader;
     private WmsKingdeeConsignedInboundWriterImpl consignedWriter;
@@ -60,10 +64,15 @@ class WmsKingdeeGapWritersTest {
         formClient = mock(WmsKingdeeFormClient.class);
         configService = mock(IWmsSystemConfigService.class);
         detailMapper = mock(WmsInboundDetailMapper.class);
-        reader = new WmsKingdeeRawOrderReaderImpl(formClient, configService);
-        consignedWriter = new WmsKingdeeConsignedInboundWriterImpl(formClient, configService, detailMapper);
-        purchaseInboundWriter = new WmsKingdeePurchaseInboundWriterImpl(formClient, configService, detailMapper);
-        purchaseReturnWriter = new WmsKingdeePurchaseReturnWriterImpl(formClient, configService);
+        properties = new WmsKingdeeProperties();
+        properties.setEnabled(true);
+        reader = new WmsKingdeeRawOrderReaderImpl(formClient, configService, properties);
+        consignedWriter = new WmsKingdeeConsignedInboundWriterImpl(
+                formClient, configService, detailMapper, properties);
+        purchaseInboundWriter = new WmsKingdeePurchaseInboundWriterImpl(
+                formClient, configService, detailMapper, properties);
+        purchaseReturnWriter = new WmsKingdeePurchaseReturnWriterImpl(
+                formClient, configService, properties);
     }
 
     /** 配置为空：getString 返回兜底值（真实实现里「未设置/空串」都走这条路径）。 */
@@ -107,7 +116,7 @@ class WmsKingdeeGapWritersTest {
         stubEmptyConfig();
 
         IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> consignedWriter.write(inboundOrder()));
+                () -> consignedWriter.write(consignedOrder()));
 
         assertTrue(e.getMessage().contains("受托加工材料入库单"), e.getMessage());
         assertTrue(e.getMessage().contains(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND.getKey()), e.getMessage());
@@ -119,7 +128,7 @@ class WmsKingdeeGapWritersTest {
         stubEmptyConfig();
 
         IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> purchaseInboundWriter.write(inboundOrder()));
+                () -> purchaseInboundWriter.write(purchaseOrder()));
 
         assertTrue(e.getMessage().contains("采购入库单"), e.getMessage());
         assertTrue(e.getMessage().contains(WmsConfigKey.KD_FORM_PURCHASE_INBOUND.getKey()), e.getMessage());
@@ -131,7 +140,7 @@ class WmsKingdeeGapWritersTest {
         stubEmptyConfig();
 
         IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> purchaseReturnWriter.write(defectRecord()));
+                () -> purchaseReturnWriter.write(defectRecord(), "SUP01"));
 
         assertTrue(e.getMessage().contains("采购退货单"), e.getMessage());
         assertTrue(e.getMessage().contains(WmsConfigKey.KD_FORM_PURCHASE_RETURN.getKey()), e.getMessage());
@@ -179,7 +188,7 @@ class WmsKingdeeGapWritersTest {
         when(formClient.save(eq("PUR_ReceiveBill"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "CGRK0001", "1001"));
 
-        WmsKingdeeResult result = purchaseInboundWriter.write(inboundOrder());
+        WmsKingdeeResult result = purchaseInboundWriter.write(purchaseOrder());
 
         assertTrue(result.isSuccess());
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
@@ -187,6 +196,8 @@ class WmsKingdeeGapWritersTest {
         Map<String, Object> model = modelCaptor.getValue();
         assertFalse(model.containsKey("FBillNo"), "单号以 ERP 为准，不得传 FBillNo");
         assertTrue(String.valueOf(model.get("FNote")).contains("RK20261104001"), String.valueOf(model.get("FNote")));
+        // 日期取审核时间，不取创建时间
+        assertEquals("2026-11-03", model.get("FDate"));
         Map<String, Object> entry = firstEntry(model);
         assertEquals(Map.of("FNumber", "WA.1"), entry.get("FMaterialId"));
         // 实收数量优先于应收数量
@@ -201,7 +212,7 @@ class WmsKingdeeGapWritersTest {
         when(formClient.save(eq("SUB_ConsignedInbound"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "STRK0001", "1002"));
 
-        WmsKingdeeResult result = consignedWriter.write(inboundOrder());
+        WmsKingdeeResult result = consignedWriter.write(consignedOrder());
 
         assertTrue(result.isSuccess());
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
@@ -221,7 +232,7 @@ class WmsKingdeeGapWritersTest {
         when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "CTHD0001", "1003"));
 
-        WmsKingdeeResult result = purchaseReturnWriter.write(defectRecord());
+        WmsKingdeeResult result = purchaseReturnWriter.write(defectRecord(), "SUP01");
 
         assertTrue(result.isSuccess());
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
@@ -230,10 +241,130 @@ class WmsKingdeeGapWritersTest {
         assertFalse(model.containsKey("FBillNo"), "单号以 ERP 为准，不得传 FBillNo");
         assertTrue(String.valueOf(model.get("FNote")).contains("RK20261104001"),
                 String.valueOf(model.get("FNote")));
+        // 受托方由调用方传入
+        assertEquals(Map.of("FNumber", "SUP01"), model.get("FSupplierId"));
+        // 日期取记录创建时间，不取执行瞬间
+        assertEquals("2026-11-02", model.get("FDate"));
         Map<String, Object> entry = firstEntry(model);
         assertEquals(Map.of("FNumber", "WA.1"), entry.get("FMaterialId"));
         assertEquals(new BigDecimal("2"), entry.get("FQty"));
         assertEquals(Map.of("FNumber", "B009"), entry.get("FLot"));
+    }
+
+    // ------------------------------------------------------------------ 短装行 / 校验
+
+    /** 短装行（数量 0）跳过，其余行照常回写——整单失败会导致库存已入账而 ERP 未记账。 */
+    @Test
+    void purchaseInboundWriterShouldSkipShortPickRows() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_INBOUND, "PUR_ReceiveBill");
+        when(detailMapper.selectList(any())).thenReturn(List.of(
+                detail("WA.1", "10", "0", "B001"),
+                detail("WA.2", "4", "4", null)));
+        when(formClient.save(eq("PUR_ReceiveBill"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "CGRK0002", "1004"));
+
+        WmsKingdeeResult result = purchaseInboundWriter.write(purchaseOrder());
+
+        assertTrue(result.isSuccess());
+        ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
+        verify(formClient).save(eq("PUR_ReceiveBill"), modelCaptor.capture());
+        Object entity = modelCaptor.getValue().get("FEntity");
+        assertEquals(1, ((List<?>) entity).size(), "0 数量行必须跳过");
+        Map<String, Object> entry = firstEntry(modelCaptor.getValue());
+        assertEquals(Map.of("FNumber", "WA.2"), entry.get("FMaterialId"));
+    }
+
+    @Test
+    void consignedInboundWriterShouldSkipShortPickRows() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "SUB_ConsignedInbound");
+        when(detailMapper.selectList(any())).thenReturn(List.of(
+                detail("WA.1", "0", null, null),
+                detail("WA.2", "3", null, null)));
+        when(formClient.save(eq("SUB_ConsignedInbound"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "STRK0002", "1005"));
+
+        WmsKingdeeResult result = consignedWriter.write(consignedOrder());
+
+        assertTrue(result.isSuccess());
+        ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
+        verify(formClient).save(eq("SUB_ConsignedInbound"), modelCaptor.capture());
+        assertEquals(1, ((List<?>) modelCaptor.getValue().get("FEntity")).size());
+    }
+
+    /** 全部行都是 0：没有可回写内容，显式失败（不是「静默成功」）。 */
+    @Test
+    void purchaseInboundWriterShouldFailWhenAllRowsAreShortPick() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_INBOUND, "PUR_ReceiveBill");
+        when(detailMapper.selectList(any())).thenReturn(List.of(
+                detail("WA.1", "10", "0", "B001"),
+                detail("WA.2", "4", "0", null)));
+
+        WmsKingdeeResult result = purchaseInboundWriter.write(purchaseOrder());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("没有可回写的明细"), result.getMessage());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    /** 负数数量是数据错误，不能被当成短装跳过。 */
+    @Test
+    void purchaseInboundWriterShouldRejectNegativeQuantity() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_INBOUND, "PUR_ReceiveBill");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("WA.1", "-1", null, null)));
+
+        WmsKingdeeResult result = purchaseInboundWriter.write(purchaseOrder());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("数量为负"), result.getMessage());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    /** 物料编码为空的明细行跳过并告警，不能 NPE、也不拖垮整单。 */
+    @Test
+    void purchaseInboundWriterShouldSkipRowsWithoutMaterialCode() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_INBOUND, "PUR_ReceiveBill");
+        when(detailMapper.selectList(any())).thenReturn(List.of(
+                detail(null, "10", "10", null),
+                detail("WA.2", "2", "2", null)));
+        when(formClient.save(eq("PUR_ReceiveBill"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "CGRK0003", "1006"));
+
+        WmsKingdeeResult result = purchaseInboundWriter.write(purchaseOrder());
+
+        assertTrue(result.isSuccess());
+        ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
+        verify(formClient).save(eq("PUR_ReceiveBill"), modelCaptor.capture());
+        assertEquals(1, ((List<?>) modelCaptor.getValue().get("FEntity")).size());
+    }
+
+    /** 来源类型不匹配必须抛错：采购单不能走受托入库、反之亦然。 */
+    @Test
+    void writersShouldRejectMismatchedSourceType() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_INBOUND, "PUR_ReceiveBill");
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND, "SUB_ConsignedInbound");
+
+        IllegalArgumentException purchase = assertThrows(IllegalArgumentException.class,
+                () -> purchaseInboundWriter.write(consignedOrder()));
+        assertTrue(purchase.getMessage().contains("source_type=PURCHASE"), purchase.getMessage());
+
+        IllegalArgumentException consigned = assertThrows(IllegalArgumentException.class,
+                () -> consignedWriter.write(purchaseOrder()));
+        assertTrue(consigned.getMessage().contains("source_type=CONSIGNED"), consigned.getMessage());
+
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    /** 报废记录不能走采购退货单。 */
+    @Test
+    void purchaseReturnWriterShouldRejectNonReturnDisposal() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+        WmsDefectRecord scrap = defectRecord().setDisposalType(WmsConstants.DEFECT_DISPOSAL_SCRAP);
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> purchaseReturnWriter.write(scrap, "SUP01"));
+
+        assertTrue(e.getMessage().contains("disposal_type=RETURN"), e.getMessage());
+        verify(formClient, never()).save(anyString(), any());
     }
 
     /** 明细缺失时显式失败：空报文 Save 会被金蝶报「分录不能为空」，不如本地说清原因。 */
@@ -242,11 +373,76 @@ class WmsKingdeeGapWritersTest {
         stubConfig(WmsConfigKey.KD_FORM_PURCHASE_INBOUND, "PUR_ReceiveBill");
         when(detailMapper.selectList(any())).thenReturn(List.of());
 
-        WmsKingdeeResult result = purchaseInboundWriter.write(inboundOrder());
+        WmsKingdeeResult result = purchaseInboundWriter.write(purchaseOrder());
 
         assertFalse(result.isSuccess());
         assertTrue(result.getMessage().contains("明细"), result.getMessage());
         verify(formClient, never()).save(anyString(), any());
+    }
+
+    // ------------------------------------------------------------------ 幂等查重 / 开关
+
+    @Test
+    void existsByReferenceShouldReturnTrueWhenBillExists() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(),
+                contains("RK20261104001"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("CTHD0001")), null, null));
+
+        assertTrue(purchaseReturnWriter.existsByReference("RK20261104001"));
+    }
+
+    @Test
+    void existsByReferenceShouldReturnFalseWhenNoBill() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(),
+                contains("RK20261104001"), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+
+        assertFalse(purchaseReturnWriter.existsByReference("RK20261104001"));
+    }
+
+    /** 参考号里的单引号必须转义，否则会拼出错误的过滤条件。 */
+    @Test
+    void existsByReferenceShouldEscapeSingleQuotes() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+
+        assertFalse(purchaseReturnWriter.existsByReference("RK'001"));
+
+        ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
+        verify(formClient).executeBillQuery(eq("PUR_MRRedReturn"), anyString(), filter.capture(), anyInt());
+        assertEquals("FNote='RK''001'", filter.getValue());
+    }
+
+    /** 查重失败不能当成「不存在」，否则重试会重复开单。 */
+    @Test
+    void existsByReferenceShouldThrowWhenQueryFails() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.fail("金蝶超时"));
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> purchaseReturnWriter.existsByReference("RK20261104001"));
+
+        assertTrue(e.getMessage().contains("查重失败"), e.getMessage());
+    }
+
+    /** isEnabled 直接映射 wms.sync.erp.kingdee.enabled，供调用方发起前判断。 */
+    @Test
+    void isEnabledShouldMirrorKingdeeSwitch() {
+        assertTrue(reader.isEnabled());
+        assertTrue(consignedWriter.isEnabled());
+        assertTrue(purchaseInboundWriter.isEnabled());
+        assertTrue(purchaseReturnWriter.isEnabled());
+
+        properties.setEnabled(false);
+
+        assertFalse(reader.isEnabled());
+        assertFalse(consignedWriter.isEnabled());
+        assertFalse(purchaseInboundWriter.isEnabled());
+        assertFalse(purchaseReturnWriter.isEnabled());
     }
 
     // ------------------------------------------------------------------ 夹具
@@ -264,14 +460,23 @@ class WmsKingdeeGapWritersTest {
         return (Map<String, Object>) ((List<?>) entity).get(0);
     }
 
-    private WmsInboundOrder inboundOrder() {
+    private WmsInboundOrder purchaseOrder() {
+        return inboundOrder(WmsConstants.INBOUND_SOURCE_PURCHASE);
+    }
+
+    private WmsInboundOrder consignedOrder() {
+        return inboundOrder(WmsConstants.INBOUND_SOURCE_CONSIGNED);
+    }
+
+    private WmsInboundOrder inboundOrder(String sourceType) {
         WmsInboundOrder order = new WmsInboundOrder();
         order.setId("IN001");
         order.setOrderNo("RK20261104001");
         order.setPurchaseOrderNo("CGDD001");
         order.setSupplierCode("SUP01");
-        order.setSourceType("PURCHASE");
-        order.setCreateTime(new Date());
+        order.setSourceType(sourceType);
+        order.setCreateTime(date("2026-11-04"));
+        order.setAuditTime(date("2026-11-03"));
         return order;
     }
 
@@ -288,13 +493,22 @@ class WmsKingdeeGapWritersTest {
     private WmsDefectRecord defectRecord() {
         WmsDefectRecord record = new WmsDefectRecord();
         record.setId("DF001");
-        record.setSourceType("CONSIGNED");
+        record.setSourceType(WmsConstants.DEFECT_SOURCE_CONSIGNED);
         record.setSourceBillNo("RK20261104001");
         record.setMaterialCode("WA.1");
         record.setBatchNo("B009");
         record.setQty(new BigDecimal("2"));
         record.setReason("外观不良");
-        record.setDisposalType("RETURN");
+        record.setDisposalType(WmsConstants.DEFECT_DISPOSAL_RETURN);
+        record.setCreateTime(date("2026-11-02"));
         return record;
+    }
+
+    private Date date(String value) {
+        try {
+            return new SimpleDateFormat("yyyy-MM-dd").parse(value);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

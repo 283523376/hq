@@ -121,6 +121,34 @@ PREPARE stmt_in_conv FROM @ddl_in_conv;
 EXECUTE stmt_in_conv;
 DEALLOCATE PREPARE stmt_in_conv;
 
+-- 采购/受托入库回写金蝶：ERP 单号与同步时间（Writer Save 成功后由业务服务回存；
+-- 单号以 ERP 为准，本地不生成）。此前 wms_inbound_order 没有这两列，回写无法幂等。
+SET @col_in_erp_bill := (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'wms_inbound_order'
+       AND COLUMN_NAME = 'erp_bill_no'
+);
+SET @ddl_in_erp_bill := IF(@col_in_erp_bill = 0,
+    'ALTER TABLE `wms_inbound_order` ADD COLUMN `erp_bill_no` varchar(64) DEFAULT NULL COMMENT ''回写的金蝶单据号（ERP 为准）''',
+    'SELECT 1');
+PREPARE stmt_in_erp_bill FROM @ddl_in_erp_bill;
+EXECUTE stmt_in_erp_bill;
+DEALLOCATE PREPARE stmt_in_erp_bill;
+
+SET @col_in_erp_sync := (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'wms_inbound_order'
+       AND COLUMN_NAME = 'erp_sync_time'
+);
+SET @ddl_in_erp_sync := IF(@col_in_erp_sync = 0,
+    'ALTER TABLE `wms_inbound_order` ADD COLUMN `erp_sync_time` datetime DEFAULT NULL COMMENT ''最后一次回写金蝶成功时间''',
+    'SELECT 1');
+PREPARE stmt_in_erp_sync FROM @ddl_in_erp_sync;
+EXECUTE stmt_in_erp_sync;
+DEALLOCATE PREPARE stmt_in_erp_sync;
+
 SET @col_in_detail := (
     SELECT COUNT(*) FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE()
