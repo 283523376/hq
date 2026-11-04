@@ -25,7 +25,7 @@ import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.sync.IWmsKingdeeConsignedInboundWriter;
-import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseInboundWriter;
+import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReceiveWriter;
 import org.jeecg.modules.wms.sync.IWmsKingdeeRawOrderReader;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
@@ -83,7 +83,7 @@ class WmsRawInboundServiceImplTest {
     private IWmsWarehouseService warehouseService;
     private WmsInventoryMapper inventoryMapper;
     private IWmsKingdeeRawOrderReader reader;
-    private IWmsKingdeePurchaseInboundWriter purchaseWriter;
+    private IWmsKingdeePurchaseReceiveWriter purchaseReceiveWriter;
     private IWmsKingdeeConsignedInboundWriter consignedWriter;
     private WmsKingdeeFormClient formClient;
     private IWmsSystemConfigService configService;
@@ -103,14 +103,14 @@ class WmsRawInboundServiceImplTest {
         warehouseService = mock(IWmsWarehouseService.class);
         inventoryMapper = mock(WmsInventoryMapper.class);
         reader = mock(IWmsKingdeeRawOrderReader.class);
-        purchaseWriter = mock(IWmsKingdeePurchaseInboundWriter.class);
+        purchaseReceiveWriter = mock(IWmsKingdeePurchaseReceiveWriter.class);
         consignedWriter = mock(IWmsKingdeeConsignedInboundWriter.class);
         formClient = mock(WmsKingdeeFormClient.class);
         configService = mock(IWmsSystemConfigService.class);
 
         service = new WmsRawInboundServiceImpl(detailMapper, materialService, categoryService,
                 supplierService, customerService, locationMapper, warehouseService, inventoryMapper,
-                reader, purchaseWriter, consignedWriter, formClient, configService);
+                reader, purchaseReceiveWriter, consignedWriter, formClient, configService);
         WmsTestSupport.inject(service, "baseMapper", orderMapper);
         spy = Mockito.spy(service);
         doReturn("SL202611040001").when(spy).nextOrderNo("SL");
@@ -299,7 +299,7 @@ class WmsRawInboundServiceImplTest {
     void putawayDirectPurchaseWritesOwnedInventoryAndStoresErpNumber() {
         WmsInboundOrder order = pendingDirectOrder(WmsConstants.INBOUND_SOURCE_PURCHASE, null);
         stubPutawayReady(order, WmsConstants.INBOUND_SOURCE_PURCHASE);
-        when(purchaseWriter.write(order))
+        when(purchaseReceiveWriter.write(order))
                 .thenReturn(WmsKingdeeResult.ok("{}", null, "CGRK001", "erpId1"));
         when(formClient.submit(anyString(), any())).thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
 
@@ -344,7 +344,7 @@ class WmsRawInboundServiceImplTest {
 
         // 受托入库 Writer 内部已完成 Push→Save→Submit，服务层不得再提交一次
         verify(formClient, never()).submit(anyString(), any());
-        verify(purchaseWriter, never()).write(any());
+        verify(purchaseReceiveWriter, never()).write(any());
         assertEquals("STD001", captureSyncUpdate().getErpBillNo());
     }
 
@@ -352,7 +352,7 @@ class WmsRawInboundServiceImplTest {
     void putawayRejectedWhenKingdeeSwitchIsOff() {
         WmsInboundOrder order = pendingDirectOrder(WmsConstants.INBOUND_SOURCE_PURCHASE, null);
         when(orderMapper.selectById("in1")).thenReturn(order);
-        when(purchaseWriter.isEnabled()).thenReturn(false);
+        when(purchaseReceiveWriter.isEnabled()).thenReturn(false);
         when(configService.getString(eq(WmsConfigKey.KD_FORM_PURCHASE_INBOUND.getKey()), anyString()))
                 .thenReturn("PUR_IN");
 
@@ -363,7 +363,7 @@ class WmsRawInboundServiceImplTest {
         verify(inventoryMapper, never()).upsertInventory(any(WmsInventory.class));
         verify(locationMapper, never()).update(any(), any());
         verify(orderMapper, never()).update(any(), any());
-        verify(purchaseWriter, never()).write(any());
+        verify(purchaseReceiveWriter, never()).write(any());
     }
 
     @Test
@@ -386,7 +386,7 @@ class WmsRawInboundServiceImplTest {
     void submitFailureKeepsInventoryButRecordsSyncFailure() {
         WmsInboundOrder order = pendingDirectOrder(WmsConstants.INBOUND_SOURCE_PURCHASE, null);
         stubPutawayReady(order, WmsConstants.INBOUND_SOURCE_PURCHASE);
-        when(purchaseWriter.write(order))
+        when(purchaseReceiveWriter.write(order))
                 .thenReturn(WmsKingdeeResult.ok("{}", null, "CGRK002", "erpId3"));
         when(formClient.submit(anyString(), any()))
                 .thenReturn(WmsKingdeeResult.fail("单据未配置工作流"));
@@ -419,7 +419,7 @@ class WmsRawInboundServiceImplTest {
 
         assertEquals(WmsConstants.SYNC_STATUS_SUCCESS, result.getSyncStatus());
         assertEquals("CGRK001", result.getErpBillNo());
-        verify(purchaseWriter, never()).write(any());
+        verify(purchaseReceiveWriter, never()).write(any());
         verify(formClient, never()).submit(anyString(), any());
         verify(orderMapper, never()).updateById(any(WmsInboundOrder.class));
     }
@@ -428,7 +428,7 @@ class WmsRawInboundServiceImplTest {
     @Test
     void resyncWithExistingBill_onlySubmits() {
         auditedOrder(WmsConstants.SYNC_STATUS_FAILED, "CGRK002");
-        when(purchaseWriter.isEnabled()).thenReturn(true);
+        when(purchaseReceiveWriter.isEnabled()).thenReturn(true);
         when(configService.getString(eq(WmsConfigKey.KD_FORM_PURCHASE_INBOUND.getKey()), anyString()))
                 .thenReturn("PUR_IN");
         when(formClient.submit("PUR_IN", List.of("CGRK002")))
@@ -436,7 +436,7 @@ class WmsRawInboundServiceImplTest {
 
         org.jeecg.modules.wms.vo.WmsRawPutawayResultVO result = spy.resync("in1", OPERATOR);
 
-        verify(purchaseWriter, never()).write(any());
+        verify(purchaseReceiveWriter, never()).write(any());
         verify(formClient).submit("PUR_IN", List.of("CGRK002"));
         assertEquals(WmsConstants.SYNC_STATUS_SUCCESS, result.getSyncStatus());
         assertEquals("CGRK002", result.getErpBillNo());
@@ -450,16 +450,16 @@ class WmsRawInboundServiceImplTest {
     @Test
     void resyncWithoutBill_doesFullSaveAndSubmit() {
         WmsInboundOrder order = auditedOrder(WmsConstants.SYNC_STATUS_FAILED, null);
-        when(purchaseWriter.isEnabled()).thenReturn(true);
+        when(purchaseReceiveWriter.isEnabled()).thenReturn(true);
         when(configService.getString(eq(WmsConfigKey.KD_FORM_PURCHASE_INBOUND.getKey()), anyString()))
                 .thenReturn("PUR_IN");
-        when(purchaseWriter.write(order)).thenReturn(WmsKingdeeResult.ok("{}", null, "CGRK003", "id3"));
+        when(purchaseReceiveWriter.write(order)).thenReturn(WmsKingdeeResult.ok("{}", null, "CGRK003", "id3"));
         when(formClient.submit("PUR_IN", List.of("CGRK003")))
                 .thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
 
         org.jeecg.modules.wms.vo.WmsRawPutawayResultVO result = spy.resync("in1", OPERATOR);
 
-        verify(purchaseWriter).write(order);
+        verify(purchaseReceiveWriter).write(order);
         verify(formClient).submit("PUR_IN", List.of("CGRK003"));
         assertEquals(WmsConstants.SYNC_STATUS_SUCCESS, result.getSyncStatus());
         assertEquals("CGRK003", result.getErpBillNo());
@@ -485,7 +485,7 @@ class WmsRawInboundServiceImplTest {
         RuntimeException e = assertThrows(RuntimeException.class, () -> spy.resync("in1", OPERATOR));
 
         assertTrue(e.getMessage().contains("无需同步"), e.getMessage());
-        verify(purchaseWriter, never()).write(any());
+        verify(purchaseReceiveWriter, never()).write(any());
     }
 
     /** 旧通道单据（source_type 为空）不属于本端点。 */
@@ -547,7 +547,7 @@ class WmsRawInboundServiceImplTest {
             when(configService.getString(eq(WmsConfigKey.KD_FORM_CONSIGNED_INBOUND.getKey()), anyString()))
                     .thenReturn("STD_IN");
         } else {
-            when(purchaseWriter.isEnabled()).thenReturn(true);
+            when(purchaseReceiveWriter.isEnabled()).thenReturn(true);
             when(configService.getString(eq(WmsConfigKey.KD_FORM_PURCHASE_INBOUND.getKey()), anyString()))
                     .thenReturn("PUR_IN");
         }

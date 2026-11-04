@@ -34,7 +34,7 @@ import org.jeecg.modules.wms.service.IWmsSupplierService;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.service.IWmsWarehouseService;
 import org.jeecg.modules.wms.sync.IWmsKingdeeConsignedInboundWriter;
-import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseInboundWriter;
+import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReceiveWriter;
 import org.jeecg.modules.wms.sync.IWmsKingdeeRawOrderReader;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
@@ -95,7 +95,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
     private final IWmsWarehouseService warehouseService;
     private final WmsInventoryMapper inventoryMapper;
     private final IWmsKingdeeRawOrderReader rawOrderReader;
-    private final IWmsKingdeePurchaseInboundWriter purchaseInboundWriter;
+    private final IWmsKingdeePurchaseReceiveWriter purchaseReceiveWriter;
     private final IWmsKingdeeConsignedInboundWriter consignedInboundWriter;
     private final WmsKingdeeFormClient formClient;
     private final IWmsSystemConfigService configService;
@@ -109,7 +109,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
                                     IWmsWarehouseService warehouseService,
                                     WmsInventoryMapper inventoryMapper,
                                     IWmsKingdeeRawOrderReader rawOrderReader,
-                                    IWmsKingdeePurchaseInboundWriter purchaseInboundWriter,
+                                    IWmsKingdeePurchaseReceiveWriter purchaseReceiveWriter,
                                     IWmsKingdeeConsignedInboundWriter consignedInboundWriter,
                                     WmsKingdeeFormClient formClient,
                                     IWmsSystemConfigService configService) {
@@ -122,7 +122,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         this.warehouseService = warehouseService;
         this.inventoryMapper = inventoryMapper;
         this.rawOrderReader = rawOrderReader;
-        this.purchaseInboundWriter = purchaseInboundWriter;
+        this.purchaseReceiveWriter = purchaseReceiveWriter;
         this.consignedInboundWriter = consignedInboundWriter;
         this.formClient = formClient;
         this.configService = configService;
@@ -163,12 +163,12 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         if (consigned && consignorId.isEmpty()) {
             throw new RuntimeException("受托到货必须指定受托方（consignorId）");
         }
-        // 外购直入必须带供应商：金蝶采购入库单的 FSupplierId 是必填项，缺了回写必失败；
+        // 外购直入必须带供应商：金蝶采购收料单的 FSupplierID 是必填项，缺了回写必失败；
         // 放在 ERP 查询之前，避免白调一次接口。
-        // 大改小（CONVERT）原始材料不入 WMS 库存、也不回写采购入库单（产出走 PRD_INSTOCK），
+        // 大改小（CONVERT）原始材料不入 WMS 库存、也不回写采购收料单（产出走 PRD_INSTOCK），
         // 因此不强制供应商——否则会对不需要该字段的路径过度校验。
         if (!consigned && direct && trim(dto.getSupplierId()).isEmpty()) {
-            throw new RuntimeException("外购直入必须指定供应商（supplierId），否则采购入库单回写会缺少 FSupplierId");
+            throw new RuntimeException("外购直入必须指定供应商（supplierId），否则采购收料单回写会缺少 FSupplierID");
         }
 
         // 1) ERP 订单校验：金蝶侧查不到这张单就不允许登记（开关关/未配 formId 同样失败）
@@ -529,7 +529,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
     /** 校验金蝶同步就绪（开关 + writer 对应 formId），返回 formId 供 Submit 复用。 */
     private String requireKingdeeReady(WmsInboundOrder order) {
         boolean consigned = WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(order.getSourceType());
-        boolean enabled = consigned ? consignedInboundWriter.isEnabled() : purchaseInboundWriter.isEnabled();
+        boolean enabled = consigned ? consignedInboundWriter.isEnabled() : purchaseReceiveWriter.isEnabled();
         WmsConfigKey formKey = consigned
                 ? WmsConfigKey.KD_FORM_CONSIGNED_INBOUND : WmsConfigKey.KD_FORM_PURCHASE_INBOUND;
         String formId = trim(configService.getString(formKey.getKey(), ""));
@@ -557,7 +557,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         try {
             WmsKingdeeResult saved = consigned
                     ? consignedInboundWriter.write(order)
-                    : purchaseInboundWriter.write(order);
+                    : purchaseReceiveWriter.write(order);
             if (saved == null || !saved.isSuccess()) {
                 throw new IllegalStateException(failText(saved, "金蝶保存失败"));
             }

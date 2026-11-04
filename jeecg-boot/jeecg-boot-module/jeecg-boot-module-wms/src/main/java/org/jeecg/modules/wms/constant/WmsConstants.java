@@ -1034,9 +1034,19 @@ public final class WmsConstants {
     // ==================== V2.4 金蝶单据类型编码（BOS 控制台实测） ====================
 
     /**
-     * 金蝶采购入库单单据类型：标准采购入库（{@code STK_InStock}，2026-11-04 测试账套实测）。
+     * 金蝶采购收料单单据类型：标准收料单（{@code PUR_ReceiveBill}，2026-11-04 测试账套实测）。
+     *
+     * <p>101 账套原材料全部启用来料检验，采购入库单不允许直接建；WMS 只回写收料单，
+     * 由金蝶质检通过后下推生成采购入库单。
      */
-    public static final String KD_BILL_TYPE_PURCHASE_INBOUND = "RKD01_SYS";
+    public static final String KD_BILL_TYPE_PURCHASE_RECEIVE = "SLD01_SYS";
+
+    /**
+     * 金蝶货主类型：业务组织（自有库存的货权属于本组织）。
+     *
+     * <p>收料单头/分录均按此值声明货主（{@code FOwnerTypeIdHead} / {@code FOwnerTypeId}）。
+     */
+    public static final String KD_OWNER_TYPE_ORG = "BD_OwnerOrg";
 
     /**
      * 金蝶受托加工材料入库单单据类型（{@code STK_OEMInStock}，2026-11-04 测试账套实测）。

@@ -8,7 +8,7 @@ import org.jeecg.modules.wms.entity.WmsProductionInbound;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.sync.IWmsKingdeeInboundWriter;
 import org.jeecg.modules.wms.sync.IWmsKingdeeOutstockWriter;
-import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseInboundWriter;
+import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReceiveWriter;
 import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReturnWriter;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
 import org.jeecg.modules.wms.sync.WmsOrderSyncResult;
@@ -127,15 +127,15 @@ class SyncAuditRecordingTest {
 
     /**
      * V2.4 新回写器返回 {@link WmsKingdeeResult}（不是 WmsOrderSyncResult）：
-     * 采购入库回写同样必须留审计行，并把 ERP 单号带进 after_value。
+     * 采购收料回写同样必须留审计行，并把 ERP 单号带进 after_value。
      */
     @Test
     void kingdeeResultInboundWriteback_recordsAuditWithErpNumber() {
         WmsInboundOrder order = new WmsInboundOrder().setOrderNo("SL001").setSyncStatus("待同步");
-        FakePurchaseInboundWriter writer = new FakePurchaseInboundWriter(
+        FakePurchaseReceiveWriter writer = new FakePurchaseReceiveWriter(
                 WmsKingdeeResult.ok("{}", null, "CGRK001", "erpId1"));
 
-        ((IWmsKingdeePurchaseInboundWriter) proxy(writer)).write(order);
+        ((IWmsKingdeePurchaseReceiveWriter) proxy(writer)).write(order);
 
         WmsAuditEvent event = capture();
         assertEquals("入库单", event.getBizType());
@@ -151,10 +151,10 @@ class SyncAuditRecordingTest {
     @Test
     void kingdeeResultInboundWriteback_recordsFailureWithErpError() {
         WmsInboundOrder order = new WmsInboundOrder().setOrderNo("SL002");
-        FakePurchaseInboundWriter writer = new FakePurchaseInboundWriter(
+        FakePurchaseReceiveWriter writer = new FakePurchaseReceiveWriter(
                 WmsKingdeeResult.fail("保存失败：必填项 FSupplierId 不能为空"));
 
-        ((IWmsKingdeePurchaseInboundWriter) proxy(writer)).write(order);
+        ((IWmsKingdeePurchaseReceiveWriter) proxy(writer)).write(order);
 
         WmsAuditEvent event = capture();
         assertEquals("SL002", event.getBizNo());
@@ -212,10 +212,10 @@ class SyncAuditRecordingTest {
         }
     }
 
-    static class FakePurchaseInboundWriter implements IWmsKingdeePurchaseInboundWriter {
+    static class FakePurchaseReceiveWriter implements IWmsKingdeePurchaseReceiveWriter {
         private final WmsKingdeeResult next;
 
-        FakePurchaseInboundWriter(WmsKingdeeResult next) {
+        FakePurchaseReceiveWriter(WmsKingdeeResult next) {
             this.next = next;
         }
 

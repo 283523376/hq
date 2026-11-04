@@ -48,7 +48,7 @@ public class WmsRawInboundDTO {
      * 外购供应商ID（{@code wms_supplier.id}）：{@code sourceType=PURCHASE} 时<strong>必填</strong>。
      *
      * <p>金蝶采购订单 Reader 只返回单号/物料/数量，取不到供应商，必须由调用方补充；
-     * 缺供应商时采购入库单回写会缺少 {@code FSupplierId}（金蝶报必填），
+     * 缺供应商时采购收料单回写会缺少 {@code FSupplierID}（金蝶报必填），
      * 因此服务层在建单前直接拒绝（V2.4 Task 9）。
      */
     private String supplierId;

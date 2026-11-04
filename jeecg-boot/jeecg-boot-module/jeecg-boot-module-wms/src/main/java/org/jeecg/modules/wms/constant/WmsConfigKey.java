@@ -65,8 +65,14 @@ public enum WmsConfigKey {
     KD_FORM_CONSIGNED_INBOUND("kingdee.form.consigned-inbound", "受托加工材料入库单 FormId",
             WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
 
-    /** 采购入库单 FormId（WMS→ERP 回写，spec §3.2 段差棒直入）。 */
-    KD_FORM_PURCHASE_INBOUND("kingdee.form.purchase-inbound", "采购入库单 FormId",
+    /**
+     * 采购收料单 FormId（WMS→ERP 回写，spec §3.2 段差棒直入）。
+     *
+     * <p>键名沿用历史命名 {@code kingdee.form.purchase-inbound}（不动已执行的 Flyway 与
+     * 已保存的配置值），但单据语义是<b>采购收料单</b>：101 账套原材料全部来料检验，
+     * 采购入库单只能由金蝶从收料单下推。
+     */
+    KD_FORM_PURCHASE_INBOUND("kingdee.form.purchase-inbound", "采购收料单 FormId",
             WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
 
     /** 采购退货单 FormId（WMS→ERP 回写，spec §3.3 受托不良退货）。 */

@@ -1,13 +1,16 @@
 package org.jeecg.modules.wms.sync;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsInboundDetail;
 import org.jeecg.modules.wms.entity.WmsInboundOrder;
+import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.mapper.WmsInboundDetailMapper;
+import org.jeecg.modules.wms.service.IWmsMaterialService;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.springframework.stereotype.Service;
 
@@ -20,28 +23,37 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * @Description: 采购入库单回写（V2.4 §3.2 段差棒直入）。
+ * @Description: 采购收料单回写（V2.4 §3.2 段差棒直入）。
  *
- * <p><b>字段依据（2026-11-04 测试账套 6a9aaaadaf7ee6 实查 STK_InStock）</b>：
+ * <p><b>为什么是收料单不是入库单</b>：101 账套内全部原材料都启用了来料检验，
+ * 采购入库单（{@code STK_InStock}）不允许由外部直接创建——直开会被来料检验规则拦下。
+ * 正确的链路是 WMS 回写<b>采购收料单</b>（{@code PUR_ReceiveBill}），
+ * 金蝶在来料检验通过后从收料单下推生成采购入库单（用户 2026-11-04 拍板，路线 A）。
+ *
+ * <p><b>字段依据（2026-11-04 测试账套 6a9aaaadaf7ee6 实测，生成 CGSL016641）</b>：
  * <ul>
- *   <li>头：{@code FDate}、{@code FSupplierId.FNumber}、{@code FNote}、
- *       {@code FBillTypeID.FNumber}（{@link WmsConstants#KD_BILL_TYPE_PURCHASE_INBOUND}）；</li>
- *   <li>分录实体：{@code FEntity}；</li>
- *   <li>数量字段：<b>{@code FRealQty}</b>（实查 FQty 不存在）；</li>
- *   <li>仓库：{@code FStockId.FNumber}（WMS 仓库编码与金蝶 1:1）。</li>
+ *   <li>头：{@code FStockOrgId}、{@code FBillTypeID}（{@link WmsConstants#KD_BILL_TYPE_PURCHASE_RECEIVE}）、
+ *       {@code FDate}、{@code FSupplierID}、{@code FOwnerTypeIdHead}/{@code FOwnerIDHead}、
+ *       {@code FPurOrgId}、{@code FNote}（采购入库单没有头备注，别搞混）；</li>
+ *   <li>分录实体键：{@code FDetailEntity}（不是 {@code FBillEntry}、也不是 {@code FEntity}）；</li>
+ *   <li>数量：{@code FActReceiveQty} + {@code FReceiveQty} + {@code FReceiveBaseQty} 三个给同一数量；</li>
+ *   <li>单位：{@code FUnitId}、{@code FPriceUnitId}、<b>{@code FStockUnitID}</b>（收料单位，ID 大写）；</li>
+ *   <li>仓库 {@code FStockID}、收料单位 {@code FStockUnitID} 的 <b>ID 大写</b>，
+ *       而库存状态是 {@code FStockStatusId}（小写 d）、货主 {@code FOwnerId}（小写 d）——
+ *       大小写写错会被金蝶当成没传。</li>
  * </ul>
- * 尚未真实试写验证：分录内 {@code FStockId} 的层级（头还是分录）按现有真账套 Writer
- * （生产入库/其他出库）的惯例放在分录内；若金蝶报「仓库不能为空」，需改挂到头上再试一次。
  *
  * <p>口径：
  * <ul>
  *   <li><b>不传 {@code FBillNo} / {@code FID}</b>：单号与主键以 ERP 为准（2026-10-28 决策）；</li>
- *   <li>只传业务字段：日期、供应商、物料编码、实收数量、批次、仓库、备注；</li>
+ *   <li>只传业务字段：日期、供应商、物料编码、实收数量、批次、仓库、单位、备注；</li>
  *   <li>数量取「实收数量」，为空回退「应收数量」；<b>短装行（数量 0）跳过</b>，
  *       负数仍报错；只有全部行都不可回写时才整单失败——0 数量行让整单失败会造成
  *       「库存已入账、ERP 未回写」；</li>
+ *   <li>物料编码为空的行跳过；仓库/单位解析不到、组织未配置、formId 未配置一律显式失败；</li>
  *   <li>日期取审核时间（{@code auditTime}），为空回退创建时间；</li>
- *   <li>明细为空显式失败，不发空报文。</li>
+ *   <li>明细为空显式失败，不发空报文；</li>
+ *   <li>金蝶返回的错误原文原样透传，不包装成笼统的「保存失败」。</li>
  * </ul>
  *
  * <p>{@link #isEnabled()} 暴露 {@code wms.sync.erp.kingdee.enabled} 供调用方发起前判断；
@@ -52,29 +64,39 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-public class WmsKingdeePurchaseInboundWriterImpl implements IWmsKingdeePurchaseInboundWriter {
+public class WmsKingdeePurchaseReceiveWriterImpl implements IWmsKingdeePurchaseReceiveWriter {
 
-    private static final String BILL_NAME = "采购入库单";
+    private static final String BILL_NAME = "采购收料单";
     private static final WmsConfigKey FORM_KEY = WmsConfigKey.KD_FORM_PURCHASE_INBOUND;
     /** 备注长度上限：金蝶 FNote 超长会整单保存失败。 */
     private static final int NOTE_MAX_LENGTH = 500;
+    /** 分录实体键：真账套实测为 FDetailEntity（不是 FBillEntry / FEntity）。 */
+    static final String ENTRY_KEY = "FDetailEntity";
+    /**
+     * 单价占位：收料单要求 {@code FPrice}/{@code FTaxPrice} 大于 0（填 0 报错），
+     * WMS 不存采购价，用 1 元占位；真实单价以金蝶采购订单/收料单为准。
+     */
+    private static final BigDecimal PLACEHOLDER_PRICE = BigDecimal.ONE;
 
     private final WmsKingdeeFormClient formClient;
     private final IWmsSystemConfigService configService;
     private final WmsInboundDetailMapper detailMapper;
     private final WmsKingdeeProperties properties;
     private final WmsWarehouseCodeResolver warehouseResolver;
+    private final IWmsMaterialService materialService;
 
-    public WmsKingdeePurchaseInboundWriterImpl(WmsKingdeeFormClient formClient,
+    public WmsKingdeePurchaseReceiveWriterImpl(WmsKingdeeFormClient formClient,
                                                IWmsSystemConfigService configService,
                                                WmsInboundDetailMapper detailMapper,
                                                WmsKingdeeProperties properties,
-                                               WmsWarehouseCodeResolver warehouseResolver) {
+                                               WmsWarehouseCodeResolver warehouseResolver,
+                                               IWmsMaterialService materialService) {
         this.formClient = formClient;
         this.configService = configService;
         this.detailMapper = detailMapper;
         this.properties = properties;
         this.warehouseResolver = warehouseResolver;
+        this.materialService = materialService;
     }
 
     @Override
@@ -94,6 +116,12 @@ public class WmsKingdeePurchaseInboundWriterImpl implements IWmsKingdeePurchaseI
         }
         // formId 必须最先校验：未配置时连明细都不该查
         String formId = requireFormId();
+        // 收料单头必须有库存组织/货主组织/采购组织；取现有配置 default-org-number（101）
+        String orgNumber = trim(properties.getDefaultOrgNumber());
+        if (orgNumber.isEmpty()) {
+            return WmsKingdeeResult.fail("未配置金蝶默认组织（default-org-number），无法回写"
+                    + BILL_NAME);
+        }
 
         List<WmsInboundDetail> details = detailMapper.selectList(
                 new QueryWrapper<WmsInboundDetail>().eq("inbound_id", order.getId()));
@@ -127,13 +155,19 @@ public class WmsKingdeePurchaseInboundWriterImpl implements IWmsKingdeePurchaseI
                 continue;
             }
             // 仓库逐行解析：不同物料可能上架到不同库区（明细的 location_id 上架时写入）。
-            // 解析不到必须显式失败——FStockId 是金蝶必填，省略只会把错误推迟到 ERP 保存。
+            // 解析不到必须显式失败——FStockID 是金蝶必填，省略只会把错误推迟到 ERP 保存。
             String stockCode = warehouseResolver.byLocation(detail.getLocationId());
             if (oConvertUtils.isEmpty(stockCode)) {
                 return WmsKingdeeResult.fail("入库单[" + order.getOrderNo() + "]物料["
                         + detail.getMaterialCode() + "]的库位/仓库编码缺失，无法回写金蝶" + BILL_NAME);
             }
-            entries.add(entry(detail, qty, stockCode));
+            // 单位必填（真账套实测报错原文：单据体第1行字段"单位"是必填项）
+            String unit = unitOf(detail.getMaterialCode());
+            if (oConvertUtils.isEmpty(unit)) {
+                return WmsKingdeeResult.fail("入库单[" + order.getOrderNo() + "]物料["
+                        + detail.getMaterialCode() + "]未维护单位，金蝶要求单位必填，无法回写" + BILL_NAME);
+            }
+            entries.add(entry(detail, qty, stockCode, unit, orgNumber));
         }
         if (entries.isEmpty()) {
             return WmsKingdeeResult.fail("入库单[" + order.getOrderNo()
@@ -144,31 +178,66 @@ public class WmsKingdeePurchaseInboundWriterImpl implements IWmsKingdeePurchaseI
         // 业务日期以审核（上架确认）时间为准，退回创建时间
         model.put("FDate", formatDate(order.getAuditTime() != null
                 ? order.getAuditTime() : order.getCreateTime()));
-        String supplier = order.getSupplierCode() == null ? "" : order.getSupplierCode().trim();
+        model.put("FStockOrgId", dict(orgNumber));
+        model.put("FBillTypeID", dict(WmsConstants.KD_BILL_TYPE_PURCHASE_RECEIVE));
+        String supplier = trim(order.getSupplierCode());
         if (!supplier.isEmpty()) {
             // 供应商：基础资料按编码绑定（2026-10-28 实测 {"Id":…} 会报必填项缺失）；
-            // 先 trim 再判空，纯空格不得发成 {FNumber: ""}
-            model.put("FSupplierId", dict(supplier));
+            // 先 trim 再判空，纯空格不得发成 {FNumber: ""}。
+            // 字段名是大写 ID（FSupplierID）：小写 FSupplierId 会被当成没传。
+            model.put("FSupplierID", dict(supplier));
         }
-        model.put("FBillTypeID", dict(WmsConstants.KD_BILL_TYPE_PURCHASE_INBOUND));
+        // 货主是组织：两个 ID 都是大写（FOwnerIDHead），采购组织同为本组织
+        model.put("FOwnerTypeIdHead", WmsConstants.KD_OWNER_TYPE_ORG);
+        model.put("FOwnerIDHead", dict(orgNumber));
+        model.put("FPurOrgId", dict(orgNumber));
         model.put("FNote", note(order));
-        model.put("FEntity", entries);
+        model.put(ENTRY_KEY, entries);
 
         log.info("回写金蝶{}({})：WMS 单号 {}，明细 {} 行", BILL_NAME, formId, order.getOrderNo(),
                 entries.size());
         return formClient.save(formId, model);
     }
 
-    private Map<String, Object> entry(WmsInboundDetail detail, BigDecimal qty, String stockCode) {
+    private Map<String, Object> entry(WmsInboundDetail detail, BigDecimal qty, String stockCode,
+                                      String unit, String orgNumber) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("FMaterialId", dict(detail.getMaterialCode()));
-        // STK_InStock 实查只有 FRealQty（FQty 不存在）
-        entry.put("FRealQty", qty);
-        entry.put("FStockId", dict(stockCode));
+        // 数量：实收数量与计价/库存数量给同一值（真账套实测三个字段都收）
+        entry.put("FActReceiveQty", qty);
+        entry.put("FReceiveQty", qty);
+        entry.put("FReceiveBaseQty", qty);
+        // 单位：取物料主数据的单位编码，必须是金蝶 BD_UNIT 的编码（如 Pcs、zhi），不是中文名
+        entry.put("FUnitId", dict(unit));
+        entry.put("FPriceUnitId", dict(unit));
+        // 收料单位字段名里的 ID 必须大写，小写会被当成没传
+        entry.put("FStockUnitID", dict(unit));
+        // 仓库同样是大写 ID
+        entry.put("FStockID", dict(stockCode));
+        // 库存状态是 FStockStatusId（小写 d），与上面两个相反
+        entry.put("FStockStatusId", dict(WmsConstants.STOCK_STATUS_AVAILABLE));
+        // 货主：自有库存货权属于本组织
+        entry.put("FOwnerTypeId", WmsConstants.KD_OWNER_TYPE_ORG);
+        entry.put("FOwnerId", dict(orgNumber));
+        entry.put("FPrice", PLACEHOLDER_PRICE);
+        entry.put("FTaxPrice", PLACEHOLDER_PRICE);
         if (oConvertUtils.isNotEmpty(detail.getBatchNo())) {
             entry.put("FLot", dict(detail.getBatchNo()));
         }
         return entry;
+    }
+
+    /** 物料单位（金蝶 BD_UNIT 编码）；查不到返回 null，由调用方显式失败。 */
+    private String unitOf(String materialCode) {
+        if (oConvertUtils.isEmpty(materialCode)) {
+            return null;
+        }
+        List<WmsMaterial> found = materialService.list(Wrappers.<WmsMaterial>query()
+                .eq("material_code", materialCode.trim()).last("LIMIT 1"));
+        if (found == null || found.isEmpty() || found.get(0) == null) {
+            return null;
+        }
+        return trim(found.get(0).getUnit());
     }
 
     private BigDecimal qtyOf(WmsInboundDetail detail) {
@@ -197,6 +266,10 @@ public class WmsKingdeePurchaseInboundWriterImpl implements IWmsKingdeePurchaseI
     /** 基础资料字典：{FNumber: "编码"}。 */
     private Map<String, Object> dict(String number) {
         return Map.of("FNumber", number);
+    }
+
+    private String trim(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private String formatDate(Date date) {
