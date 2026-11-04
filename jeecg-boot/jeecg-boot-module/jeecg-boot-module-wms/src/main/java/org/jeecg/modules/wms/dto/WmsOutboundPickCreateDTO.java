@@ -24,9 +24,12 @@ public class WmsOutboundPickCreateDTO implements Serializable {
     @Schema(description = "需求来源：金蝶用料清单/手工")
     private String requirementSource;
 
+    @Schema(description = "领料设备ID（可空；传了必须存在）")
+    private String deviceId;
+
     @Schema(description = "备注")
     private String remark;
 
-    @Schema(description = "领料明细")
+    @Schema(description = "领料明细（每行可用 pickQty 指定本次领料数量）")
     private List<WmsOutboundDetailDTO> details;
 }

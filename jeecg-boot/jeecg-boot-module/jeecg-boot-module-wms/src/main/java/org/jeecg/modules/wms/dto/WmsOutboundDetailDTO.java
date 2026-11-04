@@ -27,6 +27,15 @@ public class WmsOutboundDetailDTO implements Serializable {
     @Schema(description = "需求数量")
     private BigDecimal requiredQty;
 
+    /**
+     * 本次领料数量（CK-001 部分领料，可空）。
+     *
+     * <p>为空 = 按需求数量全领；非空必须大于 0 且不超过 {@link #requiredQty}，
+     * 落库时覆盖明细的需求数量（{@code requiredQty}），金蝶报文结构不变。
+     */
+    @Schema(description = "本次领料数量（可空，空=按需求数量全领）")
+    private BigDecimal pickQty;
+
     @Schema(description = "单位（可空，默认取物料单位）")
     private String unit;
 

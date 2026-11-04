@@ -17,8 +17,20 @@ public interface IWmsOutboundService extends IService<WmsOutboundOrder> {
     /** CK-001：扫码校验工单并调出需求明细。 */
     org.jeecg.modules.wms.vo.WmsOutboundScanVO scanPick(String workOrderNo);
 
-    /** CK-001：创建领料出库单。 */
+    /** CK-001：创建领料出库单（领取人取登录账号，可指定设备与本次领料数量）。 */
     WmsOutboundOrder createPick(WmsOutboundPickCreateDTO dto);
+
+    /**
+     * CK-001：取消领料出库单并站内通知工单创建人。
+     *
+     * <p>仅「草稿/待分配/已分配」可取消；写入 {@code cancel_reason} 并置「已关闭」。
+     * 通知收件人取工单 {@code create_by}，为空回退默认收件人；**通知失败不影响取消**。
+     *
+     * @param id       出库单 ID
+     * @param reason   取消原因（不能为空）
+     * @param operator 操作人登录账号（为空取当前登录账号）
+     */
+    void cancelPick(String id, String reason, String operator);
 
     /** CK-002：创建销售订单对应的出库单。 */
     WmsOutboundOrder createSales(WmsOutboundSalesCreateDTO dto);

@@ -18,6 +18,7 @@ import org.jeecg.modules.wms.dto.WmsOutboundReviewDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSalesCreateDTO;
 import org.jeecg.modules.wms.dto.WmsOutboundSampleCreateDTO;
 import org.jeecg.modules.wms.dto.WmsSalesOrderSyncDTO;
+import org.jeecg.modules.wms.entity.WmsDevice;
 import org.jeecg.modules.wms.entity.WmsInventory;
 import org.jeecg.modules.wms.entity.WmsLocation;
 import org.jeecg.modules.wms.entity.WmsMaterial;
@@ -27,6 +28,7 @@ import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.entity.WmsSalesOrder;
 import org.jeecg.modules.wms.entity.WmsSalesOrderDetail;
 import org.jeecg.modules.wms.entity.WmsWorkOrder;
+import org.jeecg.modules.wms.mapper.WmsDeviceMapper;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
@@ -84,6 +86,9 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
 
     @Autowired
     private WmsMaterialMapper materialMapper;
+
+    @Autowired
+    private WmsDeviceMapper deviceMapper;
 
     @Autowired
     private org.jeecg.modules.wms.sync.IWmsKingdeePpbomReader ppbomReader;
@@ -369,29 +374,7 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                 || WmsConstants.OUTBOUND_STATUS_CLOSED.equals(order.getStatus())) {
             throw new RuntimeException("当前状态不允许关单");
         }
-        List<WmsOutboundAllocation> allocations = allocationMapper.selectList(
-                Wrappers.<WmsOutboundAllocation>query().eq("outbound_id", id));
-        if (allocations != null) {
-            for (WmsOutboundAllocation allocation : allocations) {
-                // 关单一定释放锁定与库位：即使任务已完成但尚未确认出库，锁定也还挂着；
-                // 若货已出库，这里只会释放锁定（库存数量未扣），需要人工盘点，故单独告警提示。
-                if (WmsConstants.TASK_STATUS_FINISHED.equals(allocation.getTaskStatus())) {
-                    log.warn("出库单[{}]关单时任务[{}]已完成但未确认出库，货物可能已离库，请人工核对库存",
-                            order.getOutboundNo(), allocation.getTaskNo());
-                }
-                if (allocation.getAllocatedQty() != null && allocation.getAllocatedQty().signum() > 0) {
-                    inventoryMapper.releaseLocked(allocation.getInventoryId(), allocation.getAllocatedQty());
-                }
-                releaseLocationIfEmpty(allocation.getLocationId());
-                if (!WmsConstants.TASK_STATUS_FINISHED.equals(allocation.getTaskStatus())
-                        && !WmsConstants.TASK_STATUS_CLOSED.equals(allocation.getTaskStatus())) {
-                    allocationMapper.update(null, new UpdateWrapper<WmsOutboundAllocation>()
-                            .set("task_status", WmsConstants.TASK_STATUS_CLOSED)
-                            .set("update_time", new Date())
-                            .eq("id", allocation.getId()));
-                }
-            }
-        }
+        releaseAllocations(id, order);
         WmsOutboundOrder patch = new WmsOutboundOrder()
                 .setStatus(WmsConstants.OUTBOUND_STATUS_CLOSED)
                 .setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED)
@@ -401,6 +384,128 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
         patch.setCloseTime(new Date());
         baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>().eq("id", id));
         log.info("出库单[{}]关单：原因={}", order.getOutboundNo(), reason.trim());
+    }
+
+    /**
+     * CK-001 领料取消：物料不符/库存不足时由操作员取消并通知工单创建人。
+     *
+     * <p>仅前段状态（草稿/待分配/已分配）可取消——一旦进入执行中，货可能已离库，只能走关单核对。
+     * 取消前先撤掉设备任务、释放已锁定的库存，否则未领的料会一直被占着。
+     * 状态回写带条件（{@code in(旧状态)}），并发取消/分配时只有一个能生效。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelPick(String id, String reason, String operator) {
+        if (oConvertUtils.isEmpty(id)) {
+            throw new RuntimeException("出库单ID不能为空");
+        }
+        String cancelReason = reason == null ? null : reason.trim();
+        if (oConvertUtils.isEmpty(cancelReason)) {
+            throw new RuntimeException("取消原因不能为空");
+        }
+        WmsOutboundOrder order = getById(id);
+        if (order == null) {
+            throw new RuntimeException("出库单不存在");
+        }
+        if (!isPickCancellable(order.getStatus())) {
+            throw new RuntimeException("当前状态不允许取消");
+        }
+        if (taskService != null) {
+            try {
+                taskService.cancel(id);
+            } catch (RuntimeException e) {
+                log.warn("领料单[{}]取消前撤销设备任务失败（继续取消）：{}", id, e.getMessage());
+            }
+        }
+        releaseAllocations(id, order);
+        String cancelBy = oConvertUtils.isEmpty(operator) ? WmsUtils.currentUsername() : operator.trim();
+        WmsOutboundOrder patch = new WmsOutboundOrder()
+                .setStatus(WmsConstants.OUTBOUND_STATUS_CLOSED)
+                .setSyncStatus(WmsConstants.SYNC_STATUS_NOT_REQUIRED)
+                .setCancelReason(cancelReason)
+                .setCloseBy(cancelBy);
+        patch.setUpdateTime(new Date());
+        patch.setCloseTime(new Date());
+        int rows = baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>()
+                .eq("id", id)
+                .in("status", WmsConstants.OUTBOUND_STATUS_DRAFT,
+                        WmsConstants.OUTBOUND_STATUS_PENDING_ALLOCATE,
+                        WmsConstants.OUTBOUND_STATUS_ALLOCATED));
+        if (rows == 0) {
+            throw new RuntimeException("单据状态已变化，请刷新后重试");
+        }
+        notifyPickCancelled(order, cancelReason, cancelBy);
+        log.info("领料单[{}]取消：工单={}，原因={}，操作人={}",
+                order.getOutboundNo(), order.getWorkOrderNo(), cancelReason, cancelBy);
+    }
+
+    /** 只有尚未进入执行环节的领料单才能取消。 */
+    private boolean isPickCancellable(String status) {
+        return WmsConstants.OUTBOUND_STATUS_DRAFT.equals(status)
+                || WmsConstants.OUTBOUND_STATUS_PENDING_ALLOCATE.equals(status)
+                || WmsConstants.OUTBOUND_STATUS_ALLOCATED.equals(status);
+    }
+
+    /**
+     * 取消通知：收件人取工单创建人（Quartz 同步建单时为空，回退默认收件人）。
+     * 通知失败只记日志——通知是附带动作，不能让它把已生效的取消回滚掉。
+     */
+    private void notifyPickCancelled(WmsOutboundOrder order, String reason, String operator) {
+        try {
+            String toUser = null;
+            if (oConvertUtils.isNotEmpty(order.getWorkOrderNo())) {
+                WmsWorkOrder workOrder = workOrderMapper.selectOne(Wrappers.<WmsWorkOrder>query()
+                        .eq("work_order_no", order.getWorkOrderNo().trim()).last("LIMIT 1"));
+                if (workOrder != null) {
+                    toUser = workOrder.getCreateBy();
+                }
+            }
+            if (oConvertUtils.isEmpty(toUser)) {
+                toUser = oConvertUtils.isEmpty(alertToUser)
+                        ? WmsConstants.ALERT_TO_USER : alertToUser;
+            }
+            String fromUser = oConvertUtils.isEmpty(operator) ? WmsUtils.currentUsername() : operator;
+            if (oConvertUtils.isEmpty(fromUser)) {
+                fromUser = WmsConstants.ALERT_FROM_USER;
+            }
+            String content = "领料单：" + order.getOutboundNo()
+                    + "；工单：" + (order.getWorkOrderNo() == null ? "" : order.getWorkOrderNo())
+                    + "；取消原因：" + reason + "；操作人：" + (operator == null ? "" : operator);
+            sysBaseAPI.sendSysAnnouncement(new MessageDTO(fromUser, toUser,
+                    WmsConstants.OUTBOUND_PICK_CANCEL_TITLE, content));
+        } catch (Exception e) {
+            log.error("领料取消通知投递失败（不影响取消）：{}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 关单/取消共用：释放锁定与库位、关闭未完成的任务行。
+     */
+    private void releaseAllocations(String outboundId, WmsOutboundOrder order) {
+        List<WmsOutboundAllocation> allocations = allocationMapper.selectList(
+                Wrappers.<WmsOutboundAllocation>query().eq("outbound_id", outboundId));
+        if (allocations == null) {
+            return;
+        }
+        for (WmsOutboundAllocation allocation : allocations) {
+            // 关单一定释放锁定与库位：即使任务已完成但尚未确认出库，锁定也还挂着；
+            // 若货已出库，这里只会释放锁定（库存数量未扣），需要人工盘点，故单独告警提示。
+            if (WmsConstants.TASK_STATUS_FINISHED.equals(allocation.getTaskStatus())) {
+                log.warn("出库单[{}]关单时任务[{}]已完成但未确认出库，货物可能已离库，请人工核对库存",
+                        order.getOutboundNo(), allocation.getTaskNo());
+            }
+            if (allocation.getAllocatedQty() != null && allocation.getAllocatedQty().signum() > 0) {
+                inventoryMapper.releaseLocked(allocation.getInventoryId(), allocation.getAllocatedQty());
+            }
+            releaseLocationIfEmpty(allocation.getLocationId());
+            if (!WmsConstants.TASK_STATUS_FINISHED.equals(allocation.getTaskStatus())
+                    && !WmsConstants.TASK_STATUS_CLOSED.equals(allocation.getTaskStatus())) {
+                allocationMapper.update(null, new UpdateWrapper<WmsOutboundAllocation>()
+                        .set("task_status", WmsConstants.TASK_STATUS_CLOSED)
+                        .set("update_time", new Date())
+                        .eq("id", allocation.getId()));
+            }
+        }
     }
 
     @Override
@@ -724,6 +829,9 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
         if (dto.getDetails() == null || dto.getDetails().isEmpty()) {
             throw new RuntimeException("领料明细不能为空");
         }
+        String deviceId = resolvePickDevice(dto.getDeviceId());
+        applyPickQty(dto.getDetails());
+        // 领取人 = 当前登录账号（spec §3.4：不做下拉、不做读卡器）
         WmsOutboundOrder order = new WmsOutboundOrder()
                 .setOutboundNo(nextNo(WmsConstants.OUTBOUND_NO_PREFIX_PICK))
                 .setOutboundType(WmsConstants.OUTBOUND_TYPE_PICK)
@@ -735,12 +843,53 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                 .setRetryCount(0)
                 .setSyncFailCount(0)
                 .setOperator(WmsUtils.currentUsername())
+                .setPickerId(WmsUtils.currentUsername())
+                .setPickerName(WmsUtils.currentRealname())
+                .setDeviceId(deviceId)
                 .setSubmitTime(new Date())
                 .setRemark(dto.getRemark());
         persist(order, dto.getDetails());
-        log.info("领料出库单创建：单号={}，工单={}，明细={}",
-                order.getOutboundNo(), order.getWorkOrderNo(), dto.getDetails().size());
+        log.info("领料出库单创建：单号={}，工单={}，明细={}，领取人={}，设备={}",
+                order.getOutboundNo(), order.getWorkOrderNo(), dto.getDetails().size(),
+                order.getPickerName(), deviceId);
         return order;
+    }
+
+    /** 设备可空；传了必须存在于设备表（逻辑删除的设备查不到）。 */
+    private String resolvePickDevice(String deviceId) {
+        if (oConvertUtils.isEmpty(deviceId)) {
+            return null;
+        }
+        String trimmed = deviceId.trim();
+        WmsDevice device = deviceMapper.selectById(trimmed);
+        if (device == null) {
+            throw new RuntimeException("领料设备不存在：" + trimmed);
+        }
+        return trimmed;
+    }
+
+    /**
+     * 部分领料：本次数量（pickQty）必须大于 0 且不超过工单需求（明细 requiredQty）。
+     *
+     * <p>校验通过后把 pickQty 写入明细的需求数量——下游分配/确认/金蝶报文都只看 requiredQty，
+     * 因此不需要动报文结构；为空则保持原需求数量（全领）。
+     */
+    private void applyPickQty(List<WmsOutboundDetailDTO> details) {
+        for (WmsOutboundDetailDTO item : details) {
+            BigDecimal pickQty = item.getPickQty();
+            if (pickQty == null) {
+                continue;
+            }
+            if (pickQty.signum() <= 0) {
+                throw new RuntimeException("本次领料数量必须大于 0");
+            }
+            BigDecimal required = nvl(item.getRequiredQty());
+            if (pickQty.compareTo(required) > 0) {
+                throw new RuntimeException("物料[" + item.getMaterialCode() + "]本次领料数量 "
+                        + strip(pickQty) + " 超过工单需求 " + strip(required));
+            }
+            item.setRequiredQty(pickQty);
+        }
     }
 
     @Override

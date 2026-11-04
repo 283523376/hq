@@ -633,6 +633,8 @@ public final class WmsConstants {
     public static final String OUTBOUND_REVIEW_ALERT_TITLE = "WMS出库复核不一致告警";
     /** 出库单同步失败告警标题。 */
     public static final String OUTBOUND_SYNC_ALERT_TITLE = "WMS出库同步失败告警";
+    /** CK-001 领料取消通知标题。 */
+    public static final String OUTBOUND_PICK_CANCEL_TITLE = "WMS领料取消通知";
     /** 销售订单同步失败告警标题。 */
     public static final String SALE_ORDER_SYNC_ALERT_TITLE = "WMS销售订单同步失败告警";
 
