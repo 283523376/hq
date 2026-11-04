@@ -205,6 +205,19 @@ class WmsPickActionTest {
     }
 
     @Test
+    void createPick_pickQtyWithoutRequiredQtyRejected() {
+        WmsOutboundDetailDTO dto = new WmsOutboundDetailDTO();
+        dto.setMaterialCode("PBC001");
+        dto.setPickQty(new BigDecimal("4"));
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.createPick(pickDto(dto)));
+
+        assertTrue(e.getMessage().contains("缺少工单需求数量"), e.getMessage());
+        verify(orderMapper, never()).insert(any(WmsOutboundOrder.class));
+    }
+
+    @Test
     void createPick_partialPickOverridesRequiredQty() {
         service.createPick(pickDto(detail("10", "4")));
 
@@ -267,6 +280,33 @@ class WmsPickActionTest {
         verify(sysBaseAPI).sendSysAnnouncement(message.capture());
         assertEquals(org.jeecg.modules.wms.constant.WmsConstants.ALERT_TO_USER,
                 message.getValue().getToUser());
+    }
+
+    /** 只有领料单能走取消：销售/样品出库同样处于「待分配」，不加守卫会绕过关单权限。 */
+    @Test
+    void cancelPick_rejectsNonPickOutboundType() {
+        WmsOutboundOrder sales = order("待分配").setOutboundType("销售出库");
+        when(orderMapper.selectById("ob1")).thenReturn(sales);
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.cancelPick("ob1", "物料不符", "wx001"));
+
+        assertEquals("仅生产领料单可取消，其他单据请走关单", e.getMessage());
+        verify(orderMapper, never()).update(any(WmsOutboundOrder.class), any());
+        verify(sysBaseAPI, never()).sendSysAnnouncement(any(MessageDTO.class));
+    }
+
+    /** 库存不足会在分配阶段把单据置「异常待人工」，此时必须仍可取消并通知计划员。 */
+    @Test
+    void cancelPick_allowsExceptionStatusForShortStock() {
+        when(orderMapper.selectById("ob1")).thenReturn(order("异常待人工"));
+
+        assertDoesNotThrow(() -> service.cancelPick("ob1", "库存不足", "wx001"));
+
+        ArgumentCaptor<WmsOutboundOrder> patch = ArgumentCaptor.forClass(WmsOutboundOrder.class);
+        verify(orderMapper).update(patch.capture(), any());
+        assertEquals("已关闭", patch.getValue().getStatus());
+        assertEquals("库存不足", patch.getValue().getCancelReason());
     }
 
     @Test

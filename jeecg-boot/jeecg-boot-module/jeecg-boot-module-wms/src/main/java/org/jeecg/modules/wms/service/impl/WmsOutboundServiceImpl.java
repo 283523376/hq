@@ -389,9 +389,13 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
     /**
      * CK-001 领料取消：物料不符/库存不足时由操作员取消并通知工单创建人。
      *
-     * <p>仅前段状态（草稿/待分配/已分配）可取消——一旦进入执行中，货可能已离库，只能走关单核对。
+     * <p>仅前段状态（草稿/待分配/已分配/异常待人工）可取消——一旦进入执行中，货可能已离库，只能走关单核对。
+     * 「异常待人工」是分配阶段发现库存不足后落的状态，蓝图明确要求此时能取消并通知计划员，故一并纳入。
      * 取消前先撤掉设备任务、释放已锁定的库存，否则未领的料会一直被占着。
      * 状态回写带条件（{@code in(旧状态)}），并发取消/分配时只有一个能生效。
+     *
+     * <p>只接受生产领料单：销售/样品/外协出库同样落在前段状态，若不加类型守卫，
+     * 仅有 {@code wms:outbound:pick:cancel} 权限的仓管就能借此关掉销售单，绕过关单权限。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -406,6 +410,9 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
         WmsOutboundOrder order = getById(id);
         if (order == null) {
             throw new RuntimeException("出库单不存在");
+        }
+        if (!WmsConstants.OUTBOUND_TYPE_PICK.equals(order.getOutboundType())) {
+            throw new RuntimeException("仅生产领料单可取消，其他单据请走关单");
         }
         if (!isPickCancellable(order.getStatus())) {
             throw new RuntimeException("当前状态不允许取消");
@@ -430,7 +437,8 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                 .eq("id", id)
                 .in("status", WmsConstants.OUTBOUND_STATUS_DRAFT,
                         WmsConstants.OUTBOUND_STATUS_PENDING_ALLOCATE,
-                        WmsConstants.OUTBOUND_STATUS_ALLOCATED));
+                        WmsConstants.OUTBOUND_STATUS_ALLOCATED,
+                        WmsConstants.OUTBOUND_STATUS_EXCEPTION));
         if (rows == 0) {
             throw new RuntimeException("单据状态已变化，请刷新后重试");
         }
@@ -439,11 +447,12 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                 order.getOutboundNo(), order.getWorkOrderNo(), cancelReason, cancelBy);
     }
 
-    /** 只有尚未进入执行环节的领料单才能取消。 */
+    /** 只有尚未进入执行环节的领料单才能取消；「异常待人工」仍在前段（分配失败），可取消。 */
     private boolean isPickCancellable(String status) {
         return WmsConstants.OUTBOUND_STATUS_DRAFT.equals(status)
                 || WmsConstants.OUTBOUND_STATUS_PENDING_ALLOCATE.equals(status)
-                || WmsConstants.OUTBOUND_STATUS_ALLOCATED.equals(status);
+                || WmsConstants.OUTBOUND_STATUS_ALLOCATED.equals(status)
+                || WmsConstants.OUTBOUND_STATUS_EXCEPTION.equals(status);
     }
 
     /**
@@ -876,6 +885,10 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
      */
     private void applyPickQty(List<WmsOutboundDetailDTO> details) {
         for (WmsOutboundDetailDTO item : details) {
+            // 报文里混入 null 元素时按「无本次数量」处理，交由下游 resolveMaterial 统一报错
+            if (item == null) {
+                continue;
+            }
             BigDecimal pickQty = item.getPickQty();
             if (pickQty == null) {
                 continue;
@@ -883,7 +896,10 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
             if (pickQty.signum() <= 0) {
                 throw new RuntimeException("本次领料数量必须大于 0");
             }
-            BigDecimal required = nvl(item.getRequiredQty());
+            if (item.getRequiredQty() == null) {
+                throw new RuntimeException("物料[" + item.getMaterialCode() + "]缺少工单需求数量，无法按本次数量领料");
+            }
+            BigDecimal required = item.getRequiredQty();
             if (pickQty.compareTo(required) > 0) {
                 throw new RuntimeException("物料[" + item.getMaterialCode() + "]本次领料数量 "
                         + strip(pickQty) + " 超过工单需求 " + strip(required));
