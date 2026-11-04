@@ -126,13 +126,18 @@ public class WmsProductionInboundServiceImpl
         if (dto.getDefectRemark() != null && dto.getDefectRemark().length() > 500) {
             throw new RuntimeException("不良原因长度不能超过 500");
         }
+        if (dto.getRemark() != null && dto.getRemark().length() > 500) {
+            throw new RuntimeException("备注长度不能超过 500");
+        }
         if (inboundMapper.selectActiveByCarrier(carrierCode) != null) {
             throw new RuntimeException("载具正在使用中");
         }
 
         // 产品类型按「入库来源」判定（2026-10-28 用户口径）：工单作业台提交的是**完工入库 → 成品**。
         // 工单本身不携带产品类型（金蝶没有这个概念），所以这里不能因为字段为空就拒绝入库。
-        String productType = resolveProductType(order.getProductType());
+        // 调用方显式指定时优先（改制单大改小产出固定半成品 → 立库）；为空保持原口径。
+        String productType = resolveProductType(oConvertUtils.isEmpty(dto.getProductType())
+                ? order.getProductType() : dto.getProductType().trim());
         boolean semi = WmsConstants.PRODUCT_TYPE_SEMI.equals(productType);
         String identType = semi ? WmsConstants.IDENT_TYPE_RFID : WmsConstants.IDENT_TYPE_QRCODE;
 
@@ -178,6 +183,7 @@ public class WmsProductionInboundServiceImpl
                 .setTaskStatus(hasGood
                         ? WmsConstants.TASK_STATUS_NOT_DISPATCHED : WmsConstants.TASK_STATUS_FINISHED)
                 .setDefectRemark(dto.getDefectRemark())
+                .setRemark(dto.getRemark())
                 .setSyncStatus(hasGood
                         ? WmsConstants.SYNC_STATUS_NOT_REQUIRED : WmsConstants.SYNC_STATUS_PENDING)
                 .setRetryCount(0)

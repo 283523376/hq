@@ -32,4 +32,10 @@ public class WmsProductionSubmitDTO {
 
     @Schema(description = "不良原因")
     private String defectRemark;
+
+    @Schema(description = "产品类型（可选）：为空时取工单产品类型；改制单完成传「半成品」→ 立库")
+    private String productType;
+
+    @Schema(description = "备注（可选，写入入库单 remark 列；改制单完成传「改制单:单号」溯源）")
+    private String remark;
 }

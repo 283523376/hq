@@ -168,6 +168,10 @@ public class WmsProductionInbound extends JeecgEntity {
     @Schema(description = "转人工完成说明")
     private String manualRemark;
 
+    /** 备注（改制单来源等溯源信息，如「改制单:GZ…」，V3.9.5_48 起有列） */
+    @Schema(description = "备注")
+    private String remark;
+
     /** 目标库位编码（非持久化，列表/详情展示用） */
     @TableField(exist = false)
     @Schema(description = "目标库位编码")

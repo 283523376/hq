@@ -958,6 +958,15 @@ public final class WmsConstants {
     /** 到货处理方式：段差棒直入（分配立库货位、设备入库后按自有库存入账）。 */
     public static final String INBOUND_HANDLING_DIRECT = "DIRECT";
 
+    /** 改制单号前缀（GZ + 雪花 ID）。 */
+    public static final String CONVERSION_NO_PREFIX = "GZ";
+
+    /** 改制明细方向：投入（原材料，不入 WMS 库存，只登记数量）。 */
+    public static final String CONVERSION_DIRECTION_IN = "IN";
+
+    /** 改制明细方向：产出（半成品，完成时走生产入库通道）。 */
+    public static final String CONVERSION_DIRECTION_OUT = "OUT";
+
     /** 改制单状态：草稿（已建单，可执行完成或取消）。 */
     public static final String CONVERSION_STATUS_DRAFT = "DRAFT";
 
