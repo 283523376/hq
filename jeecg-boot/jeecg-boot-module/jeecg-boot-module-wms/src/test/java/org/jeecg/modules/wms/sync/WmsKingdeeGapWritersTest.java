@@ -16,6 +16,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -413,7 +414,79 @@ class WmsKingdeeGapWritersTest {
 
         ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
         verify(formClient).executeBillQuery(eq("PUR_MRRedReturn"), anyString(), filter.capture(), anyInt());
-        assertEquals("FNote='RK''001'", filter.getValue());
+        assertEquals("FNote like '%来源单:RK''001%'", filter.getValue());
+    }
+
+    /** LIKE 通配符与反斜杠必须转义成字面量，避免参考号变成过宽的模式。 */
+    @Test
+    void existsByReferenceShouldEscapeLikeWildcards() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+
+        assertFalse(purchaseReturnWriter.existsByReference("A_B%C\\D"));
+
+        ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
+        verify(formClient).executeBillQuery(eq("PUR_MRRedReturn"), anyString(), filter.capture(), anyInt());
+        assertEquals("FNote like '%来源单:A\\_B\\%C\\\\D%'", filter.getValue());
+    }
+
+    /** 控制字符只可能来自脏数据，直接拒绝，不拼进查询。 */
+    @Test
+    void existsByReferenceShouldRejectControlCharacters() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> purchaseReturnWriter.existsByReference("RK\n001"));
+
+        assertTrue(e.getMessage().contains("控制字符"), e.getMessage());
+        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
+    }
+
+    /**
+     * 往返自洽：写单捕获的 FNote 必须能被同一 ref 的查重过滤条件命中。
+     *
+     * <p>这里按 MySQL LIKE 语义（{@code \x} 字面量、{@code %} 任意串、{@code _} 任意字符）
+     * 模拟金蝶的匹配结果；写单备注格式或查重过滤条件任一改动破坏自洽，本用例即失败。
+     */
+    @Test
+    void existsByReferenceShouldMatchTheNoteWrittenByWrite() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+        when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "CTHD0009", "1009"));
+        String ref = "RK'2_5%\\0";
+
+        assertTrue(purchaseReturnWriter.write(defectRecord().setSourceBillNo(ref), "SUP01").isSuccess());
+
+        ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
+        verify(formClient).save(eq("PUR_MRRedReturn"), modelCaptor.capture());
+        String note = String.valueOf(modelCaptor.getValue().get("FNote"));
+        assertTrue(note.contains("来源单:" + ref), note);
+
+        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
+                .thenAnswer(invocation -> {
+                    String filter = invocation.getArgument(2);
+                    return likeMatches(filter, note)
+                            ? WmsKingdeeResult.ok("[]", List.of(List.of("CTHD0009")), null, null)
+                            : WmsKingdeeResult.ok("[]", List.of(), null, null);
+                });
+
+        assertTrue(purchaseReturnWriter.existsByReference(ref),
+                "写单备注与查重过滤条件必须自洽，否则幂等保护形同虚设");
+    }
+
+    /** 纯空格的受托方不得发成 {FNumber: ""}。 */
+    @Test
+    void purchaseReturnWriterShouldNotSendBlankSupplier() {
+        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+        when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
+                WmsKingdeeResult.ok("{}", null, "CTHD0010", "1010"));
+
+        purchaseReturnWriter.write(defectRecord(), "   ");
+
+        ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
+        verify(formClient).save(eq("PUR_MRRedReturn"), modelCaptor.capture());
+        assertFalse(modelCaptor.getValue().containsKey("FSupplierId"));
     }
 
     /** 查重失败不能当成「不存在」，否则重试会重复开单。 */
@@ -502,6 +575,35 @@ class WmsKingdeeGapWritersTest {
         record.setDisposalType(WmsConstants.DEFECT_DISPOSAL_RETURN);
         record.setCreateTime(date("2026-11-02"));
         return record;
+    }
+
+    /**
+     * 模拟 MySQL LIKE 匹配（默认 {@code \} 为转义符）：先还原 SQL 字面量 {@code '' → '}，
+     * 再按 LIKE 语义把 {@code \x} 当字面量、{@code %} 当任意串、{@code _} 当任意单字符。
+     */
+    private boolean likeMatches(String filter, String text) {
+        // 只剥掉 SQL 字面量的边界，前后的 % 是 LIKE 通配符，必须留在 pattern 里
+        String prefix = "FNote like '";
+        String suffix = "'";
+        if (filter == null || !filter.startsWith(prefix) || !filter.endsWith(suffix)) {
+            return false;
+        }
+        String pattern = filter.substring(prefix.length(), filter.length() - suffix.length())
+                .replace("''", "'");
+        StringBuilder regex = new StringBuilder("(?s)");
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '\\' && i + 1 < pattern.length()) {
+                regex.append(Pattern.quote(String.valueOf(pattern.charAt(++i))));
+            } else if (c == '%') {
+                regex.append(".*");
+            } else if (c == '_') {
+                regex.append('.');
+            } else {
+                regex.append(Pattern.quote(String.valueOf(c)));
+            }
+        }
+        return text.matches(regex.toString());
     }
 
     private Date date(String value) {

@@ -37,7 +37,8 @@ import java.util.Map;
  * <p>{@link #isEnabled()} 暴露 {@code wms.sync.erp.kingdee.enabled} 供调用方发起前判断；
  * Writer 不因开关关闭而返回 mock 成功。
  *
- * <p>{@link #existsByReference(String)} 供幂等查重：按备注参考号查询金蝶是否已有该退货单，
+ * <p>{@link #existsByReference(String)} 供幂等查重：用包含匹配
+ * {@code FNote like '%来源单:<ref>%'} 查询金蝶是否已有该退货单（与写入的备注格式自洽），
  * 查询失败抛错而不是返回 false——把查询失败当成「不存在」会让重试重复开单。
  *
  * @Author: 永鑫WMS
@@ -103,9 +104,11 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
         Map<String, Object> model = new LinkedHashMap<>();
         // 业务日期用记录创建时间（不取执行瞬间的 new Date()：补跑/重试会写错日期）
         model.put("FDate", formatDate(record.getCreateTime()));
-        if (oConvertUtils.isNotEmpty(supplierNumber)) {
-            // 受托方（基础资料按编码绑定）；不良品记录不存受托方，由调用方反查入库单后传入
-            model.put("FSupplierId", Map.of("FNumber", supplierNumber.trim()));
+        String supplier = supplierNumber == null ? "" : supplierNumber.trim();
+        if (!supplier.isEmpty()) {
+            // 受托方（基础资料按编码绑定）；不良品记录不存受托方，由调用方反查入库单后传入。
+            // 先 trim 再判空：纯空格不得发成 {FNumber: ""}，金蝶会报必填项缺失
+            model.put("FSupplierId", Map.of("FNumber", supplier));
         }
         model.put("FNote", note(record));
         model.put("FEntity", entries);
@@ -117,18 +120,64 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
 
     @Override
     public boolean existsByReference(String ref) {
-        if (oConvertUtils.isEmpty(ref) || ref.trim().isEmpty()) {
-            throw new IllegalArgumentException("按参考号查重" + BILL_NAME + "必须提供参考号");
-        }
+        String reference = requireReference(ref);
         String formId = requireFormId();
-        String filter = "FNote='" + ref.trim().replace("'", "''") + "'";
+        // 必须用包含匹配：写入的备注是「WMS受托不良退货；来源单:<ref>；原因:...」，
+        // 等值查询永远查不到自己写的单，幂等保护等于没接（重试会重复开退货单）
+        String filter = "FNote like '%来源单:" + escapeLike(reference) + "%'";
         WmsKingdeeResult result = formClient.executeBillQuery(formId, "FBillNo", filter, 1);
         if (!result.isSuccess()) {
             // 查重失败不能当成「不存在」：那会在重试时重复开单
-            throw new IllegalStateException("金蝶" + BILL_NAME + "查重失败（参考号 " + ref + "）："
+            throw new IllegalStateException("金蝶" + BILL_NAME + "查重失败（参考号 " + reference + "）："
                     + result.getMessage());
         }
         return !result.getRows().isEmpty();
+    }
+
+    /** 参考号校验：非空、无控制字符（控制字符只可能来自脏数据，拼进查询只会得到坏 SQL）。 */
+    private String requireReference(String ref) {
+        if (oConvertUtils.isEmpty(ref) || ref.trim().isEmpty()) {
+            throw new IllegalArgumentException("按参考号查重" + BILL_NAME + "必须提供参考号");
+        }
+        String value = ref.trim();
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                // 不回显原值：控制字符会把日志/异常文案渲染乱
+                throw new IllegalArgumentException("参考号含控制字符，拒绝拼入金蝶" + BILL_NAME + "查询");
+            }
+        }
+        return value;
+    }
+
+    /**
+     * LIKE 转义：{@code \} → {@code \\}、{@code %} → {@code \%}、{@code _} → {@code \_}；
+     * 最后做 SQL 字面量转义 {@code '} → {@code ''}。
+     *
+     * <p>顺序不能反：反斜杠必须先于 % / _ 处理，否则会把新加的转义符再转一遍。
+     */
+    private String escapeLike(String value) {
+        StringBuilder escaped = new StringBuilder(value.length() + 8);
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '\\':
+                    escaped.append("\\\\");
+                    break;
+                case '%':
+                    escaped.append("\\%");
+                    break;
+                case '_':
+                    escaped.append("\\_");
+                    break;
+                case '\'':
+                    escaped.append("''");
+                    break;
+                default:
+                    escaped.append(c);
+            }
+        }
+        return escaped.toString();
     }
 
     private String note(WmsDefectRecord record) {

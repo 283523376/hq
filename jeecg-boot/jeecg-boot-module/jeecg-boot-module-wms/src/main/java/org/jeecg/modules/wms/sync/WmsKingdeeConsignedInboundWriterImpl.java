@@ -92,11 +92,7 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
 
         List<Map<String, Object>> entries = new ArrayList<>();
         for (WmsInboundDetail detail : details) {
-            if (oConvertUtils.isEmpty(detail.getMaterialCode())) {
-                log.warn("入库单[{}]存在物料编码为空的明细行，跳过回写（明细 id={}）",
-                        order.getOrderNo(), detail.getId());
-                continue;
-            }
+            // 数量校验必须排在「空物料跳过」之前：否则负数量/空数量会被跳过掩盖
             BigDecimal qty = qtyOf(detail);
             if (qty == null) {
                 return WmsKingdeeResult.fail("入库单[" + order.getOrderNo() + "]物料["
@@ -110,6 +106,11 @@ public class WmsKingdeeConsignedInboundWriterImpl implements IWmsKingdeeConsigne
                 // 短装行：库存侧已按跳过处理，ERP 也不应出现 0 数量分录
                 log.info("入库单[{}]物料[{}]数量为 0（短装），跳过该行回写",
                         order.getOrderNo(), detail.getMaterialCode());
+                continue;
+            }
+            if (oConvertUtils.isEmpty(detail.getMaterialCode())) {
+                log.warn("入库单[{}]存在物料编码为空的明细行，跳过回写（明细 id={}）",
+                        order.getOrderNo(), detail.getId());
                 continue;
             }
             entries.add(entry(detail, qty));

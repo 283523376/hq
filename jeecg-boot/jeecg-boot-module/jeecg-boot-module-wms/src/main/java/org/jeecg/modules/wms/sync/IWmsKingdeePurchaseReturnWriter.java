@@ -33,9 +33,14 @@ public interface IWmsKingdeePurchaseReturnWriter {
     /**
      * 幂等查重：按备注中的参考号（通常为来源单号）查这张退货单是否已经开过。
      *
+     * <p>过滤条件是<b>包含匹配</b> {@code FNote like '%来源单:<ref>%'}，与 {@link #write}
+     * 写入的备注（「WMS受托不良退货；来源单:…；原因:…」）保持自洽——用等值查询会永远
+     * 查不到自己写的单，幂等保护等于没接。{@code ref} 中的 {@code '}、{@code %}、
+     * {@code _}、{@code \} 全部转义。
+     *
      * <p>调用方在写单前先查，查到即视为已回写，避免重试重复开单。
      *
-     * @param ref 参考号（过滤条件 {@code FNote = '<ref>'}，单引号已转义）
+     * @param ref 参考号（不得为空、不得含控制字符）
      * @return 金蝶已有该参考号的退货单返回 true
      * @throws IllegalStateException 未配置采购退货单 formId，或查询失败（查重失败不能当成「不存在」）
      */
