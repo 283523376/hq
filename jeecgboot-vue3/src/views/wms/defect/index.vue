@@ -1,13 +1,35 @@
+<!-- eslint-disable vue/multi-word-component-names -->
 <template>
   <div :class="`${prefixCls}`">
-    <BasicTable @register="registerTable">
-      <template #action="{ record }">
-        <TableAction :actions="getActions(record)" />
-      </template>
-      <template #tableTitle>
-        <span class="tip">废品仓当前不良品；报废后不可撤销，请核对数量与原因</span>
-      </template>
-    </BasicTable>
+    <a-tabs v-model:activeKey="activeTab">
+      <!-- ---------------------------------------------------- RK-005 不良品记录 -->
+      <a-tab-pane key="records" tab="不良品记录">
+        <BasicTable @register="registerRecordTable">
+          <template #tableTitle>
+            <a-button type="primary" preIcon="ant-design:plus-outlined" v-auth="'wms:defect:inbound'" @click="openInbound">
+              不良品入库登记
+            </a-button>
+            <span class="tip">受托不良来源单号必须等于受托入库单号，否则反查不到受托方，退货会失败</span>
+          </template>
+          <template #action="{ record }">
+            <TableAction v-if="getRecordActions(record).length" :actions="getRecordActions(record)" />
+            <span v-else>—</span>
+          </template>
+        </BasicTable>
+      </a-tab-pane>
+
+      <!-- ---------------------------------------------------- 废品仓台账（XT-001） -->
+      <a-tab-pane key="ledger" tab="废品仓台账">
+        <BasicTable @register="registerTable">
+          <template #tableTitle>
+            <span class="tip">废品仓当前不良品；报废后不可撤销，请核对数量与原因</span>
+          </template>
+          <template #action="{ record }">
+            <TableAction :actions="getActions(record)" />
+          </template>
+        </BasicTable>
+      </a-tab-pane>
+    </a-tabs>
 
     <a-modal v-model:open="scrapOpen" title="报废出库" :confirmLoading="submitting" @ok="submitScrap">
       <a-form layout="vertical">
@@ -29,21 +51,28 @@
         <a-alert type="warning" show-icon message="报废将立即扣减废品仓库存并生成报废出库单，不可撤销" />
       </a-form>
     </a-modal>
+
+    <DefectInboundModal v-model:open="inboundOpen" @success="handleInboundSuccess" />
   </div>
 </template>
 
 <script lang="ts" name="wms-defect" setup>
-  import { ref } from 'vue';
-  import { BasicTable, TableAction } from '/@/components/Table';
+  import { h, ref } from 'vue';
+  import { Input, Modal } from 'ant-design-vue';
+  import { BasicTable, TableAction, useTable } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useDesign } from '/@/hooks/web/useDesign';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import { columns, searchFormSchema } from './defect.data';
-  import { list, scrap } from './defect.api';
+  import { columns, recordColumns, recordSearchFormSchema, searchFormSchema } from './defect.data';
+  import { list, listRecords, returnToConsignor, scrap } from './defect.api';
+  import DefectInboundModal from './components/DefectInboundModal.vue';
 
   const { prefixCls } = useDesign('wms-defect');
-  const { createMessage, createConfirm } = useMessage();
+  const { createMessage } = useMessage();
 
+  const activeTab = ref<string>('records');
+
+  // ---------- 废品仓台账（XT-001）
   const { tableContext } = useListPage({
     tableProps: {
       api: list,
@@ -55,6 +84,75 @@
   });
   const [registerTable, { reload }] = tableContext;
 
+  // ---------- 不良品记录（RK-005）
+  const [registerRecordTable, { reload: reloadRecords }] = useTable({
+    api: listRecords,
+    columns: recordColumns,
+    rowKey: 'id',
+    formConfig: { schemas: recordSearchFormSchema },
+    actionColumn: { width: 100 },
+    showIndexColumn: false,
+  });
+
+  // ---------- 不良品入库登记
+  const inboundOpen = ref(false);
+
+  function openInbound() {
+    inboundOpen.value = true;
+  }
+
+  function handleInboundSuccess() {
+    reloadRecords();
+  }
+
+  function getRecordActions(record: any) {
+    // 只有「受托 + 退货处置 + 待处理」才可发起退货；其余由后端状态机兜底
+    if (record.sourceType === 'CONSIGNED' && record.disposalType === 'RETURN' && record.status === '待处理') {
+      return [
+        {
+          label: '退货',
+          auth: 'wms:defect:return',
+          color: 'error',
+          onClick: () => handleReturn(record),
+        },
+      ];
+    }
+    return [];
+  }
+
+  function handleReturn(record: any) {
+    let remark = '';
+    Modal.confirm({
+      title: `受托不良退货（来源单 ${record.sourceBillNo}）？`,
+      content: h('div', [
+        h('p', '将在金蝶生成采购退货单；同一来源单的待退记录会聚合到一张退货单。'),
+        h(Input, {
+          placeholder: '备注（可选，仅本地留存，不写金蝶）',
+          maxlength: 200,
+          'onUpdate:value': (v: string) => (remark = v),
+        }),
+      ]),
+      okText: '确认退货',
+      okType: 'danger',
+      cancelText: '取消',
+      async onOk() {
+        const res: any = await returnToConsignor({
+          recordId: record.id,
+          remark: remark && remark.trim() ? remark.trim() : undefined,
+        });
+        const billNo = res?.returnBillNo;
+        if (!billNo) {
+          // 金蝶已有同来源单据（existsByReference）：后端按已退货处理但不回存单号，不是失败
+          createMessage.warning('已退货但 ERP 已有同来源单据，单号待人工回填');
+        } else {
+          createMessage.success(`退货成功：${billNo}`);
+        }
+        reloadRecords();
+      },
+    });
+  }
+
+  // ---------- 报废（废品仓台账）
   const scrapOpen = ref(false);
   const submitting = ref(false);
   const current = ref<any>(null);
@@ -92,9 +190,7 @@
         reason: scrapReason.value.trim(),
       });
       scrapOpen.value = false;
-      createMessage.success(
-        `报废成功：${result.outboundNo}，剩余 ${result.remainingQty}`,
-      );
+      createMessage.success(`报废成功：${result.outboundNo}，剩余 ${result.remainingQty}`);
       reload();
     } catch (e: any) {
       // defHttp 已统一弹错误提示

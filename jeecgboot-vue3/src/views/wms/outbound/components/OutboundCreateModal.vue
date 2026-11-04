@@ -21,6 +21,18 @@
           @press-enter="handleScan"
         />
         <a-button type="primary" :loading="scanning" @click="handleScan">查询需求</a-button>
+        <span class="wms-outbound-create__label">领料设备</span>
+        <a-select
+          v-model:value="pickForm.deviceId"
+          show-search
+          allow-clear
+          :filter-option="false"
+          :options="deviceOptions"
+          :loading="deviceSearching"
+          placeholder="可不选，可搜索设备编码/名称"
+          style="width: 260px"
+          @search="handleDeviceSearch"
+        />
       </div>
 
       <a-descriptions v-if="scan" :column="3" size="small" bordered class="wms-outbound-create__info">
@@ -91,6 +103,17 @@
         <template v-else-if="column.key === 'requiredQty'">
           <a-input-number v-model:value="record.requiredQty" :min="0" :precision="3" style="width: 100%" />
         </template>
+        <template v-else-if="column.key === 'pickQty'">
+          <!-- 本次领料数量必须挂在明细行上（pickQty）。放表头 Spring 会静默忽略，前端会误以为是全领 -->
+          <a-input-number
+            v-model:value="record.pickQty"
+            :min="0"
+            :precision="3"
+            :max="Number(record.requiredQty) || undefined"
+            placeholder="默认全领"
+            style="width: 100%"
+          />
+        </template>
         <template v-else-if="column.key === 'unit'">
           <span>{{ record.unit || '-' }}</span>
         </template>
@@ -112,7 +135,7 @@
 <script lang="ts" setup>
   import { computed, reactive, ref, watch } from 'vue';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import { createPick, createSales, createSample, listMaterialOptions, previewSalesOrder, scanPick } from '../outbound.api';
+  import { createPick, createSales, createSample, listDeviceOptions, listMaterialOptions, previewSalesOrder, scanPick } from '../outbound.api';
 
   const props = defineProps<{ mode: 'pick' | 'sales' | 'sample' }>();
   const emit = defineEmits(['update:open', 'success']);
@@ -128,7 +151,11 @@
   const materialSearching = ref(false);
   const materialLabelMap: Record<string, string> = {};
 
-  const pickForm = reactive({ workOrderNo: '' });
+  const pickForm = reactive<{ workOrderNo: string; deviceId?: string }>({ workOrderNo: '' });
+
+  /** 设备下拉（领料设备可空） */
+  const deviceOptions = ref<{ label: string; value: string }[]>([]);
+  const deviceSearching = ref(false);
   const salesForm = reactive<{
     salesOrderNo: string;
     deliveryDate?: string;
@@ -144,6 +171,8 @@
     materialName?: string;
     batchNo?: string;
     requiredQty: number;
+    /** 本次领料数量（仅领料模式；空=按需求数量全领） */
+    pickQty?: number;
     unit?: string;
     sourceEntryId?: string;
     matched?: boolean;
@@ -152,15 +181,23 @@
   const rows = ref<Row[]>([]);
   let rowSeq = 0;
 
-  const rowColumns = [
-    { title: '物料', key: 'material', width: 300 },
-    { title: '批次号', key: 'batchNo', width: 140 },
-    { title: '需求数量', key: 'requiredQty', width: 140 },
-    { title: '单位', key: 'unit', width: 80 },
-    { title: '来源', key: 'source', width: 100 },
-    { title: '匹配', key: 'matched', width: 90 },
-    { title: '操作', key: 'action', width: 80 },
-  ];
+  const rowColumns = computed(() => {
+    const base: any[] = [
+      { title: '物料', key: 'material', width: 300 },
+      { title: '批次号', key: 'batchNo', width: 140 },
+    ];
+    if (props.mode === 'pick') {
+      base.push({ title: '本次领料数量', key: 'pickQty', width: 140 });
+    }
+    base.push(
+      { title: '需求数量', key: 'requiredQty', width: 140 },
+      { title: '单位', key: 'unit', width: 80 },
+      { title: '来源', key: 'source', width: 100 },
+      { title: '匹配', key: 'matched', width: 90 },
+      { title: '操作', key: 'action', width: 80 }
+    );
+    return base;
+  });
 
   const TITLES: Record<string, string> = {
     pick: '新建领料出库单',
@@ -176,6 +213,7 @@
     scan.value = null;
     rows.value = [];
     pickForm.workOrderNo = '';
+    pickForm.deviceId = undefined;
     salesForm.salesOrderNo = '';
     salesForm.deliveryDate = undefined;
     salesPreview.value = null;
@@ -186,6 +224,7 @@
     if (v) {
       resetAll();
       void loadMaterialOptions();
+      void loadDeviceOptions();
     }
   });
 
@@ -204,6 +243,8 @@
         materialName: d.materialName,
         batchNo: d.batchNo,
         requiredQty: Number(d.requiredQty || 0),
+        // 默认全领：用户可改成部分领料，提交时按行 pickQty 发送
+        pickQty: Number(d.requiredQty || 0),
         unit: d.unit,
         sourceEntryId: d.sourceEntryId,
         matched: d.matched,
@@ -266,6 +307,31 @@
     rows.value[index].materialName = name;
   }
 
+  // ------------------------------------------------------------ 领料设备
+
+  async function loadDeviceOptions(keyword?: string) {
+    deviceSearching.value = true;
+    try {
+      const res: any = await listDeviceOptions(keyword);
+      deviceOptions.value = (res?.records || []).map((d: any) => ({
+        label: `${d.deviceCode || ''} ${d.deviceName || ''}`.trim() + (d.status ? `（${d.status}）` : ''),
+        value: d.id,
+      }));
+    } catch (e) {
+      // 设备加载失败不影响建单（设备本来就可空）
+    } finally {
+      deviceSearching.value = false;
+    }
+  }
+
+  let deviceSearchTimer: any = null;
+  function handleDeviceSearch(keyword: string) {
+    if (deviceSearchTimer) {
+      clearTimeout(deviceSearchTimer);
+    }
+    deviceSearchTimer = setTimeout(() => loadDeviceOptions(keyword), 300);
+  }
+
   function validateRows(): boolean {
     if (!rows.value.length) {
       createMessage.warning('至少需要一条出库明细');
@@ -280,6 +346,17 @@
         createMessage.warning(`物料 ${r.materialCode} 的需求数量必须大于 0`);
         return false;
       }
+      // 本次领料数量是明细行字段：为空=全领；填了就必须 >0 且不超过需求数量
+      if (props.mode === 'pick' && r.pickQty !== undefined && r.pickQty !== null) {
+        if (Number(r.pickQty) <= 0) {
+          createMessage.warning(`物料 ${r.materialCode} 的本次领料数量必须大于 0（留空表示全领）`);
+          return false;
+        }
+        if (Number(r.pickQty) > Number(r.requiredQty)) {
+          createMessage.warning(`物料 ${r.materialCode} 的本次领料数量不能超过需求数量`);
+          return false;
+        }
+      }
     }
     return true;
   }
@@ -289,6 +366,8 @@
       materialCode: r.materialCode,
       batchNo: r.batchNo || undefined,
       requiredQty: Number(r.requiredQty),
+      // 领料模式逐行带本次领料数量；销售/样品模式不带
+      pickQty: props.mode === 'pick' && r.pickQty !== undefined && r.pickQty !== null ? Number(r.pickQty) : undefined,
       unit: r.unit || undefined,
       sourceEntryId: r.sourceEntryId || undefined,
     }));
@@ -334,6 +413,8 @@
         const res: any = await createPick({
           workOrderNo: pickForm.workOrderNo.trim(),
           requirementSource: requirementSource.value,
+          // 设备是可空字段，放表头（pickQty 才有行级约束）
+          deviceId: pickForm.deviceId || undefined,
           details: buildDetails(),
         });
         createMessage.success(`创建成功：${res.outboundNo}`);

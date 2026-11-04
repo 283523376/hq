@@ -1,5 +1,8 @@
+import { h } from 'vue';
+import { Tag } from 'ant-design-vue';
 import { BasicColumn, FormSchema } from '/@/components/Table';
 
+/** 废品仓台账列 */
 export const columns: BasicColumn[] = [
   { title: '物料编码', align: 'center', dataIndex: 'materialCode', width: 200 },
   { title: '物料名称', align: 'center', dataIndex: 'materialName', width: 150 },
@@ -24,4 +27,102 @@ export const searchFormSchema: FormSchema[] = [
   },
   { label: '批次', field: 'batchNo', component: 'JInput', colProps: { span: 6 } },
   { label: '库位', field: 'locationCode', component: 'JInput', colProps: { span: 6 } },
+];
+
+/** 不良品来源类型（后端 `WmsConstants.DEFECT_SOURCE_*`） */
+export const DEFECT_SOURCE_OPTIONS = [
+  { label: '生产（PRODUCTION）', value: 'PRODUCTION' },
+  { label: '受托（CONSIGNED）', value: 'CONSIGNED' },
+];
+
+/** 处置方式（后端 `WmsConstants.DEFECT_DISPOSAL_*`） */
+export const DEFECT_DISPOSAL_OPTIONS = [
+  { label: '入废品仓（SCRAP）', value: 'SCRAP' },
+  { label: '退货（RETURN）', value: 'RETURN' },
+];
+
+/** 不良品记录状态（后端中文常量） */
+export const DEFECT_STATUS_OPTIONS = ['待处理', '已处置', '已退货'].map((v) => ({ label: v, value: v }));
+
+const sourceLabel: Record<string, string> = {
+  PRODUCTION: '生产',
+  CONSIGNED: '受托',
+};
+
+const disposalLabel: Record<string, string> = {
+  SCRAP: '入废品仓',
+  RETURN: '退货',
+};
+
+const statusColor: Record<string, string> = {
+  待处理: 'orange',
+  已处置: 'success',
+  已退货: 'blue',
+};
+
+/** 不良品记录列（`GET /wms/defect/records` 直接返回实体） */
+export const recordColumns: BasicColumn[] = [
+  {
+    title: '来源类型',
+    align: 'center',
+    dataIndex: 'sourceType',
+    width: 100,
+    customRender: ({ text }) => {
+      const label = sourceLabel[text] || text;
+      return h(Tag, { color: text === 'CONSIGNED' ? 'purple' : 'blue' }, () => label);
+    },
+  },
+  { title: '来源单号', align: 'center', dataIndex: 'sourceBillNo', width: 200 },
+  { title: '物料编码', align: 'center', dataIndex: 'materialCode', width: 180 },
+  { title: '批次', align: 'center', dataIndex: 'batchNo', width: 150 },
+  { title: '数量', align: 'center', dataIndex: 'qty', width: 100 },
+  { title: '原因', align: 'center', dataIndex: 'reason', width: 180, ellipsis: true },
+  {
+    title: '处置方式',
+    align: 'center',
+    dataIndex: 'disposalType',
+    width: 110,
+    customRender: ({ text }) => h(Tag, { color: text === 'RETURN' ? 'orange' : 'default' }, () => disposalLabel[text] || text),
+  },
+  {
+    title: '状态',
+    align: 'center',
+    dataIndex: 'status',
+    width: 100,
+    customRender: ({ text }) => h(Tag, { color: statusColor[text] || 'default' }, () => text),
+  },
+  { title: '退货单号', align: 'center', dataIndex: 'returnBillNo', width: 190 },
+  { title: '创建时间', align: 'center', dataIndex: 'createTime', width: 170 },
+];
+
+/**
+ * 不良品记录筛选条件。
+ *
+ * 只放后端实体里存在的字段 —— 该端点直接绑 `WmsDefectRecord`，
+ * 时间字段没有 @DateTimeFormat，传入时间参数会 400。
+ */
+export const recordSearchFormSchema: FormSchema[] = [
+  {
+    label: '物料编码',
+    field: 'materialCode',
+    component: 'JInput',
+    colProps: { span: 6 },
+    componentProps: { placeholder: '支持任意连续子串' },
+  },
+  {
+    label: '来源单号',
+    field: 'sourceBillNo',
+    component: 'JInput',
+    colProps: { span: 6 },
+    componentProps: { placeholder: '生产入库单号/受托入库单号' },
+  },
+  { label: '来源类型', field: 'sourceType', component: 'Select', colProps: { span: 6 }, componentProps: { options: DEFECT_SOURCE_OPTIONS } },
+  {
+    label: '处置方式',
+    field: 'disposalType',
+    component: 'Select',
+    colProps: { span: 6 },
+    componentProps: { options: DEFECT_DISPOSAL_OPTIONS },
+  },
+  { label: '状态', field: 'status', component: 'Select', colProps: { span: 6 }, componentProps: { options: DEFECT_STATUS_OPTIONS } },
 ];

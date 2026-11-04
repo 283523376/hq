@@ -1,3 +1,4 @@
+<!-- eslint-disable vue/multi-word-component-names -->
 <template>
   <div class="wms-inventory-ledger">
     <!-- 查询条件 -->
@@ -24,6 +25,25 @@
             :options="warehouseOptions"
             placeholder="全部仓库"
             allow-clear
+            style="width: 220px"
+          />
+        </a-form-item>
+        <a-form-item label="库存类型">
+          <a-select
+            v-model:value="query.ownershipType"
+            :options="OWNERSHIP_OPTIONS"
+            style="width: 150px"
+            @change="handleOwnershipChange"
+          />
+        </a-form-item>
+        <a-form-item v-if="query.ownershipType === 'CONSIGNED'" label="受托方">
+          <a-select
+            v-model:value="query.consignorId"
+            :options="supplierOptions"
+            placeholder="全部受托方"
+            allow-clear
+            show-search
+            option-filter-prop="label"
             style="width: 220px"
           />
         </a-form-item>
@@ -125,12 +145,13 @@
   import {
     createExportTask,
     deleteTask,
+    listSupplierOptions,
     listWarehouseOptions,
     queryLedger,
     queryTaskPage,
     retryTask,
   } from './inventoryLedger.api';
-  import { ledgerColumns, taskColumns } from './inventoryLedger.data';
+  import { ledgerColumns, OWNERSHIP_OPTIONS, taskColumns } from './inventoryLedger.data';
 
   const { createMessage } = useMessage();
   const { handleExportXlsx } = useMethods();
@@ -138,7 +159,7 @@
   // 裸 a-table 不走 BasicTable 的列宽缩放，这里手动接上同一语义（150% 字号下列宽等比放大）
   const scaledLedgerColumns = computed(() => scaleTableColumns(ledgerColumns));
   const scaledTaskColumns = computed(() => scaleTableColumns(taskColumns));
-  const ledgerScrollX = computed(() => scaleScrollX(1800));
+  const ledgerScrollX = computed(() => scaleScrollX(2050));
   const taskScrollX = computed(() => scaleScrollX(1300));
 
   // ---------- 库存明细 ----------
@@ -147,8 +168,46 @@
     batchNo: '',
     locationCode: '',
     warehouseId: undefined as string | undefined,
+    // 默认只看自有库存：受托货不属于企业，后端对空值也按 OWNED 处理，前端显式带值保持一致
+    ownershipType: 'OWNED' as string | undefined,
+    consignorId: undefined as string | undefined,
     onlyPositive: true,
   });
+
+  /** 受托方下拉（仅受托库存筛选时展示） */
+  const supplierOptions = ref<{ label: string; value: string }[]>([]);
+
+  async function fetchSupplierOptions() {
+    try {
+      const list: any = await listSupplierOptions();
+      supplierOptions.value = (list || []).map((s: any) => ({
+        label: `${s.supplierCode} ${s.supplierName}`,
+        value: s.id,
+      }));
+    } catch (e) {
+      // 受托方加载失败只影响该筛选项，不影响台账查询
+    }
+  }
+
+  /** 切回自有库存时清掉受托方条件，避免把上一种筛选带到新查询里 */
+  function handleOwnershipChange() {
+    if (query.ownershipType !== 'CONSIGNED') {
+      query.consignorId = undefined;
+    }
+  }
+
+  /** 查询条件组装：受托方只在受托库存下参与筛选（后端同样只在该类型下生效） */
+  function buildLedgerParams() {
+    return {
+      materialKeyword: query.materialKeyword || undefined,
+      batchNo: query.batchNo || undefined,
+      locationCode: query.locationCode || undefined,
+      warehouseId: query.warehouseId || undefined,
+      ownershipType: query.ownershipType || undefined,
+      consignorId: query.ownershipType === 'CONSIGNED' ? query.consignorId || undefined : undefined,
+      onlyPositive: query.onlyPositive,
+    };
+  }
   const queried = ref(false);
   const loading = ref(false);
   const exporting = ref(false);
@@ -170,11 +229,7 @@
     loading.value = true;
     try {
       const res = await queryLedger({
-        materialKeyword: query.materialKeyword || undefined,
-        batchNo: query.batchNo || undefined,
-        locationCode: query.locationCode || undefined,
-        warehouseId: query.warehouseId || undefined,
-        onlyPositive: query.onlyPositive,
+        ...buildLedgerParams(),
         pageNo: pageNo.value,
         pageSize: pageSize.value,
       });
@@ -196,6 +251,8 @@
     query.batchNo = '';
     query.locationCode = '';
     query.warehouseId = undefined;
+    query.ownershipType = 'OWNED';
+    query.consignorId = undefined;
     query.onlyPositive = true;
     pageNo.value = 1;
     handleQuery();
@@ -286,13 +343,8 @@
   async function handleExport() {
     exporting.value = true;
     try {
-      await createExportTask({
-        materialKeyword: query.materialKeyword || undefined,
-        batchNo: query.batchNo || undefined,
-        locationCode: query.locationCode || undefined,
-        warehouseId: query.warehouseId || undefined,
-        onlyPositive: query.onlyPositive,
-      });
+      // 导出与分页共用同一套条件（含库存类型/受托方），否则导出内容和页面看到的不是一回事
+      await createExportTask(buildLedgerParams());
       createMessage.success('导出任务已提交，可在下方任务列表查看进度');
       taskPageNo.value = 1;
       fetchTasks();
@@ -358,6 +410,7 @@
     fetchLedger();
     fetchTasks();
     fetchWarehouseOptions();
+    fetchSupplierOptions();
   });
 
   onUnmounted(() => {

@@ -30,6 +30,20 @@ export const ledgerColumns: BasicColumn[] = [
   { title: '可用量', align: 'center', dataIndex: 'availableQty', width: 100 },
   { title: '首次入库时间', align: 'center', dataIndex: 'firstInboundTime', width: 160 },
   { title: '库龄(天)', align: 'center', dataIndex: 'stockAgeDays', width: 90 },
+  {
+    title: '库存类型',
+    align: 'center',
+    dataIndex: 'ownershipType',
+    width: 100,
+    customRender: ({ text }) => h(Tag, { color: text === 'CONSIGNED' ? 'purple' : 'blue' }, () => (text === 'CONSIGNED' ? '受托' : '自有')),
+  },
+  { title: '受托方', align: 'center', dataIndex: 'consignorName', width: 160 },
+];
+
+/** 库存类型筛选：默认只看自有（受托货不属于企业，不能混进可用量） */
+export const OWNERSHIP_OPTIONS = [
+  { label: '自有（OWNED）', value: 'OWNED' },
+  { label: '受托（CONSIGNED）', value: 'CONSIGNED' },
 ];
 
 export const EXPORT_STATUS_COLOR: Record<string, string> = {

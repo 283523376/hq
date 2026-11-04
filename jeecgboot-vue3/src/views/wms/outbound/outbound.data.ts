@@ -1,6 +1,31 @@
 import { Tag } from 'ant-design-vue';
-import { h } from 'vue';
+import { h, ref } from 'vue';
 import { BasicColumn, FormSchema } from '/@/components/Table';
+
+/**
+ * 设备 ID → 名称。
+ *
+ * 出库单只落 deviceId（没有 deviceName 冗余列），列表里要显示可读的设备名，
+ * 所以页面加载时拉一次设备档案填充这里。customRender 在表格渲染期读取该 ref，
+ * 页面在设备加载完成后再 reload 一次，保证列里立刻显示名称。
+ */
+export const deviceNameMap = ref<Record<string, string>>({});
+
+export function setDeviceNameMap(list: any[]) {
+  const map: Record<string, string> = {};
+  for (const d of list || []) {
+    map[d.id] = `${d.deviceCode || ''} ${d.deviceName || ''}`.trim() || d.id;
+  }
+  deviceNameMap.value = map;
+}
+
+export function deviceLabel(record: any): string {
+  const id = record?.deviceId;
+  if (!id) {
+    return '—';
+  }
+  return deviceNameMap.value[id] || id;
+}
 
 /** 出库类型选项 */
 export const OUTBOUND_TYPE_OPTIONS = ['生产领料', '销售出库', '外协出库', '样品出库'].map((v) => ({ label: v, value: v }));
@@ -50,6 +75,21 @@ const syncStatusColor: Record<string, string> = {
 export const columns: BasicColumn[] = [
   { title: '出库单号', align: 'center', dataIndex: 'outboundNo', width: 200 },
   { title: '出库类型', align: 'center', dataIndex: 'outboundType', width: 100 },
+  {
+    title: '领取人',
+    align: 'center',
+    dataIndex: 'pickerName',
+    width: 110,
+    // 历史单据没有领取人（系统生成待办），空值要显式标出来而不是留空
+    customRender: ({ text }) => text || '系统生成',
+  },
+  {
+    title: '设备',
+    align: 'center',
+    dataIndex: 'deviceId',
+    width: 160,
+    customRender: ({ record }) => deviceLabel(record),
+  },
   { title: '工单号', align: 'center', dataIndex: 'workOrderNo', width: 140 },
   { title: '销售订单号', align: 'center', dataIndex: 'salesOrderNo', width: 150 },
   { title: '客户', align: 'center', dataIndex: 'customerName', width: 150 },

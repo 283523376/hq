@@ -40,14 +40,25 @@
 </template>
 
 <script lang="ts" name="wms-outbound" setup>
-  import { h, ref } from 'vue';
+  import { h, onMounted, ref } from 'vue';
   import { Modal } from 'ant-design-vue';
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useMessage } from '/@/hooks/web/useMessage';
   import { useWmsSyncMode } from '../common/useWmsSyncMode';
-  import { columns, searchFormSchema } from './outbound.data';
-  import { allocateOutbound, closeOutbound, dispatchOutbound, generatePickDemands, generateSalesDemands, listOutbound, syncOutbound, syncSubcontractOrders } from './outbound.api';
+  import { columns, searchFormSchema, setDeviceNameMap } from './outbound.data';
+  import {
+    allocateOutbound,
+    cancelPick,
+    closeOutbound,
+    dispatchOutbound,
+    generatePickDemands,
+    generateSalesDemands,
+    listDeviceOptions,
+    listOutbound,
+    syncOutbound,
+    syncSubcontractOrders,
+  } from './outbound.api';
   import OutboundCreateModal from './components/OutboundCreateModal.vue';
   import OutboundDetailDrawer from './components/OutboundDetailDrawer.vue';
 
@@ -65,6 +76,21 @@
     },
   });
   const [registerTable, { reload }] = tableContext;
+
+  /**
+   * 设备名称：出库单只落 deviceId，列表「设备」列靠设备档案映射。
+   *
+   * 先加载设备再 reload 一次，保证首屏就能看到名称而不是裸 ID。
+   */
+  onMounted(async () => {
+    try {
+      const res: any = await listDeviceOptions(undefined, 500);
+      setDeviceNameMap(res?.records || []);
+      reload();
+    } catch (e) {
+      // 设备档案加载失败只影响「设备」列显示，不影响列表本身
+    }
+  });
 
   // ------------------------------------------------------------ 新建
 
@@ -173,6 +199,15 @@
         onClick: () => handleSync(record),
       });
     }
+    // 取消领料：只对生产领料的可撤销状态开放，其余状态由后端状态机拒绝
+    if (record.outboundType === '生产领料' && ['草稿', '待分配', '已分配', '异常待人工'].includes(record.status)) {
+      actions.push({
+        label: '取消领料',
+        auth: 'wms:outbound:pick:cancel',
+        color: 'error',
+        onClick: () => handleCancelPick(record),
+      });
+    }
     if (!['已完成', '已关闭'].includes(record.status)) {
       actions.push({
         label: '关单',
@@ -182,6 +217,34 @@
       });
     }
     return actions;
+  }
+
+  function handleCancelPick(record: any) {
+    let reason = '';
+    Modal.confirm({
+      title: `取消领料 ${record.outboundNo}？`,
+      content: h('div', [
+        h('p', '取消后将通知计划员重新安排领料；请填写原因（领料物料不符 / 库存不足等）。'),
+        h('textarea', {
+          class: 'ant-input',
+          rows: 3,
+          placeholder: '请填写取消原因（必填）',
+          onInput: (e: any) => (reason = e.target.value),
+        }),
+      ]),
+      okText: '确认取消领料',
+      okType: 'danger',
+      cancelText: '返回',
+      async onOk() {
+        if (!reason || !reason.trim()) {
+          createMessage.warning('取消原因不能为空');
+          return Promise.reject();
+        }
+        await cancelPick(record.id, { reason: reason.trim() });
+        createMessage.success('已取消领料，计划员将收到通知');
+        reload();
+      },
+    });
   }
 
   function handleAllocate(record: any) {

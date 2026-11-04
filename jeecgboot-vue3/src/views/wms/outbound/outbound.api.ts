@@ -18,6 +18,23 @@ export const scanPick = (workOrderNo: string) =>
 /** CK-001 创建领料出库单 */
 export const createPick = (params) => defHttp.post({ url: `${OUTBOUND}/pick`, params });
 
+/**
+ * CK-001 取消领料（body `{reason}`）。
+ *
+ * 只对「生产领料 + 草稿/待分配/已分配/异常待人工」可用，其余状态由后端状态机拒绝。
+ */
+export const cancelPick = (id: string, params: { reason?: string }) =>
+  defHttp.post({ url: `${OUTBOUND}/pick/${id}/cancel`, params }, { successMessageMode: 'none' });
+
+/** 设备下拉（领料可指定设备，可空；按编码/名称远程搜索） */
+export const listDeviceOptions = (keyword?: string, pageSize = 100) => {
+  const params: any = { pageNo: 1, pageSize };
+  if (keyword && keyword.trim()) {
+    params.keyword = keyword.trim();
+  }
+  return defHttp.get({ url: '/wms/device/list', params });
+};
+
 /** 按金蝶用料清单自动生成领料待办（出库单反向生成）；同步类接口不弹默认绿条 */
 export const generatePickDemands = () =>
   defHttp.post({ url: `${OUTBOUND}/generate-pick-demands` }, { successMessageMode: 'none' });
