@@ -45,7 +45,7 @@ public class WmsRawInboundController {
     @Operation(summary = "原材料入库-到货登记（外购/受托 × 段差棒直入/大改小）")
     @PostMapping(value = "/receive")
     @RequiresPermissions("wms:inbound:consigned")
-    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_INBOUND, action = WmsConstants.AUDIT_ACTION_ADD,
+    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_INBOUND, action = WmsConstants.AUDIT_ACTION_CREATE,
             bizNoSpEL = "#dto.erpOrderNo")
     public Result<WmsInboundOrder> receive(@RequestBody WmsRawInboundDTO dto) {
         try {

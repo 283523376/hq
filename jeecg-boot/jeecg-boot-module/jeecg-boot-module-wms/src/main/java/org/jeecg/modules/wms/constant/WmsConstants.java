@@ -536,8 +536,6 @@ public final class WmsConstants {
     public static final String AUDIT_ACTION_UNBIND = "解绑";
     /** 审计动作：导出（SB-001 待推送包导出等，2026-11-03 新增）。 */
     public static final String AUDIT_ACTION_EXPORT = "导出";
-    /** 审计动作：新增单据（V2.4 口径；与「创建」同义，按 spec 文案保留「新增」）。 */
-    public static final String AUDIT_ACTION_ADD = "新增";
     /** 审计动作：到货登记（外购/受托原材料入库，V2.4）。 */
     public static final String AUDIT_ACTION_RECEIVE = "登记";
     /** 审计动作：上架（无检验上架，V2.4）。 */

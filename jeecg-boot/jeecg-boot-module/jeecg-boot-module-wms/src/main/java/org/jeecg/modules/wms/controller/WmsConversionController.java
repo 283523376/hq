@@ -43,7 +43,7 @@ public class WmsConversionController {
     @Operation(summary = "改制单-建单（关联生产订单）")
     @PostMapping
     @RequiresPermissions("wms:conversion:create")
-    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_CONVERSION, action = WmsConstants.AUDIT_ACTION_ADD,
+    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_CONVERSION, action = WmsConstants.AUDIT_ACTION_CREATE,
             bizNoSpEL = "#dto.productionOrderNo")
     public Result<WmsConversionOrder> create(@RequestBody WmsConversionCreateDTO dto) {
         try {

@@ -79,11 +79,11 @@ class WmsGapControllerTest {
 
     private static final List<Endpoint> ENDPOINTS = List.of(
             new Endpoint(WmsRawInboundController.class, "receive", "wms:inbound:consigned",
-                    true, WmsConstants.AUDIT_BIZ_INBOUND, WmsConstants.AUDIT_ACTION_ADD),
+                    true, WmsConstants.AUDIT_BIZ_INBOUND, WmsConstants.AUDIT_ACTION_CREATE),
             new Endpoint(WmsRawInboundController.class, "putaway", "wms:inbound:consigned",
                     true, WmsConstants.AUDIT_BIZ_INBOUND, WmsConstants.AUDIT_ACTION_PUTAWAY),
             new Endpoint(WmsConversionController.class, "create", "wms:conversion:create",
-                    true, WmsConstants.AUDIT_BIZ_CONVERSION, WmsConstants.AUDIT_ACTION_ADD),
+                    true, WmsConstants.AUDIT_BIZ_CONVERSION, WmsConstants.AUDIT_ACTION_CREATE),
             new Endpoint(WmsConversionController.class, "complete", "wms:conversion:execute",
                     true, WmsConstants.AUDIT_BIZ_CONVERSION, WmsConstants.AUDIT_ACTION_COMPLETE),
             new Endpoint(WmsConversionController.class, "cancel", "wms:conversion:cancel",
@@ -110,7 +110,7 @@ class WmsGapControllerTest {
     // ------------------------------------------------------------ 1. 权限码
 
     @Test
-    void permissionCodesMatchFlywayScripts() {
+    void permissionAnnotationsMatchExpectedCodes() {
         for (Endpoint endpoint : ENDPOINTS) {
             RequiresPermissions annotation = endpointMethod(endpoint).getAnnotation(RequiresPermissions.class);
             assertNotNull(annotation, endpoint.key("缺少 @RequiresPermissions"));
@@ -307,5 +307,35 @@ class WmsGapControllerTest {
 
         assertTrue(result.isSuccess());
         verify(service).putaway(eq("in2"), any(WmsPutawayDTO.class));
+    }
+
+    /** 空串与 null 等价：旧链路只写 source_type，未写的行可能是 '' 而不是 NULL。 */
+    @Test
+    void legacyPutaway_treatsEmptySourceTypeAsLegacy() {
+        IWmsInboundService service = mock(IWmsInboundService.class);
+        WmsInboundOrder legacy = new WmsInboundOrder()
+                .setInboundStatus(WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY)
+                .setSourceType("");
+        legacy.setId("in3");
+        when(service.getById("in3")).thenReturn(legacy);
+        WmsInboundController controller = inboundController(service);
+
+        Result<Void> result = controller.putaway("in3", new WmsPutawayDTO());
+
+        assertTrue(result.isSuccess());
+        verify(service).putaway(eq("in3"), any(WmsPutawayDTO.class));
+    }
+
+    @Test
+    void legacyPutaway_returnsErrorWhenOrderMissing() {
+        IWmsInboundService service = mock(IWmsInboundService.class);
+        when(service.getById("in404")).thenReturn(null);
+        WmsInboundController controller = inboundController(service);
+
+        Result<Void> result = controller.putaway("in404", new WmsPutawayDTO());
+
+        assertEquals(500, result.getCode());
+        assertEquals("单据不存在", result.getMessage());
+        verify(service, never()).putaway(anyString(), any(WmsPutawayDTO.class));
     }
 }
