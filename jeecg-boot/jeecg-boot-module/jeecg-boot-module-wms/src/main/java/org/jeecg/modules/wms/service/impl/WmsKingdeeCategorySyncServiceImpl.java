@@ -3,13 +3,12 @@ package org.jeecg.modules.wms.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
-import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeCategorySyncService;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
-import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.service.IWmsMaterialGroupMapService;
 import org.jeecg.modules.wms.audit.WmsAuditRecorder;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +17,6 @@ import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
-import org.jeecg.modules.wms.util.WmsMaterialGroupMapping;
 import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsKingdeeStockSyncResultVO;
 import org.springframework.stereotype.Service;
@@ -34,6 +32,10 @@ import java.util.Map;
  * <p>映射是**多对一**：一个 WMS 分类可对应多个金蝶分组，关系活在配置里
  * （{@code category-map} 的「前缀=分类编码」规则），分类行上的
  * {@code erp_group_number/name} 只记首个命中的**代表**分组，供人工核对。
+ *
+ * <p>分类类型（原材料/半成品/成品/辅料）自 2026-11-05 起取自映射表
+ * {@code wms_material_group_map}（{@link IWmsMaterialGroupMapService}），
+ * 不再读系统配置 {@code kingdee.material-group-map}。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-10-26
@@ -68,7 +70,7 @@ public class WmsKingdeeCategorySyncServiceImpl implements IWmsKingdeeCategorySyn
 
     /** 可选依赖（同上）：为 null 时视为「未配置映射」，分类类型留空。 */
     @Autowired(required = false)
-    private IWmsSystemConfigService configService;
+    private IWmsMaterialGroupMapService materialGroupMapService;
 
     /** 可选依赖（同上）：为 null 时不做「是否已配置」前置检查（单测裸构造场景）。 */
     @Autowired(required = false)
@@ -165,14 +167,17 @@ public class WmsKingdeeCategorySyncServiceImpl implements IWmsKingdeeCategorySyn
     }
 
     /**
-     * 读取并解析分组映射配置；配置服务缺失或读不到时返回空映射（分类类型留空），不阻断同步。
+     * 从映射表读取分组 → 分类类型（方案 A，2026-11-05）。
+     *
+     * <p>不再读系统配置 {@code kingdee.material-group-map}：{@code config_value} 只有
+     * varchar(500)，装不下 2039 个分组。映射服务缺失（单测裸构造）或表为空都返回空映射，
+     * 此时分类类型留 NULL，不阻断同步——这是合法初始态，不是错误。
      */
     private Map<String, String> parseTypeMapping() {
-        if (configService == null) {
+        if (materialGroupMapService == null) {
             return new LinkedHashMap<>();
         }
-        String raw = configService.getString(WmsConfigKey.KD_MATERIAL_GROUP_MAP.getKey(), "");
-        return WmsMaterialGroupMapping.parse(raw);
+        return materialGroupMapService.typeByGroupNumber();
     }
 
     /**

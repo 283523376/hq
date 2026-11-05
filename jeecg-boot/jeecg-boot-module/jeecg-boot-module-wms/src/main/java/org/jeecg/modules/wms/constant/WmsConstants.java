@@ -1079,4 +1079,7 @@ public final class WmsConstants {
 
     /** 主数据批量同步（无单号）在审计里的伪业务单号。 */
     public static final String AUDIT_BIZ_NO_MASTER_DATA_SYNC = "MATERIAL_GROUP";
+
+    /** 物料分组映射批量保存（无单据号）在审计里的伪业务单号。 */
+    public static final String AUDIT_BIZ_NO_MATERIAL_GROUP_MAP = "MATERIAL_GROUP_MAP";
 }

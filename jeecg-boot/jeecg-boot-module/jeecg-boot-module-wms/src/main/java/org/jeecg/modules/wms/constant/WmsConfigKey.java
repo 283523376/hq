@@ -71,6 +71,11 @@ public enum WmsConfigKey {
      *
      * <p>键名沿用 {@code kingdee.} 前缀，但**不属于 formId**：就绪度自检按
      * {@code kingdee.form.} 前缀过滤，不能把它当成未配置的单据。
+     *
+     * <p><b>已废弃（2026-11-05，方案 A）</b>：映射改由独立表
+     * {@code wms_material_group_map} 维护（见 {@code IWmsMaterialGroupMapService}），
+     * {@code config_value} 只有 varchar(500)、装不下 2039 个分组。生产代码不再读取本配置，
+     * 但枚举值**不删**——已保存的配置值还在表中，删掉枚举会触发未知键告警。
      */
     KD_MATERIAL_GROUP_MAP("kingdee.material-group-map", "物料分组→分类类型映射",
             WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),

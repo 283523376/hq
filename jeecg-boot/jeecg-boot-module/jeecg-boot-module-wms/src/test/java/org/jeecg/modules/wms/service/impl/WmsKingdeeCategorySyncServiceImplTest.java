@@ -4,8 +4,8 @@ import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
+import org.jeecg.modules.wms.service.IWmsMaterialGroupMapService;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
-import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
@@ -17,7 +17,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -26,7 +28,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -44,7 +45,7 @@ class WmsKingdeeCategorySyncServiceImplTest {
     private WmsKingdeeProperties properties;
     private IWmsMaterialCategoryService categoryService;
     private WmsMaterialCategoryMapper categoryMapper;
-    private IWmsSystemConfigService configService;
+    private IWmsMaterialGroupMapService groupMapService;
     private IWmsKingdeeAuthService authService;
     private WmsKingdeeCategorySyncServiceImpl service;
 
@@ -56,14 +57,15 @@ class WmsKingdeeCategorySyncServiceImplTest {
         categoryService = mock(IWmsMaterialCategoryService.class);
         categoryMapper = mock(WmsMaterialCategoryMapper.class);
         IWmsSyncLogService syncLogService = mock(IWmsSyncLogService.class);
-        configService = mock(IWmsSystemConfigService.class);
+        groupMapService = mock(IWmsMaterialGroupMapService.class);
         authService = mock(IWmsKingdeeAuthService.class);
         when(authService.isConfigured()).thenReturn(true);
-        when(configService.getString(anyString(), anyString())).thenReturn("");
+        // 映射表为空是合法初始态：分类类型全部留 NULL，同步照常进行
+        when(groupMapService.typeByGroupNumber()).thenReturn(new LinkedHashMap<>());
 
         service = new WmsKingdeeCategorySyncServiceImpl(
                 formClient, properties, categoryService, categoryMapper, syncLogService);
-        WmsTestSupport.inject(service, "configService", configService);
+        WmsTestSupport.inject(service, "materialGroupMapService", groupMapService);
         WmsTestSupport.inject(service, "kingdeeAuthService", authService);
     }
 
@@ -115,11 +117,11 @@ class WmsKingdeeCategorySyncServiceImplTest {
 
     // ------------------------------------------------------------ 按物料分组建行（2026-11-05）
 
-    /** 拉取物料分组 → 每个分组建一行分类；映射命中时写分类类型，未命中留 NULL。 */
+    /** 拉取物料分组 → 每个分组建一行分类；映射表命中时写分类类型，未命中留 NULL。 */
     @Test
     void syncMaterialGroups_shouldCreateOneCategoryPerGroupWithMappedType() {
-        when(configService.getString(eq("kingdee.material-group-map"), anyString()))
-                .thenReturn("XA.00.01010101=原材料");
+        when(groupMapService.typeByGroupNumber())
+                .thenReturn(Map.of("XA.00.01010101", WmsConstants.CATEGORY_TYPE_RAW));
         when(categoryMapper.selectOne(any())).thenReturn(null);
         when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", rows(
@@ -145,6 +147,28 @@ class WmsKingdeeCategorySyncServiceImplTest {
         WmsMaterialCategory unmapped = captor.getAllValues().get(1);
         assertEquals("A.C1.1.Y75", unmapped.getCategoryCode());
         assertNull(unmapped.getCategoryType(), "映射不到时不能猜成「原材料」");
+    }
+
+    /**
+     * 映射表为空（合法初始态）：全部分类类型留 NULL，不报错、不猜「原材料」。
+     */
+    @Test
+    void syncMaterialGroups_shouldLeaveTypeNullWhenMappingTableEmpty() {
+        when(groupMapService.typeByGroupNumber()).thenReturn(new LinkedHashMap<>());
+        when(categoryMapper.selectOne(any())).thenReturn(null);
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", rows(
+                        List.of("XA.00.01010101", "自制"),
+                        List.of("A.C1.1.Y75", "Y75材质")), null, null));
+
+        WmsKingdeeStockSyncResultVO vo = service.syncMaterialGroups();
+
+        assertEquals(2, vo.getCreated());
+        ArgumentCaptor<WmsMaterialCategory> captor = ArgumentCaptor.forClass(WmsMaterialCategory.class);
+        verify(categoryMapper, times(2)).insert(captor.capture());
+        for (WmsMaterialCategory created : captor.getAllValues()) {
+            assertNull(created.getCategoryType(), "映射表为空时不能猜分类类型");
+        }
     }
 
     /** 幂等：已存在且名称未变时不重复插入、也不产生更新。 */

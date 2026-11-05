@@ -21,6 +21,11 @@ import java.util.Map;
  * 部分生效比全部不生效更难排查（用户会看到「有的分类挂上了、有的没挂」），
  * 而空映射的后果只是分类类型留空，不会阻断同步。
  *
+ * <p><b>2026-11-05 起 {@link #parse(String)} 已不再被生产代码调用</b>：映射改由独立表
+ * {@code wms_material_group_map} 维护（{@code config_value} varchar(500) 只放得下约 20 条，
+ * 而金蝶有 2039 个分组）。方法保留是为了不改动既有单测与历史配置的解析口径；
+ * {@link #ALLOWED_TYPES} 仍是分类类型合法值的**唯一来源**，新映射表的批量保存校验直接复用。
+ *
  * @Author: 永鑫WMS
  * @Date: 2026-11-05
  */
@@ -48,7 +53,10 @@ public final class WmsMaterialGroupMapping {
      *
      * @param raw 配置原文；null/空白 → 空映射（合法初始态，不告警）
      * @return 分组编码 → 分类类型；任何一条非法时整体返回空映射
+     * @deprecated 2026-11-05 起映射由 {@code wms_material_group_map} 表维护，
+     *         生产代码不再调用；保留仅为既有单测与历史口径兼容。
      */
+    @Deprecated
     public static Map<String, String> parse(String raw) {
         Map<String, String> mapping = new LinkedHashMap<>();
         if (raw == null || raw.trim().isEmpty()) {

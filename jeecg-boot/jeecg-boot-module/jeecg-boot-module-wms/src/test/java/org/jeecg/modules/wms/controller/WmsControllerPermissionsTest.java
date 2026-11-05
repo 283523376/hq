@@ -33,6 +33,7 @@ class WmsControllerPermissionsTest {
     private static final List<Class<?>> CONTROLLERS = List.of(
             WmsMaterialController.class,
             WmsMaterialCategoryController.class,
+            WmsMaterialGroupMapController.class,
             WmsSupplierController.class,
             WmsCustomerController.class,
             WmsWarehouseController.class,
