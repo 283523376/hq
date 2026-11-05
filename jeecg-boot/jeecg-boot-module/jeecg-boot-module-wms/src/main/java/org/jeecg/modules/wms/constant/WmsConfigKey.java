@@ -61,6 +61,20 @@ public enum WmsConfigKey {
     // 下游 Reader/Writer 读到空串必须显式报错，不得静默返回空结果或跳过回写 ——
     // 静默会让「假成功」一路走到月末结账。默认值绝不能填猜测的 formId。
 
+    /**
+     * 金蝶物料分组 → WMS 物料分类类型映射（2026-11-05）。
+     *
+     * <p>值格式：{@code 分组编码=分类类型;分组编码=分类类型}，分号分隔；
+     * 分类类型限「原材料/半成品/成品/辅料」。默认空串 = 全部不映射，
+     * 此时分类按金蝶分组建行的 {@code category_type} 留空，行为与引入该项前一致。
+     * 解析失败（格式错/类型非法）会整串忽略并打 WARN，不会让同步失败。
+     *
+     * <p>键名沿用 {@code kingdee.} 前缀，但**不属于 formId**：就绪度自检按
+     * {@code kingdee.form.} 前缀过滤，不能把它当成未配置的单据。
+     */
+    KD_MATERIAL_GROUP_MAP("kingdee.material-group-map", "物料分组→分类类型映射",
+            WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
+
     /** 受托加工材料入库单 FormId（WMS→ERP 回写，spec §3.2 受托入库）。 */
     KD_FORM_CONSIGNED_INBOUND("kingdee.form.consigned-inbound", "受托加工材料入库单 FormId",
             WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),

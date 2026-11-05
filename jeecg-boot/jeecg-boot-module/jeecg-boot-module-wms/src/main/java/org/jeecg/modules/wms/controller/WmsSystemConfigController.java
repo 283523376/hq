@@ -9,6 +9,7 @@ import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.modules.wms.constant.WmsConfigGroup;
 import org.jeecg.modules.wms.constant.WmsConfigKey;
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsConfigRollbackDTO;
 import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
 import org.jeecg.modules.wms.entity.WmsSystemConfig;
@@ -95,7 +96,10 @@ public class WmsSystemConfigController extends JeecgController<WmsSystemConfig, 
         }
 
         for (WmsConfigKey key : WmsConfigKey.values()) {
-            if (key.getGroup() != WmsConfigGroup.KINGDEE) {
+            // 「金蝶单据」组里可能混入非 formId 配置（如物料分组映射）：
+            // 只有 kingdee.form.* 才参与「formId 是否配置」的就绪度判定
+            if (key.getGroup() != WmsConfigGroup.KINGDEE
+                    || !key.getKey().startsWith(WmsConstants.KINGDEE_FORM_KEY_PREFIX)) {
                 continue;
             }
             vo.getFormIds().add(new WmsKingdeeReadinessVO.FormId(

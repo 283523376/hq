@@ -13,6 +13,8 @@ import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.vo.SelectTreeModel;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.audit.WmsAudit;
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.service.IWmsKingdeeCategorySyncService;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
@@ -53,6 +55,28 @@ public class WmsMaterialCategoryController extends JeecgController<WmsMaterialCa
     public Result<WmsKingdeeStockSyncResultVO> syncKingdee() {
         try {
             return Result.OK("同步完成", kingdeeCategorySyncService.syncCategory());
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 按金蝶物料分组在分类表建行（2026-11-05）。
+     *
+     * <p>与 {@code /sync-kingdee} 的区别：后者把分组「盖」到既有 WMS 分类上；
+     * 本接口反过来把金蝶的每个分组**建成**一行分类，物料同步据此自动挂 category_id。
+     * 幂等：按 erp_group_number 命中则只更新名称。
+     */
+    @AutoLog(value = "物料分类-按金蝶物料分组建行", operateType = 2)
+    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_MASTER_DATA, action = WmsConstants.AUDIT_ACTION_SYNC_IN,
+            bizNoSpEL = "'" + WmsConstants.AUDIT_BIZ_NO_MASTER_DATA_SYNC + "'")
+    @Operation(summary = "物料分类-从金蝶同步物料分组（建/更新分类行）")
+    @PostMapping(value = "/sync-from-kingdee")
+    @RequiresPermissions("wms:materialCategory:edit")
+    public Result<WmsKingdeeStockSyncResultVO> syncFromKingdee() {
+        try {
+            return Result.OK("同步完成", kingdeeCategorySyncService.syncMaterialGroups());
         } catch (Exception e) {
             log.error(e.getMessage(), e);
             return Result.error(e.getMessage());

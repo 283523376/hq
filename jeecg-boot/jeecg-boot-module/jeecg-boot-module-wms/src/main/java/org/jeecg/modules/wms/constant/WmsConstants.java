@@ -316,6 +316,13 @@ public final class WmsConstants {
     public static final String CATEGORY_TYPE_HALF_FINISHED = "半成品";
     /** 物料分类类型：辅料（自动分配到线边柜）。 */
     public static final String CATEGORY_TYPE_AUXILIARY = "辅料";
+    /**
+     * 物料分类类型：成品（金蝶物料分组映射配置的合法取值）。
+     *
+     * <p>与 {@link #CATEGORY_TYPE_FINISHED}（"产成品"）并存：后者是历史分类口径，
+     * 本值字面与前端分类下拉、蓝图「半成品/成品/辅料」一致，仅用于映射配置取值校验。
+     */
+    public static final String CATEGORY_TYPE_PRODUCT = "成品";
     /** 物料分类类型：初级产成品（未上套环）。 */
     public static final String CATEGORY_TYPE_PRIMARY = "初级产成品";
     /** 物料分类类型：涂层产成品（未上套环）。 */
@@ -1061,4 +1068,15 @@ public final class WmsConstants {
      * 金蝶采购退料单单据类型（{@code PUR_MRB}，2026-11-04 测试账套实测）。
      */
     public static final String KD_BILL_TYPE_PURCHASE_RETURN = "TLD02_SYS";
+
+    /**
+     * 金蝶单据 formId 配置键的公共前缀。
+     *
+     * <p>「金蝶单据」配置组里只有 formId 项应参与就绪度自检；同组的物料分组映射等
+     * 普通配置项不能混进去（否则会把映射键当成未配置的 formId 报错）。
+     */
+    public static final String KINGDEE_FORM_KEY_PREFIX = "kingdee.form.";
+
+    /** 主数据批量同步（无单号）在审计里的伪业务单号。 */
+    public static final String AUDIT_BIZ_NO_MASTER_DATA_SYNC = "MATERIAL_GROUP";
 }

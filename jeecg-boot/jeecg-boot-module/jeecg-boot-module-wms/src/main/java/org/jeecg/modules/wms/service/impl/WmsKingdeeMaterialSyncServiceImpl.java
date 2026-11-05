@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterial;
+import org.jeecg.modules.wms.entity.WmsMaterialCategory;
+import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeMaterialSyncService;
 import org.jeecg.modules.wms.audit.WmsAuditRecorder;
@@ -20,6 +22,7 @@ import org.jeecg.modules.wms.vo.WmsKingdeeStockSyncResultVO;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -31,8 +34,11 @@ import java.util.Map;
  * 名称/规格/基本单位以金蝶为准更新（空值不覆盖本地）。存量手工物料（编码与金蝶不同）
  * 不会被命中，映射走页面维护或 YAML 兜底（{@link org.jeecg.modules.wms.sync.WmsMaterialCodeResolver}）。
  *
- * <p><b>不做</b>：分类匹配（WMS 分类与金蝶物料分组是两套体系，留人工）、
- * 删除（金蝶侧停用/删除的物料只跳过，不删本地）、产品类型（金蝶无半成品/成品概念）。
+ * <p><b>分类</b>（2026-11-05）：按物料的 {@code FMaterialGroup.FNumber} 查
+ * {@code wms_material_category.erp_group_number} 自动挂 {@code category_id}；
+ * 查不到留空，不阻断同步。分类类型仍由映射配置决定，**产品类型不动**（仍由入库来源判定）。
+ *
+ * <p><b>不做</b>：删除（金蝶侧停用/删除的物料只跳过，不删本地）、产品类型（金蝶无半成品/成品概念）。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-10-28
@@ -42,8 +48,15 @@ import java.util.Map;
 public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyncService {
 
     private static final String FORM_ID = "BD_MATERIAL";
+    /**
+     * 查询字段顺序即行下标契约（{@link #upsertMaterial} 按位置取值）。
+     *
+     * <p>尾部追加物料分组两列（2026-11-05）：分组编码用于挂 {@code category_id}；
+     * 分组名称一并取出仅用于诊断（物料表不落分组列，服务端日志可据此核对）。
+     */
     private static final String FIELD_KEYS =
-            "FMATERIALID,FNumber,FName,FSpecification,FBaseUnitId.FNumber";
+            "FMATERIALID,FNumber,FName,FSpecification,FBaseUnitId.FNumber,"
+                    + "FMaterialGroup.FNumber,FMaterialGroup.FName";
     /** 单页条数；返回行数小于该值即视为末页。 */
     private static final int PAGE_SIZE = 500;
     /** 翻页硬上限，防止金蝶异常时死循环。 */
@@ -60,6 +73,14 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
     /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
     @Autowired(required = false)
     private IWmsAuditLogService auditLogService;
+
+    /**
+     * 可选依赖（同上）：分组 → 分类 id 的映射来源。
+     *
+     * <p>为 null 时（单测裸构造）不挂分类，物料同步照常进行——分类挂不上不能阻断主数据同步。
+     */
+    @Autowired(required = false)
+    private WmsMaterialCategoryMapper materialCategoryMapper;
 
     public WmsKingdeeMaterialSyncServiceImpl(WmsKingdeeFormClient formClient,
                                              WmsKingdeeProperties properties,
@@ -86,9 +107,11 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
         long start = System.currentTimeMillis();
         List<List<Object>> rows = fetchAllMaterials();
         vo.setFetched(rows.size());
+        // 一次加载「分组编码 → 分类id」，避免 5 万行物料逐行查库
+        Map<String, String> categoryIdByGroup = loadCategoryIdByGroup();
 
         for (List<Object> row : rows) {
-            if (upsertMaterial(row)) {
+            if (upsertMaterial(row, categoryIdByGroup)) {
                 vo.setCreated(vo.getCreated() + 1);
             } else {
                 vo.setRenamed(vo.getRenamed() + 1);
@@ -136,10 +159,14 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
     /**
      * 单行 upsert：按 material_code（=金蝶 FNumber）查，查到更新非空字段，查到新建。
      *
+     * <p>物料分组 → 分类：分组编码命中分类表 {@code erp_group_number} 时挂
+     * {@code category_id}；查不到就留空（映射表没填完是常态），**不报错、不阻断同步**。
+     *
      * @return true=新建，false=更新
      */
-    private boolean upsertMaterial(List<Object> row) {
-        // FMATERIALID,FNumber,FName,FSpecification,FBaseUnitId.FNumber
+    private boolean upsertMaterial(List<Object> row, Map<String, String> categoryIdByGroup) {
+        // FMATERIALID,FNumber,FName,FSpecification,FBaseUnitId.FNumber,
+        // FMaterialGroup.FNumber,FMaterialGroup.FName
         String number = asText(row.size() > 1 ? row.get(1) : null);
         if (number.isEmpty()) {
             return false;
@@ -147,6 +174,8 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
         String name = asText(row.size() > 2 ? row.get(2) : null);
         String spec = asText(row.size() > 3 ? row.get(3) : null);
         String unit = asText(row.size() > 4 ? row.get(4) : null);
+        String groupNumber = asText(row.size() > 5 ? row.get(5) : null);
+        String categoryId = groupNumber.isEmpty() ? null : categoryIdByGroup.get(groupNumber);
 
         WmsMaterial existing = materialMapper.selectOne(new LambdaQueryWrapper<WmsMaterial>()
                 .eq(WmsMaterial::getMaterialCode, number)
@@ -158,6 +187,7 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
             material.setMaterialName(name);
             material.setSpec(spec);
             material.setUnit(unit);
+            material.setCategoryId(categoryId);
             // 恒等映射：ERP 同步物料金蝶码=自身编码
             material.setKingdeeCode(number);
             material.setStatus("1");
@@ -185,12 +215,43 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
             existing.setUnit(unit);
             changed = true;
         }
+        // 只在命中映射时覆盖：映射表暂时没填时不能把人工维护的分类清空
+        if (oConvertUtils.isNotEmpty(categoryId) && !categoryId.equals(existing.getCategoryId())) {
+            existing.setCategoryId(categoryId);
+            changed = true;
+        }
         if (changed) {
             materialMapper.updateById(existing);
             WmsAuditRecorder.recordMasterData(auditLogService, number,
                     WmsConstants.AUDIT_ACTION_UPDATE, existing);
         }
         return false;
+    }
+
+    /**
+     * 加载「金蝶分组编码 → WMS 分类 id」。未注入 mapper 或查询失败时返回空映射：
+     * 分类挂不上不能阻断物料主数据同步。
+     */
+    private Map<String, String> loadCategoryIdByGroup() {
+        Map<String, String> mapping = new HashMap<>();
+        if (materialCategoryMapper == null) {
+            return mapping;
+        }
+        try {
+            List<WmsMaterialCategory> categories = materialCategoryMapper.selectList(
+                    new LambdaQueryWrapper<WmsMaterialCategory>()
+                            .isNotNull(WmsMaterialCategory::getErpGroupNumber)
+                            .ne(WmsMaterialCategory::getErpGroupNumber, ""));
+            for (WmsMaterialCategory category : categories) {
+                if (oConvertUtils.isNotEmpty(category.getErpGroupNumber())
+                        && oConvertUtils.isNotEmpty(category.getId())) {
+                    mapping.putIfAbsent(category.getErpGroupNumber(), category.getId());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("加载物料分组→分类映射失败，本次同步不挂分类：{}", e.getMessage());
+        }
+        return mapping;
     }
 
     private List<List<Object>> fetchAllMaterials() {

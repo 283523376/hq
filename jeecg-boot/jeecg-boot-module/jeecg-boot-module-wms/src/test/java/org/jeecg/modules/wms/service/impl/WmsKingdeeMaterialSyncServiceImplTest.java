@@ -1,8 +1,11 @@
 package org.jeecg.modules.wms.service.impl;
 
 import org.jeecg.modules.wms.entity.WmsMaterial;
+import org.jeecg.modules.wms.entity.WmsMaterialCategory;
+import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
+import org.jeecg.modules.wms.support.WmsTestSupport;
 import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
@@ -15,6 +18,7 @@ import org.mockito.ArgumentCaptor;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -34,6 +38,7 @@ class WmsKingdeeMaterialSyncServiceImplTest {
     private WmsKingdeeProperties properties;
     private IWmsKingdeeAuthService authService;
     private WmsMaterialMapper materialMapper;
+    private WmsMaterialCategoryMapper materialCategoryMapper;
     private IWmsSyncLogService syncLogService;
     private WmsKingdeeMaterialSyncServiceImpl service;
 
@@ -45,17 +50,29 @@ class WmsKingdeeMaterialSyncServiceImplTest {
         authService = mock(IWmsKingdeeAuthService.class);
         when(authService.isConfigured()).thenReturn(true);
         materialMapper = mock(WmsMaterialMapper.class);
+        materialCategoryMapper = mock(WmsMaterialCategoryMapper.class);
+        when(materialCategoryMapper.selectList(any())).thenReturn(List.of());
         syncLogService = mock(IWmsSyncLogService.class);
         service = new WmsKingdeeMaterialSyncServiceImpl(
                 formClient, properties, authService, materialMapper, syncLogService);
+        WmsTestSupport.inject(service, "materialCategoryMapper", materialCategoryMapper);
     }
 
     private void stubFetch(String... numbers) {
         java.util.List<java.util.List<Object>> rows = new java.util.ArrayList<>();
         for (String number : numbers) {
-            // FMATERIALID,FNumber,FName,FSpecification,FBaseUnitId.FNumber
-            rows.add(List.of(1, number, "名称-" + number, "规格-" + number, "zhi"));
+            // FMATERIALID,FNumber,FName,FSpecification,FBaseUnitId.FNumber,
+            // FMaterialGroup.FNumber,FMaterialGroup.FName
+            rows.add(List.of(1, number, "名称-" + number, "规格-" + number, "zhi", "", ""));
         }
+        when(formClient.executeBillQuery(eq("BD_MATERIAL"), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", rows, null, null));
+    }
+
+    /** 带物料分组的取数夹具。 */
+    private void stubFetchWithGroup(String number, String groupNumber, String groupName) {
+        java.util.List<java.util.List<Object>> rows = new java.util.ArrayList<>();
+        rows.add(List.of(1, number, "名称-" + number, "规格-" + number, "zhi", groupNumber, groupName));
         when(formClient.executeBillQuery(eq("BD_MATERIAL"), anyString(), anyString(), anyInt(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", rows, null, null));
     }
@@ -117,5 +134,61 @@ class WmsKingdeeMaterialSyncServiceImplTest {
         WmsKingdeeStockSyncResultVO vo = service.syncMaterial();
         assertTrue(vo.getMessage().contains("跳过"));
         verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt());
+    }
+
+    // ------------------------------------------------------------ 物料分组 → 分类挂接（2026-11-05）
+
+    /** 分组编码命中分类表 erp_group_number → 物料落 category_id。 */
+    @Test
+    void sync_shouldAttachCategoryIdWhenGroupMatches() {
+        stubFetchWithGroup("KD.001", "XA.00.01010101", "自制");
+        when(materialMapper.selectOne(any())).thenReturn(null);
+        when(materialCategoryMapper.selectList(any())).thenReturn(List.of(category("CAT1", "XA.00.01010101")));
+
+        service.syncMaterial();
+
+        ArgumentCaptor<WmsMaterial> captor = ArgumentCaptor.forClass(WmsMaterial.class);
+        verify(materialMapper).insert(captor.capture());
+        assertEquals("CAT1", captor.getValue().getCategoryId());
+    }
+
+    /** 分组查不到分类 → category_id 留 NULL，且同步不报错。 */
+    @Test
+    void sync_shouldLeaveCategoryIdNullWhenGroupNotMapped() {
+        stubFetchWithGroup("KD.001", "UNMAPPED.GROUP", "未映射分组");
+        when(materialMapper.selectOne(any())).thenReturn(null);
+        when(materialCategoryMapper.selectList(any())).thenReturn(List.of());
+
+        WmsKingdeeStockSyncResultVO vo = service.syncMaterial();
+
+        assertEquals(1, vo.getCreated(), "映射缺失不能阻断物料同步");
+        ArgumentCaptor<WmsMaterial> captor = ArgumentCaptor.forClass(WmsMaterial.class);
+        verify(materialMapper).insert(captor.capture());
+        assertNull(captor.getValue().getCategoryId());
+    }
+
+    /** 存量物料在映射命中后也要补挂分类。 */
+    @Test
+    void sync_shouldBackfillCategoryIdOnExistingMaterial() {
+        stubFetchWithGroup("KD.001", "XA.00.01010101", "自制");
+        WmsMaterial existing = new WmsMaterial();
+        existing.setMaterialCode("KD.001");
+        existing.setMaterialName("名称-KD.001");
+        existing.setKingdeeCode("KD.001");
+        existing.setCategoryId(null);
+        when(materialMapper.selectOne(any())).thenReturn(existing);
+        when(materialCategoryMapper.selectList(any())).thenReturn(List.of(category("CAT1", "XA.00.01010101")));
+
+        service.syncMaterial();
+
+        assertEquals("CAT1", existing.getCategoryId());
+        verify(materialMapper).updateById(existing);
+    }
+
+    private static WmsMaterialCategory category(String id, String erpGroupNumber) {
+        WmsMaterialCategory category = new WmsMaterialCategory();
+        category.setId(id);
+        category.setErpGroupNumber(erpGroupNumber);
+        return category;
     }
 }

@@ -17,4 +17,16 @@ public interface IWmsKingdeeCategorySyncService {
      * 此时不给物料硬塞分类，避免产生脏数据。
      */
     WmsKingdeeStockSyncResultVO syncCategory();
+
+    /**
+     * 按金蝶物料分组（BD_MATERIAL.FMaterialGroup）在 {@code wms_material_category} 中建行。
+     *
+     * <p>分组编码 = {@code category_code} = {@code erp_group_number}，分组名称 = 分类名称；
+     * {@code category_type} 取系统配置 {@code kingdee.material-group-map}，取不到留空。
+     * 按分组编码幂等 upsert：已存在只更新名称，不重复插入。
+     *
+     * <p><b>同步开关关闭 / 金蝶未配置时抛异常</b>，不返回空结果——否则页面会显示
+     * 「同步完成，新建 0 个」，把配置问题伪装成业务正常。
+     */
+    WmsKingdeeStockSyncResultVO syncMaterialGroups();
 }

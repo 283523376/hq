@@ -2,18 +2,24 @@ package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeCategorySyncService;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.audit.WmsAuditRecorder;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
+import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
+import org.jeecg.modules.wms.util.WmsMaterialGroupMapping;
+import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsKingdeeStockSyncResultVO;
 import org.springframework.stereotype.Service;
 
@@ -47,6 +53,9 @@ public class WmsKingdeeCategorySyncServiceImpl implements IWmsKingdeeCategorySyn
     private static final String SYNC_OBJECT_TYPE = "MATERIAL_CATEGORY";
     private static final String SYNC_TARGET = "WMS";
 
+    /** 分组同步只取两列：分组编码 + 分组名称。 */
+    private static final String GROUP_FIELD_KEYS = "FMaterialGroup.FNumber,FMaterialGroup.FName";
+
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
     private final IWmsMaterialCategoryService categoryService;
@@ -56,6 +65,14 @@ public class WmsKingdeeCategorySyncServiceImpl implements IWmsKingdeeCategorySyn
     /** 可选依赖：既有单测按旧构造器 new 服务，注入不到时为 null。 */
     @Autowired(required = false)
     private IWmsAuditLogService auditLogService;
+
+    /** 可选依赖（同上）：为 null 时视为「未配置映射」，分类类型留空。 */
+    @Autowired(required = false)
+    private IWmsSystemConfigService configService;
+
+    /** 可选依赖（同上）：为 null 时不做「是否已配置」前置检查（单测裸构造场景）。 */
+    @Autowired(required = false)
+    private IWmsKingdeeAuthService kingdeeAuthService;
 
     public WmsKingdeeCategorySyncServiceImpl(WmsKingdeeFormClient formClient,
                                              WmsKingdeeProperties properties,
@@ -111,6 +128,174 @@ public class WmsKingdeeCategorySyncServiceImpl implements IWmsKingdeeCategorySyn
                 "BD_MATERIAL", WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, 0,
                 rules.toString(), vo.getMessage(), null, System.currentTimeMillis() - start);
         return vo;
+    }
+
+    @Override
+    public WmsKingdeeStockSyncResultVO syncMaterialGroups() {
+        // 显式失败：配置问题不能伪装成「同步完成，0 个」
+        if (!properties.isEnabled()) {
+            throw new RuntimeException("金蝶同步总开关 wms.sync.erp.kingdee.enabled 未开启，无法同步物料分组");
+        }
+        if (kingdeeAuthService != null && !kingdeeAuthService.isConfigured()) {
+            throw new RuntimeException("金蝶未配置（baseUrl/acctId/appId 等），无法同步物料分组");
+        }
+
+        long start = System.currentTimeMillis();
+        GroupFetchResult fetched = fetchAllGroups();
+        Map<String, String> typeByGroup = parseTypeMapping();
+
+        WmsKingdeeStockSyncResultVO vo = new WmsKingdeeStockSyncResultVO();
+        vo.setFetched(fetched.scannedRows);
+        for (Map.Entry<String, String> group : fetched.groups.entrySet()) {
+            UpsertResult result = upsertGroupCategory(group.getKey(), group.getValue(),
+                    typeByGroup.get(group.getKey()));
+            if (result == UpsertResult.CREATED) {
+                vo.setCreated(vo.getCreated() + 1);
+            } else if (result == UpsertResult.UPDATED) {
+                vo.setRenamed(vo.getRenamed() + 1);
+            }
+        }
+        vo.setMessage(String.format("扫描金蝶物料 %d 行，识别分组 %d 个：新建 %d，更新 %d",
+                vo.getFetched(), fetched.groups.size(), vo.getCreated(), vo.getRenamed()));
+        syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS, SYNC_OBJECT_TYPE,
+                FORM_ID, WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, vo.getFetched(),
+                "groups=" + fetched.groups.size(), vo.getMessage(), null,
+                System.currentTimeMillis() - start);
+        return vo;
+    }
+
+    /**
+     * 读取并解析分组映射配置；配置服务缺失或读不到时返回空映射（分类类型留空），不阻断同步。
+     */
+    private Map<String, String> parseTypeMapping() {
+        if (configService == null) {
+            return new LinkedHashMap<>();
+        }
+        String raw = configService.getString(WmsConfigKey.KD_MATERIAL_GROUP_MAP.getKey(), "");
+        return WmsMaterialGroupMapping.parse(raw);
+    }
+
+    /**
+     * 单分组 upsert。按 {@code erp_group_number} 命中；为兼容历史手工分类（编码相同但没填
+     * erp_group_number），再按 {@code category_code} 兜底，避免撞唯一索引。
+     */
+    private UpsertResult upsertGroupCategory(String groupNumber, String groupName, String mappedType) {
+        String safeName = truncate(oConvertUtils.isEmpty(groupName) ? groupNumber : groupName, 100);
+        String safeErpName = truncate(groupName, 200);
+        WmsMaterialCategory existing = categoryMapper.selectOne(
+                new LambdaQueryWrapper<WmsMaterialCategory>()
+                        .and(w -> w.eq(WmsMaterialCategory::getErpGroupNumber, groupNumber)
+                                .or().eq(WmsMaterialCategory::getCategoryCode, groupNumber))
+                        .last("limit 1"));
+        if (existing == null) {
+            WmsMaterialCategory category = new WmsMaterialCategory()
+                    .setCategoryCode(groupNumber)
+                    .setCategoryName(safeName)
+                    .setParentId(WmsConstants.ROOT_PID_VALUE)
+                    // 未配置映射时留 NULL：不猜「原材料」，避免把未分类物料错误路由
+                    .setCategoryType(mappedType)
+                    .setErpGroupNumber(groupNumber)
+                    .setErpGroupName(safeErpName)
+                    .setStatus(WmsConstants.STATUS_ENABLE)
+                    .setHasChild(WmsConstants.NO)
+                    .setDeletedAt(0L);
+            WmsUtils.fillCreate(category);
+            categoryMapper.insert(category);
+            WmsAuditRecorder.recordMasterData(auditLogService, groupNumber,
+                    WmsConstants.AUDIT_ACTION_SYNC_IN, category);
+            return UpsertResult.CREATED;
+        }
+
+        boolean changed = false;
+        if (!safeName.equals(existing.getCategoryName())) {
+            existing.setCategoryName(safeName);
+            changed = true;
+        }
+        if (!groupNumber.equals(existing.getErpGroupNumber())) {
+            existing.setErpGroupNumber(groupNumber);
+            changed = true;
+        }
+        if (!safeErpName.equals(existing.getErpGroupName())) {
+            existing.setErpGroupName(safeErpName);
+            changed = true;
+        }
+        // 映射不到时不动已有 category_type：人工维护的值不能被一次同步清空
+        if (oConvertUtils.isNotEmpty(mappedType) && !mappedType.equals(existing.getCategoryType())) {
+            existing.setCategoryType(mappedType);
+            changed = true;
+        }
+        if (!changed) {
+            return UpsertResult.UNCHANGED;
+        }
+        WmsUtils.fillUpdate(existing);
+        categoryMapper.updateById(existing);
+        WmsAuditRecorder.recordMasterData(auditLogService, groupNumber,
+                WmsConstants.AUDIT_ACTION_UPDATE, existing);
+        return UpsertResult.UPDATED;
+    }
+
+    /**
+     * 拉取全量物料，按 {@code FMaterialGroup.FNumber} 去重成分组清单。
+     *
+     * <p>物料同步沿用同一取数方式（每页 500 行，返回不足一页即末页）；50000 条物料
+     * 对应约 100 页，2996 个分组。若改成按分组表查询，需先确认 BD_MATERIALGROUP 的
+     * 组织过滤字段，当前复用已验证的路径更稳妥。
+     */
+    private GroupFetchResult fetchAllGroups() {
+        String orgId = properties.getMasterData().getOrgId();
+        String filter = (orgId == null || orgId.trim().isEmpty())
+                ? "" : "FUseOrgId.FNumber='" + orgId.trim().replace("'", "''") + "'";
+        Map<String, String> groups = new LinkedHashMap<>();
+        int scanned = 0;
+        for (int page = 0; page < MAX_PAGES; page++) {
+            WmsKingdeeResult result = formClient.executeBillQuery(
+                    FORM_ID, GROUP_FIELD_KEYS, filter, PAGE_SIZE, page * PAGE_SIZE);
+            if (!result.isSuccess()) {
+                throw new RuntimeException("金蝶物料分组查询失败：" + result.getMessage());
+            }
+            List<List<Object>> rows = result.getRows() == null ? List.of() : result.getRows();
+            scanned += rows.size();
+            for (List<Object> row : rows) {
+                String groupNumber = asText(row.size() > 0 ? row.get(0) : null);
+                if (groupNumber.isEmpty()) {
+                    continue;
+                }
+                if (groupNumber.length() > 64) {
+                    log.warn("金蝶物料分组编码超长（>64），已跳过：{}", groupNumber);
+                    continue;
+                }
+                String groupName = asText(row.size() > 1 ? row.get(1) : null);
+                groups.putIfAbsent(groupNumber, groupName);
+            }
+            if (rows.size() < PAGE_SIZE) {
+                return new GroupFetchResult(scanned, groups);
+            }
+        }
+        log.warn("物料分组同步达到翻页上限 {} 页，已截断", MAX_PAGES);
+        return new GroupFetchResult(scanned, groups);
+    }
+
+    private static String truncate(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    }
+
+    /** 分组拉取结果：扫描行数（结果口径）+ 去重后的分组。 */
+    private static final class GroupFetchResult {
+        private final int scannedRows;
+        private final Map<String, String> groups;
+
+        private GroupFetchResult(int scannedRows, Map<String, String> groups) {
+            this.scannedRows = scannedRows;
+            this.groups = groups;
+        }
+    }
+
+    /** 单分组 upsert 结果，用于区分新建/更新/无变化。 */
+    private enum UpsertResult {
+        CREATED, UPDATED, UNCHANGED
     }
 
     /** 跳过分支也留日志，便于回查定时任务是否真的跑过。 */

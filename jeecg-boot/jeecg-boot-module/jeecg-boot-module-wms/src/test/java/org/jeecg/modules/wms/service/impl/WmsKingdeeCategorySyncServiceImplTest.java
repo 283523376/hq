@@ -1,9 +1,13 @@
 package org.jeecg.modules.wms.service.impl;
 
+import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
 import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.service.IWmsMaterialCategoryService;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.jeecg.modules.wms.sync.IWmsKingdeeAuthService;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
@@ -16,12 +20,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +44,8 @@ class WmsKingdeeCategorySyncServiceImplTest {
     private WmsKingdeeProperties properties;
     private IWmsMaterialCategoryService categoryService;
     private WmsMaterialCategoryMapper categoryMapper;
+    private IWmsSystemConfigService configService;
+    private IWmsKingdeeAuthService authService;
     private WmsKingdeeCategorySyncServiceImpl service;
 
     @BeforeEach
@@ -46,8 +56,15 @@ class WmsKingdeeCategorySyncServiceImplTest {
         categoryService = mock(IWmsMaterialCategoryService.class);
         categoryMapper = mock(WmsMaterialCategoryMapper.class);
         IWmsSyncLogService syncLogService = mock(IWmsSyncLogService.class);
+        configService = mock(IWmsSystemConfigService.class);
+        authService = mock(IWmsKingdeeAuthService.class);
+        when(authService.isConfigured()).thenReturn(true);
+        when(configService.getString(anyString(), anyString())).thenReturn("");
+
         service = new WmsKingdeeCategorySyncServiceImpl(
                 formClient, properties, categoryService, categoryMapper, syncLogService);
+        WmsTestSupport.inject(service, "configService", configService);
+        WmsTestSupport.inject(service, "kingdeeAuthService", authService);
     }
 
     @Test
@@ -94,6 +111,106 @@ class WmsKingdeeCategorySyncServiceImplTest {
 
         assertEquals(0, vo.getRenamed());
         verify(categoryService, never()).editCategory(any());
+    }
+
+    // ------------------------------------------------------------ 按物料分组建行（2026-11-05）
+
+    /** 拉取物料分组 → 每个分组建一行分类；映射命中时写分类类型，未命中留 NULL。 */
+    @Test
+    void syncMaterialGroups_shouldCreateOneCategoryPerGroupWithMappedType() {
+        when(configService.getString(eq("kingdee.material-group-map"), anyString()))
+                .thenReturn("XA.00.01010101=原材料");
+        when(categoryMapper.selectOne(any())).thenReturn(null);
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", rows(
+                        List.of("XA.00.01010101", "自制"),
+                        List.of("A.C1.1.Y75", "Y75材质"),
+                        // 同一分组的第二行不能重复建分类
+                        List.of("XA.00.01010101", "自制")), null, null));
+
+        WmsKingdeeStockSyncResultVO vo = service.syncMaterialGroups();
+
+        assertEquals(3, vo.getFetched(), "fetched 是扫描的物料行数");
+        assertEquals(2, vo.getCreated(), "2996 个分组按去重后的分组数建行");
+        ArgumentCaptor<WmsMaterialCategory> captor = ArgumentCaptor.forClass(WmsMaterialCategory.class);
+        verify(categoryMapper, times(2)).insert(captor.capture());
+        WmsMaterialCategory mapped = captor.getAllValues().get(0);
+        assertEquals("XA.00.01010101", mapped.getCategoryCode());
+        assertEquals("XA.00.01010101", mapped.getErpGroupNumber());
+        assertEquals("自制", mapped.getCategoryName());
+        assertEquals(WmsConstants.CATEGORY_TYPE_RAW, mapped.getCategoryType());
+        assertEquals(WmsConstants.ROOT_PID_VALUE, mapped.getParentId(), "ERP 分组是平铺的，暂不建树");
+        assertEquals(WmsConstants.STATUS_ENABLE, mapped.getStatus());
+
+        WmsMaterialCategory unmapped = captor.getAllValues().get(1);
+        assertEquals("A.C1.1.Y75", unmapped.getCategoryCode());
+        assertNull(unmapped.getCategoryType(), "映射不到时不能猜成「原材料」");
+    }
+
+    /** 幂等：已存在且名称未变时不重复插入、也不产生更新。 */
+    @Test
+    void syncMaterialGroups_shouldBeIdempotent() {
+        WmsMaterialCategory existing = new WmsMaterialCategory();
+        existing.setId("CAT1");
+        existing.setCategoryCode("XA.00.01010101");
+        existing.setCategoryName("自制");
+        existing.setErpGroupNumber("XA.00.01010101");
+        existing.setErpGroupName("自制");
+        when(categoryMapper.selectOne(any())).thenReturn(existing);
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", rows(
+                        List.of("XA.00.01010101", "自制")), null, null));
+
+        WmsKingdeeStockSyncResultVO vo = service.syncMaterialGroups();
+
+        assertEquals(0, vo.getCreated());
+        assertEquals(0, vo.getRenamed());
+        verify(categoryMapper, never()).insert(any(WmsMaterialCategory.class));
+        verify(categoryMapper, never()).updateById(any(WmsMaterialCategory.class));
+    }
+
+    /** 已存在但名称变化：只更新名称，不重复插入。 */
+    @Test
+    void syncMaterialGroups_shouldUpdateNameWhenChanged() {
+        WmsMaterialCategory existing = new WmsMaterialCategory();
+        existing.setId("CAT1");
+        existing.setCategoryCode("XA.00.01010101");
+        existing.setCategoryName("旧名称");
+        existing.setErpGroupNumber("XA.00.01010101");
+        existing.setErpGroupName("旧名称");
+        when(categoryMapper.selectOne(any())).thenReturn(existing);
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", rows(
+                        List.of("XA.00.01010101", "自制")), null, null));
+
+        WmsKingdeeStockSyncResultVO vo = service.syncMaterialGroups();
+
+        assertEquals(0, vo.getCreated());
+        assertEquals(1, vo.getRenamed());
+        verify(categoryMapper).updateById(existing);
+        assertEquals("自制", existing.getCategoryName());
+    }
+
+    /** 同步开关关闭必须显式失败，不能返回「同步完成，0 个」。 */
+    @Test
+    void syncMaterialGroups_shouldFailExplicitlyWhenDisabled() {
+        properties.setEnabled(false);
+
+        RuntimeException error = assertThrows(RuntimeException.class, () -> service.syncMaterialGroups());
+
+        assertTrue(error.getMessage().contains("未开启"), error.getMessage());
+        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt());
+    }
+
+    /** 金蝶未配置凭据同样显式失败。 */
+    @Test
+    void syncMaterialGroups_shouldFailExplicitlyWhenKingdeeNotConfigured() {
+        when(authService.isConfigured()).thenReturn(false);
+
+        RuntimeException error = assertThrows(RuntimeException.class, () -> service.syncMaterialGroups());
+
+        assertTrue(error.getMessage().contains("未配置"), error.getMessage());
+        verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt());
     }
 
     private static List<List<Object>> rows(List<Object>... items) {

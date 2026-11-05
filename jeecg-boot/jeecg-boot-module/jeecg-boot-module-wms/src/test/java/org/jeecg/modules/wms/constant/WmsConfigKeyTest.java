@@ -16,27 +16,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class WmsConfigKeyTest {
 
-    /** 六组必须各就各位：库存 3 项、同步 6 项、不良品 1 项、设备 2 项、审计 1 项、金蝶单据 5 项，共 18 项。
+    /** 六组必须各就各位：库存 3 项、同步 6 项、不良品 1 项、设备 2 项、审计 1 项、金蝶单据 6 项，共 19 项。
      *  （不良品组原有「是否入线边柜」，随线边柜方案移出范围已于 2026-10-27 删除；
      *   审计组随 XT-002 于 2026-11-02 新增，保留期必须前端可调；
      *   同步组随 SB-001 于 2026-11-03 新增 4 项：自动对账范围 + 三个保留期；
-     *   金蝶单据组随 V2.4 于 2026-11-04 新增 5 个 formId，默认空串 = 未配置） */
+     *   金蝶单据组随 V2.4 于 2026-11-04 新增 5 个 formId，默认空串 = 未配置；
+     *   2026-11-05 新增物料分组映射 1 项，非 formId，走 TEXT + 默认空串） */
     @Test
     void shouldExposeAllKeysInGroups() {
-        assertEquals(18, WmsConfigKey.ordered().length);
+        assertEquals(19, WmsConfigKey.ordered().length);
         assertEquals(3, WmsConfigKey.ofGroup(WmsConfigGroup.INVENTORY).size());
         assertEquals(6, WmsConfigKey.ofGroup(WmsConfigGroup.SYNC).size());
         assertEquals(1, WmsConfigKey.ofGroup(WmsConfigGroup.DEFECT).size());
         assertEquals(2, WmsConfigKey.ofGroup(WmsConfigGroup.DEVICE).size());
         assertEquals(1, WmsConfigKey.ofGroup(WmsConfigGroup.AUDIT).size());
-        assertEquals(5, WmsConfigKey.ofGroup(WmsConfigGroup.KINGDEE).size());
+        assertEquals(6, WmsConfigKey.ofGroup(WmsConfigGroup.KINGDEE).size());
     }
 
     /** 键必须唯一——重复键会让「按 key 取值」出现两个答案。 */
     @Test
     void keysShouldBeUnique() {
         long distinct = Arrays.stream(WmsConfigKey.ordered()).map(WmsConfigKey::getKey).distinct().count();
-        assertEquals(18, distinct);
+        assertEquals(19, distinct);
     }
 
     /** 设备两项的默认值必须与既有常量一致，否则「DB 无配置」时行为会静默改变。 */
