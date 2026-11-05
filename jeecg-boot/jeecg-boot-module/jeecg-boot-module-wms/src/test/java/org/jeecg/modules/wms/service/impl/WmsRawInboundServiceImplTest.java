@@ -293,6 +293,35 @@ class WmsRawInboundServiceImplTest {
         verify(orderMapper, never()).insert(any(WmsInboundOrder.class));
     }
 
+    /**
+     * 辅料要给「不在 WMS 范围」的专属文案，而不是笼统的「不是原材料」。
+     *
+     * <p>2026-11-05 用户口径：辅料本来就不在 WMS 范围、不入库。它该去线边柜，而线边柜 XB01
+     * 已停用——用户看到「不是原材料」会以为换个物料就行，必须直接告诉他这是范围问题。
+     */
+    @Test
+    void receiveRejectsAuxiliaryMaterialWithScopeMessage() {
+        when(reader.isEnabled()).thenReturn(true);
+        when(reader.queryPurchaseOrder(ERP_ORDER_NO)).thenReturn(erpOrderResult());
+        WmsMaterial material = new WmsMaterial();
+        material.setId("mat1");
+        material.setMaterialCode("M001");
+        material.setMaterialName("螺丝");
+        material.setCategoryId("cat1");
+        when(materialService.getById("mat1")).thenReturn(material);
+        WmsMaterialCategory category = new WmsMaterialCategory();
+        category.setId("cat1");
+        category.setCategoryType(WmsConstants.CATEGORY_TYPE_AUXILIARY);
+        when(categoryService.getById("cat1")).thenReturn(category);
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> spy.receive(
+                dto(WmsConstants.INBOUND_SOURCE_PURCHASE, WmsConstants.INBOUND_HANDLING_DIRECT), OPERATOR));
+
+        assertTrue(e.getMessage().contains("属于辅料"), e.getMessage());
+        assertTrue(e.getMessage().contains("不在 WMS 范围内"), e.getMessage());
+        verify(orderMapper, never()).insert(any(WmsInboundOrder.class));
+    }
+
     // ------------------------------------------------------------------ 段差棒直入上架
 
     @Test

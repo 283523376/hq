@@ -291,6 +291,14 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
                 throw new RuntimeException("物料不存在");
             }
             String categoryType = resolveCategoryType(material);
+            // 辅料单独给一句人看得懂的话：不是「类型填错了」，而是本就不在 WMS 范围——
+            // 蓝图 V2.4 只做半成品立体仓 + 成品敏捷仓，辅料该去线边柜，而线边柜 XB01 已停用，
+            // 若只说「不是原材料」，用户会以为换个物料就行（2026-11-05 用户确认的口径）。
+            if (WmsConstants.CATEGORY_TYPE_AUXILIARY.equals(categoryType)) {
+                throw new RuntimeException(String.format(
+                        "物料[%s]属于辅料，辅料不在 WMS 范围内，不能登记到货（线边柜已停用）",
+                        material.getMaterialName()));
+            }
             if (!WmsConstants.CATEGORY_TYPE_RAW.equals(categoryType)) {
                 throw new RuntimeException(String.format("物料[%s]不是原材料，不能走外购/受托原材料入库",
                         material.getMaterialName()));
