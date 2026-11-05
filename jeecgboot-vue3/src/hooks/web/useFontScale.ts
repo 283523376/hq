@@ -35,7 +35,7 @@ export const SCALE_STEP = 5;
 export const SCALE_RANGES = {
   text: [80, 150] as const,
   zoom: [50, 200] as const,
-  line: [80, 200] as const,
+  line: [0, 200] as const,
 };
 
 const STORAGE_KEY = 'wms_font_scale';
@@ -87,11 +87,30 @@ export function buildFontTokens(percent: number): {
   };
 }
 
-/** 百分比 → antd token.lineHeight（无单位倍数） */
+/**
+ * 百分比 → antd token.lineHeight（无单位倍数）。
+ *
+ * 语义是「行间距」而非「行高倍数」：**0% = 最小行距（lineHeight = 1，行与行紧贴但不重叠）**，
+ * 100% = antd 默认行高，200% = 默认之上再翻一倍额外间距。
+ * 若按「行高 × 百分比」直接算，0% 会让行高归零、文字互相压叠，所以用 1 作下限再线性叠加。
+ */
 export function calcLineHeight(percent: number): number {
   const pct = Number.isNaN(Number(percent)) ? 100 : Number(percent);
+  const extra = BASE_LINE_HEIGHT - 1;
   // 保留 4 位小数，避免浮点尾差让 antd 算出不同的行盒高度
-  return Math.round(((BASE_LINE_HEIGHT * pct) / 100) * 10000) / 10000;
+  return Math.round((1 + (extra * pct) / 100) * 10000) / 10000;
+}
+
+/**
+ * 把控件高度暴露成 CSS 变量 `--wms-control-height`。
+ *
+ * antd 的 token 只存在于 JS 主题配置里，没有开 cssVar，全局 less 拿不到 controlHeight。
+ * 而 `.ant-input-affix-wrapper`（带前后缀图标的输入框，搜索框全是这种）没有显式高度，
+ * 高度由行盒撑开：行距调到 180% 时它长到 36.4px，同排的 select/button 还是 32px —— 搜索栏参差不齐。
+ * 有了这个变量，less 就能用 `height: var(--wms-control-height)` 让单行控件高度只跟文字缩放走。
+ */
+export function applyControlHeightVar(percent: number = textScaleRef.value): void {
+  document.documentElement.style.setProperty('--wms-control-height', `${calcControlHeight(percent)}px`);
 }
 
 /** 按 5% 步进取整后收敛到 [min, max] */
@@ -221,4 +240,5 @@ export function initFontScale(el: HTMLElement | { style: Record<string, string> 
   zoomScaleRef.value = stored.zoom;
   lineScaleRef.value = stored.line;
   applyZoomScale(stored.zoom, el);
+  applyControlHeightVar(stored.text);
 }

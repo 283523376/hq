@@ -17,7 +17,7 @@
   import { useRootSetting } from '/@/hooks/setting/useRootSetting';
   import { ThemeEnum } from '/@/enums/appEnum';
   import { changeTheme } from '/@/logics/theme/index';
-  import { buildFontTokens, getTextScale, initFontScale, lineScaleRef, textScaleRef } from '/@/hooks/web/useFontScale';
+  import { applyControlHeightVar, buildFontTokens, getTextScale, initFontScale, lineScaleRef, textScaleRef } from '/@/hooks/web/useFontScale';
 
   const appStore = useAppStore();
   // 解决日期时间国际化问题
@@ -96,6 +96,8 @@
       };
       appTheme.value = result;
       modeAction(result);
+      // 控件高度同步暴露给全局 less（.ant-input-affix-wrapper 等无显式高度的单行控件要用）
+      applyControlHeightVar(getTextScale());
     },
     { immediate: true }
   );
@@ -118,6 +120,7 @@
         ...buildFontTokens(pct),
       },
     };
+    applyControlHeightVar(pct);
   });
   setTimeout(() => {
     appStore.getProjectConfig?.themeColor && changeTheme(appStore.getProjectConfig.themeColor);

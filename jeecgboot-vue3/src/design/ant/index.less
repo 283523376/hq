@@ -18,6 +18,38 @@
   width: auto;
 }
 
+// 行间距（token.lineHeight）放大后，固定高度的控件内部行高被一并撑大，
+// 文字会溢出到控件下方（实测 180% 时按钮内文字下移 4.8~6.7px，看着「贴底」）。
+// 这些控件靠自身高度排布文字，行高应回到常规值，不受行距档位影响。
+.ant-btn,
+.ant-btn > span,
+.ant-input,
+.ant-input-number-input,
+.ant-select-selection-item,
+.ant-select-selection-placeholder,
+.ant-picker-input > input,
+.ant-tag,
+.ant-pagination-item,
+.ant-radio-wrapper,
+.ant-checkbox-wrapper {
+  line-height: normal;
+}
+
+// 按钮文字改为 flex 居中：line-height: normal 在 0% 行距下仍会让文字下偏 2.5px
+// （行盒与 padding 基准不一致），flex 居中对任何行距档位都恒为 0 偏移。
+.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+// 带前后缀图标的输入框（搜索栏的查询框全是这种）没有显式高度，高度由自身行盒撑开：
+// 100% 行距 32px、180% 会长到 36.4px，而同排的 select/button 固定 32px —— 搜索栏参差不齐。
+// 高度改用文字缩放暴露的 CSS 变量（见 useFontScale.applyControlHeightVar），只跟字号走。
+.ant-input-affix-wrapper {
+  height: var(--wms-control-height, 32px);
+}
+
 .ant-image-preview-root {
   img {
     display: unset;
