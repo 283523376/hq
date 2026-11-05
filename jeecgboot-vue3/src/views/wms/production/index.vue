@@ -1,3 +1,4 @@
+<!-- eslint-disable vue/multi-word-component-names -->
 <template>
   <div class="wms-production">
     <a-alert
@@ -8,23 +9,22 @@
       message="自动同步已关闭：单据停在「待同步」，请在下方列表逐单点「同步金蝶」"
     />
     <a-card :bordered="false" size="small" title="工单作业台（工单由ERP同步，录入单号即自动同步/查询）" class="wms-production__workbench">
-      <a-form layout="inline">
-        <a-form-item label="工单号">
-          <a-input
-            ref="workOrderInputRef"
-            v-model:value="workOrderNo"
-            placeholder="录入ERP生产订单号，回车查询（本地无单自动从ERP同步）"
-            allow-clear
-            style="width: 320px"
-            @press-enter="handleScan"
-          />
-        </a-form-item>
-        <a-form-item>
-          <a-button type="primary" :loading="scanning" v-auth="'wms:production:scan'" @click="handleScan">
-            查询工单
-          </a-button>
-        </a-form-item>
-      </a-form>
+      <!-- 不用 a-form layout="inline"：inline 表单项在窄容器里会换行，导致标签与输入框错位 -->
+      <div class="wms-production__scan">
+        <label class="wms-production__scan-label" for="wms-work-order-no">工单号</label>
+        <a-input
+          id="wms-work-order-no"
+          ref="workOrderInputRef"
+          v-model:value="workOrderNo"
+          class="wms-production__scan-input"
+          placeholder="录入ERP生产订单号，回车查询（本地无单自动从ERP同步）"
+          allow-clear
+          @press-enter="handleScan"
+        />
+        <a-button type="primary" :loading="scanning" v-auth="'wms:production:scan'" @click="handleScan">
+          查询工单
+        </a-button>
+      </div>
 
       <a-descriptions v-if="workOrder" :column="4" size="small" bordered class="wms-production__info">
         <a-descriptions-item label="工单号">{{ workOrder.workOrderNo }}</a-descriptions-item>
@@ -512,6 +512,27 @@
 
   .wms-production__workbench {
     margin-bottom: 16px;
+  }
+
+  /* 工单号录入行：用 flex 保证标签、输入框、按钮在同一基线上垂直居中 */
+  .wms-production__scan {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .wms-production__scan-label {
+    flex: none;
+    margin: 0;
+    font-weight: 500;
+    white-space: nowrap;
+    color: rgba(0, 0, 0, 0.85);
+  }
+
+  .wms-production__scan-input {
+    flex: 0 1 360px;
+    min-width: 240px;
   }
 
   .wms-production__info {
