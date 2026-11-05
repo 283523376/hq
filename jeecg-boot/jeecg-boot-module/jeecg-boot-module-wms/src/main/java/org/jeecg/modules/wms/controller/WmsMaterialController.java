@@ -18,6 +18,7 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.service.IWmsMaterialService;
+import org.jeecg.modules.wms.util.WmsMaterialGroupMapping;
 import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
 import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
 import org.jeecgframework.poi.excel.ExcelImportUtil;
@@ -91,6 +92,7 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
                                                     @RequestParam(name = "keyword", required = false) String keyword,
                                                     @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
                                                     @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
+                                                    @RequestParam(name = "categoryType", required = false) String categoryType,
                                                     HttpServletRequest req) {
         // 代码逻辑说明: categoryName/categoryCode 是非持久化字段（表里无对应列），
         // 必须先置空，否则 QueryGenerator 会按它们拼出 category_name/category_code 条件导致 SQL 报错
@@ -115,6 +117,18 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
                     .or().like("material_name", kw)
                     .or().like("kingdee_code", kw)
             );
+        }
+        // 按分类类型过滤（2026-11-05）：到货登记只要原材料，下拉别把辅料/成品也列出来
+        // （选完才被后端拒绝，体验很差）。分类类型在 wms_material_category 上，物料表只有 category_id，
+        // 所以走子查询；categoryType 先过白名单再拼字符串——值只可能来自固定枚举，不做白名单就是拼 SQL。
+        if (oConvertUtils.isNotEmpty(categoryType)) {
+            String type = categoryType.trim();
+            if (!WmsMaterialGroupMapping.ALLOWED_TYPES.contains(type)) {
+                return Result.error("分类类型非法（允许："
+                        + String.join("/", WmsMaterialGroupMapping.ALLOWED_TYPES) + "），实际：" + type);
+            }
+            queryWrapper.inSql("category_id",
+                    "SELECT id FROM wms_material_category WHERE deleted_at = 0 AND category_type = '" + type + "'");
         }
         queryWrapper.orderByDesc("create_time");
         Page<WmsMaterial> page = new Page<>(pageNo, pageSize);

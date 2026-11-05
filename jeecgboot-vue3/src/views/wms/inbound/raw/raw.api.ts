@@ -62,10 +62,13 @@ export const listCustomerOptions = () => defHttp.get({ url: '/wms/customer/listA
  * 明细入参要的是 `materialId`，所以下拉的 value 必须是物料主键；label 带编码便于扫码核对。
  */
 export const searchMaterialOptions = (keyword?: string, pageSize = 50) => {
-  const params: any = { pageNo: 1, pageSize };
+  // 到货登记只收原材料：不带 categoryType 会把辅料/成品也列出来，选完才被后端拒绝，体验很差。
+  // 分类类型的中文常量与 material.data.ts 的 CATEGORY_TYPE_OPTIONS 同源（后端 WmsConstants.CATEGORY_TYPE_*）。
+  const params: any = { pageNo: 1, pageSize, categoryType: '原材料' };
   if (keyword && keyword.trim()) {
-    // QueryGenerator 约定：值两侧带 * 表示 LIKE（与领料明细的物料搜索一致）
-    params.materialName = `*${keyword.trim()}*`;
+    // 发**裸值**：后端 /wms/material/list 已经把该字段从 QueryGenerator 摘出来手写 like，
+    // 再包 `*x*` 会变成 LIKE '%*x*%' → 关键字搜索恒 0 条（2026-11-05 实测踩到，与列表页同款缺陷）。
+    params.materialName = keyword.trim();
   }
   return defHttp.get({ url: '/wms/material/list', params });
 };

@@ -56,7 +56,8 @@ export const listRecords = (params) => defHttp.get({ url: Api.records, params })
 export const searchMaterialOptions = (keyword?: string, pageSize = 50) => {
   const params: any = { pageNo: 1, pageSize };
   if (keyword && keyword.trim()) {
-    params.materialName = `*${keyword.trim()}*`;
+    // 发裸值：后端该字段已从 QueryGenerator 摘出来手写 like，再包 `*x*` 会恒 0 条
+    params.materialName = keyword.trim();
   }
   return defHttp.get({ url: '/wms/material/list', params });
 };

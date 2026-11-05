@@ -117,7 +117,7 @@ class WmsMaterialControllerTest {
         doReturn(page).when(service).page(any(Page.class), any(Wrapper.class));
 
         Result<IPage<WmsMaterial>> result = controller(service)
-                .queryPageList(new WmsMaterial(), null, 1, 10, new MockHttpServletRequest());
+                .queryPageList(new WmsMaterial(), null, 1, 10, null, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
         assertEquals(1, result.getResult().getTotal());
@@ -141,7 +141,7 @@ class WmsMaterialControllerTest {
         WmsMaterial probe = new WmsMaterial().setCategoryName("半成品").setCategoryCode("C01");
 
         Result<IPage<WmsMaterial>> result = controller(service)
-                .queryPageList(probe, null, 1, 10, new MockHttpServletRequest());
+                .queryPageList(probe, null, 1, 10, null, new MockHttpServletRequest());
 
         assertEquals(200, result.getCode());
         // 直接断言控制器的动作：它必须把非持久化字段置空后才交给 QueryGenerator
@@ -162,6 +162,49 @@ class WmsMaterialControllerTest {
                 "非持久化字段 categoryName 的值不得出现在 SQL 参数中");
         assertFalse(wrapper.getParamNameValuePairs().containsValue("C01"),
                 "非持久化字段 categoryCode 的值不得出现在 SQL 参数中");
+    }
+
+    /**
+     * 按分类类型过滤（2026-11-05）：到货登记的物料下拉只要原材料。
+     *
+     * <p>分类类型挂在 wms_material_category 上，物料表只有 category_id，所以用子查询；
+     * 这里守两件事：条件确实进了 SQL，且值以**字面量白名单值**出现（不是随便拼用户输入）。
+     */
+    @Test
+    void queryPageList_shouldFilterByCategoryType() {
+        IWmsMaterialService service = mock(IWmsMaterialService.class);
+        Page<WmsMaterial> page = new Page<>(1, 10);
+        page.setRecords(Collections.emptyList());
+        page.setTotal(0);
+        doReturn(page).when(service).page(any(Page.class), any(Wrapper.class));
+
+        Result<IPage<WmsMaterial>> result = controller(service).queryPageList(
+                new WmsMaterial(), null, 1, 10, WmsConstants.CATEGORY_TYPE_RAW, new MockHttpServletRequest());
+
+        assertEquals(200, result.getCode());
+        ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(service).page(any(Page.class), captor.capture());
+        QueryWrapper<WmsMaterial> wrapper = (QueryWrapper<WmsMaterial>) captor.getValue();
+        String sqlSegment = wrapper.getSqlSegment();
+        assertTrue(sqlSegment.contains("category_id IN"), "必须按 category_id 过滤，实际：" + sqlSegment);
+        assertTrue(sqlSegment.contains("wms_material_category"), "必须走分类子查询，实际：" + sqlSegment);
+        assertTrue(sqlSegment.contains(WmsConstants.CATEGORY_TYPE_RAW),
+                "子查询条件里必须带分类类型，实际：" + sqlSegment);
+        assertTrue(sqlSegment.contains("deleted_at = 0"),
+                "子查询必须排除已删除分类（@TableLogic 管不到手写子查询），实际：" + sqlSegment);
+    }
+
+    /** 分类类型不在白名单 → 直接拒绝，不查库（防止把用户输入拼进 SQL）。 */
+    @Test
+    void queryPageList_shouldRejectIllegalCategoryType() {
+        IWmsMaterialService service = mock(IWmsMaterialService.class);
+
+        Result<IPage<WmsMaterial>> result = controller(service).queryPageList(
+                new WmsMaterial(), null, 1, 10, "' OR 1=1 --", new MockHttpServletRequest());
+
+        assertEquals(500, result.getCode());
+        assertTrue(result.getMessage().contains("分类类型非法"), result.getMessage());
+        verify(service, never()).page(any(Page.class), any(Wrapper.class));
     }
 
     /** 查不到时返回「未找到对应实体」。 */
