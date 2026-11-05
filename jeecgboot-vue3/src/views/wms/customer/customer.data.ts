@@ -21,16 +21,18 @@ export const columns: BasicColumn[] = [
   },
 ];
 
+// 文本筛选框用 Input 发裸值：JInput 会包 `*xxx*`，而 WmsCustomerController 手写 like 不剥星号，
+// 星号进 SQL 成字面量导致恒 0 行（详见 materialGroupMap.data.ts 说明）。
 export const searchFormSchema: FormSchema[] = [
   {
     label: '全局关键词',
     field: 'keyword',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '跨字段模糊匹配，如 客户编码' },
+    componentProps: { placeholder: '跨字段模糊匹配，如 客户编码', allowClear: true },
   },
-  { label: '客户编码', field: 'customerCode', component: 'JInput', colProps: { span: 6 } },
-  { label: '客户名称', field: 'customerName', component: 'JInput', colProps: { span: 6 } },
+  { label: '客户编码', field: 'customerCode', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '任意连续子串', allowClear: true } },
+  { label: '客户名称', field: 'customerName', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '任意连续子串', allowClear: true } },
   {
     label: '状态',
     field: 'status',

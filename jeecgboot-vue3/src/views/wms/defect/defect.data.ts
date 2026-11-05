@@ -33,16 +33,19 @@ export const columns: BasicColumn[] = [
   { title: '首次入库', align: 'center', dataIndex: 'firstInboundTime', width: 160 },
 ];
 
+// 文本筛选框用 Input 发裸值：JInput 会包 `*xxx*`，而后端（WmsInventoryMapper.xml 的
+// LIKE CONCAT('%', #{...}, '%')）不剥星号，星号进 SQL 成字面量导致恒 0 行
+// （详见 materialGroupMap.data.ts 说明）。
 export const searchFormSchema: FormSchema[] = [
   {
     label: '全局关键词',
     field: 'materialKeyword',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '物料编码/名称，如 10126' },
+    componentProps: { placeholder: '物料编码/名称，如 10126', allowClear: true },
   },
-  { label: '批次', field: 'batchNo', component: 'JInput', colProps: { span: 6 } },
-  { label: '库位', field: 'locationCode', component: 'JInput', colProps: { span: 6 } },
+  { label: '批次', field: 'batchNo', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '任意连续子串', allowClear: true } },
+  { label: '库位', field: 'locationCode', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '任意连续子串', allowClear: true } },
   // 受托不良入废品仓后仍记 CONSIGNED，不切到「受托」就永远看不到；查询条件只对受托生效
   {
     label: '库存类型',
@@ -143,16 +146,16 @@ export const recordSearchFormSchema: FormSchema[] = [
   {
     label: '物料编码',
     field: 'materialCode',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '支持任意连续子串' },
+    componentProps: { placeholder: '支持任意连续子串', allowClear: true },
   },
   {
     label: '来源单号',
     field: 'sourceBillNo',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '生产入库单号/受托入库单号' },
+    componentProps: { placeholder: '生产入库单号/受托入库单号', allowClear: true },
   },
   { label: '来源类型', field: 'sourceType', component: 'Select', colProps: { span: 6 }, componentProps: { options: DEFECT_SOURCE_OPTIONS } },
   {

@@ -50,13 +50,16 @@ export const columns: BasicColumn[] = [
   { title: '失败原因', align: 'left', dataIndex: 'errorMsg', width: 260, ellipsis: true },
 ];
 
+// 全局关键词用 Input 发裸值：JInput 会包 `*xxx*`，后端手写 like 不剥星号会恒 0 行
+// （详见 materialGroupMap.data.ts 说明）。注意：WmsAuditQueryDTO 目前没有 keyword 字段、
+// pageQuery 也不消费它，本框当前不产生任何过滤效果；等后端补 keyword 模糊时这里发裸值即正确。
 export const searchFormSchema: FormSchema[] = [
   {
     label: '全局关键词',
     field: 'keyword',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '跨字段模糊匹配，如 10126' },
+    componentProps: { placeholder: '跨字段模糊匹配，如 10126', allowClear: true },
   },
   { field: 'bizNo', label: '业务单号', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '支持模糊' } },
   { field: 'bizType', label: '业务类型', component: 'Select', colProps: { span: 6 }, componentProps: { options: AUDIT_BIZ_TYPE_OPTIONS, allowClear: true } },

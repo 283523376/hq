@@ -48,16 +48,18 @@ export const columns: BasicColumn[] = [
   { title: '最近告警', align: 'center', dataIndex: 'lastAlertTime', width: 170 },
 ];
 
+// 文本筛选框用 Input 发裸值：JInput 会包 `*xxx*`，而 WmsDeviceController 手写 like 不剥星号，
+// 星号进 SQL 成字面量导致恒 0 行（详见 materialGroupMap.data.ts 说明）。
 export const searchFormSchema: FormSchema[] = [
   {
     label: '全局关键词',
     field: 'keyword',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '跨字段模糊匹配，如 10126' },
+    componentProps: { placeholder: '跨字段模糊匹配，如 10126', allowClear: true },
   },
-  { label: '设备编码', field: 'deviceCode', component: 'JInput', colProps: { span: 6 } },
-  { label: '设备名称', field: 'deviceName', component: 'JInput', colProps: { span: 6 } },
+  { label: '设备编码', field: 'deviceCode', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '任意连续子串', allowClear: true } },
+  { label: '设备名称', field: 'deviceName', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '任意连续子串', allowClear: true } },
   {
     label: '设备类型',
     field: 'deviceType',

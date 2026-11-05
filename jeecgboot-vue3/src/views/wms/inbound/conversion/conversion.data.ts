@@ -49,20 +49,22 @@ export const columns: BasicColumn[] = [
   { title: '创建时间', align: 'center', dataIndex: 'createTime', width: 170 },
 ];
 
+// 文本筛选框用 Input 发裸值：JInput 会包 `*xxx*`，而 WmsConversionServiceImpl 手写 like 不剥星号，
+// 星号进 SQL 成字面量导致恒 0 行（详见 materialGroupMap.data.ts 说明）。
 export const searchFormSchema: FormSchema[] = [
   {
     label: '改制单号',
     field: 'conversionNo',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '支持任意连续子串' },
+    componentProps: { placeholder: '支持任意连续子串', allowClear: true },
   },
   {
     label: '生产订单号',
     field: 'productionOrderNo',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: 'ERP 生产订单号' },
+    componentProps: { placeholder: 'ERP 生产订单号', allowClear: true },
   },
   { label: '状态', field: 'status', component: 'Select', colProps: { span: 6 }, componentProps: { options: CONVERSION_STATUS_OPTIONS } },
 ];

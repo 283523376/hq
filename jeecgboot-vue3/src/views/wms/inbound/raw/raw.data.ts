@@ -143,20 +143,22 @@ export const columns: BasicColumn[] = [
   { title: '创建时间', align: 'center', dataIndex: 'createTime', width: 170 },
 ];
 
+// 文本筛选框用 Input 发裸值：JInput 会包 `*xxx*`，而 WmsRawInboundServiceImpl 手写 like 不剥星号，
+// 星号进 SQL 成字面量导致恒 0 行（详见 materialGroupMap.data.ts 说明）。
 export const searchFormSchema: FormSchema[] = [
   {
     label: '入库单号',
     field: 'orderNo',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '入库单号/ERP 单号/ERP 订单号' },
+    componentProps: { placeholder: '入库单号/ERP 单号/ERP 订单号', allowClear: true },
   },
   {
     label: '供应商/受托方',
     field: 'supplierName',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '供应商或受托方名称，模糊匹配' },
+    componentProps: { placeholder: '供应商或受托方名称，模糊匹配', allowClear: true },
   },
   { label: '状态', field: 'inboundStatus', component: 'Select', colProps: { span: 6 }, componentProps: { options: INBOUND_STATUS_OPTIONS } },
 ];

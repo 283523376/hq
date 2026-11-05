@@ -88,13 +88,15 @@ export const columns: BasicColumn[] = [
   { title: '提交时间', align: 'center', dataIndex: 'submitTime', width: 170 },
 ];
 
+// 全局关键词用 Input 发裸值：JInput 会包 `*xxx*`，而 WmsProductionInboundServiceImpl 手写 like 不剥星号，
+// 星号进 SQL 成字面量导致恒 0 行（详见 materialGroupMap.data.ts 说明）。
 export const searchFormSchema: FormSchema[] = [
   {
     label: '全局关键词',
     field: 'keyword',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '跨字段模糊匹配，如 10126' },
+    componentProps: { placeholder: '跨字段模糊匹配，如 10126', allowClear: true },
   },
   { field: 'inboundNo', label: '入库单号', component: 'Input', colProps: { span: 6 } },
   { field: 'workOrderNo', label: '工单号', component: 'Input', colProps: { span: 6 } },

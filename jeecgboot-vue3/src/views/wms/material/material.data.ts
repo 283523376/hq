@@ -31,16 +31,22 @@ export const columns: BasicColumn[] = [
   },
 ];
 
+/**
+ * 注意：文本筛选框刻意用 Input 而不是 JInput —— JInput 会把值包成 `*xxx*` 发给后端
+ * （jeecg QueryGenerator 的 like 语法），但本页后端（WmsMaterialController）是手写
+ * `queryWrapper.like` 且先把实体文本字段置空，星号不会被翻译，进 SQL 变成字面量
+ * 导致恒 0 行。模糊语义由后端 like 保证，前端发裸值即可（详见 materialGroupMap.data.ts）。
+ */
 export const searchFormSchema: FormSchema[] = [
   {
     label: '全局关键词',
     field: 'keyword',
-    component: 'JInput',
+    component: 'Input',
     colProps: { span: 6 },
-    componentProps: { placeholder: '跨字段模糊匹配，如 10126' },
+    componentProps: { placeholder: '跨字段模糊匹配，如 10126', allowClear: true },
   },
-  { label: '物料编码', field: 'materialCode', component: 'JInput', colProps: { span: 6 } },
-  { label: '物料名称', field: 'materialName', component: 'JInput', colProps: { span: 6 } },
+  { label: '物料编码', field: 'materialCode', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '任意连续子串', allowClear: true } },
+  { label: '物料名称', field: 'materialName', component: 'Input', colProps: { span: 6 }, componentProps: { placeholder: '任意连续子串', allowClear: true } },
   {
     label: '状态',
     field: 'status',

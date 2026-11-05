@@ -407,8 +407,9 @@
     try {
       const params: any = { pageNo: 1, pageSize: 50 };
       if (keyword && keyword.trim()) {
-        // QueryGenerator 约定：值两侧带 * 表示 LIKE
-        params.materialName = `*${keyword.trim()}*`;
+        // 发裸值：/wms/material/list 是手写 like 且不剥星号（controller 会把实体文本字段
+        // 置空，QueryGenerator 的 `*` 翻译根本不生效），带星号会变成字面量恒 0 行
+        params.materialName = keyword.trim();
       }
       const res: any = await defHttp.get({ url: '/wms/material/list', params });
       const options = (res?.records || []).map((m: any) => ({
