@@ -10,6 +10,14 @@
   width: 100%;
 }
 
+// inline 表单的 label / control 也是 .ant-col，会被上面的 width:100% 撑满整行，
+// 导致换行后 label 掉到控件上方（a-form layout="inline" 的标签与输入框错位）。
+// inline 语义要求 label 与控件同行，这里按内容宽度收缩。
+.ant-form-inline .ant-form-item .ant-form-item-label,
+.ant-form-inline .ant-form-item .ant-form-item-control {
+  width: auto;
+}
+
 .ant-image-preview-root {
   img {
     display: unset;
