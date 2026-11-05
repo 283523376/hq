@@ -20,13 +20,22 @@ const TEXT_BASE_FONT_SIZE = 14;
  */
 const CONTROL_BASE_HEIGHT = 32;
 
-/** 两个维度共用的步进（%） */
+/**
+ * antd 的 `lineHeight` 默认值（22/14 ≈ 1.571）。
+ *
+ * 行间距调节以它为 100% 基准：只改 text 缩放会放大字号但行高按倍数同步，
+ * 视觉上「字变大了行没变松」；单独给一个维度才能在不改字号的前提下疏密可调。
+ */
+const BASE_LINE_HEIGHT = 22 / 14;
+
+/** 各维度共用的步进（%） */
 export const SCALE_STEP = 5;
 
 /** 各维度合法区间（%） */
 export const SCALE_RANGES = {
   text: [80, 150] as const,
   zoom: [50, 200] as const,
+  line: [80, 200] as const,
 };
 
 const STORAGE_KEY = 'wms_font_scale';
@@ -35,6 +44,8 @@ const DEFAULT_SCALE = 100;
 /** 响应式状态（模块级单例）：textScaleRef 由 App.vue watch 联动 token.fontSize */
 export const textScaleRef = ref(100);
 export const zoomScaleRef = ref(100);
+/** 行间距比例（100 = antd 默认行高），同样持久化在 localStorage */
+export const lineScaleRef = ref(100);
 
 export function getTextScale(): number {
   return textScaleRef.value;
@@ -42,6 +53,10 @@ export function getTextScale(): number {
 
 export function getZoomScale(): number {
   return zoomScaleRef.value;
+}
+
+export function getLineScale(): number {
+  return lineScaleRef.value;
 }
 
 /** 百分比 → antd token 基准字号（px） */
@@ -59,11 +74,24 @@ export function calcControlHeight(percent: number): number {
  *
  * 派生 token（controlHeightSM/LG、菜单项高度等）都由 controlHeight 推导，改这一个即可。
  */
-export function buildFontTokens(percent: number): { fontSize: number; controlHeight: number } {
+export function buildFontTokens(percent: number): {
+  fontSize: number;
+  controlHeight: number;
+  lineHeight: number;
+} {
   return {
     fontSize: calcTextFontSize(percent),
     controlHeight: calcControlHeight(percent),
+    // 行高与字号是两个独立维度：这里直接读行距档位，不跟着 text 比例走
+    lineHeight: calcLineHeight(getLineScale()),
   };
+}
+
+/** 百分比 → antd token.lineHeight（无单位倍数） */
+export function calcLineHeight(percent: number): number {
+  const pct = Number.isNaN(Number(percent)) ? 100 : Number(percent);
+  // 保留 4 位小数，避免浮点尾差让 antd 算出不同的行盒高度
+  return Math.round(((BASE_LINE_HEIGHT * pct) / 100) * 10000) / 10000;
 }
 
 /** 按 5% 步进取整后收敛到 [min, max] */
@@ -123,8 +151,8 @@ export function applyZoomScale(
 }
 
 /** 读回持久化的缩放设置；无存储、损坏或越界一律回到安全值 */
-export function readStoredScale(): { text: number; zoom: number } {
-  const fallback = { text: DEFAULT_SCALE, zoom: DEFAULT_SCALE };
+export function readStoredScale(): { text: number; zoom: number; line: number } {
+  const fallback = { text: DEFAULT_SCALE, zoom: DEFAULT_SCALE, line: DEFAULT_SCALE };
   let raw: string | null = null;
   try {
     raw = window.localStorage.getItem(STORAGE_KEY);
@@ -139,6 +167,7 @@ export function readStoredScale(): { text: number; zoom: number } {
     return {
       text: clampScale(Number(parsed?.text), SCALE_RANGES.text[0], SCALE_RANGES.text[1]),
       zoom: clampScale(Number(parsed?.zoom), SCALE_RANGES.zoom[0], SCALE_RANGES.zoom[1]),
+      line: clampScale(Number(parsed?.line), SCALE_RANGES.line[0], SCALE_RANGES.line[1]),
     };
   } catch (e) {
     return fallback;
@@ -146,7 +175,7 @@ export function readStoredScale(): { text: number; zoom: number } {
 }
 
 /** 更新响应式状态并持久化（是否落到 DOM 由调用方决定） */
-export function setScale(type: 'text' | 'zoom', percent: number): void {
+export function setScale(type: 'text' | 'zoom' | 'line', percent: number): void {
   const value = clampScale(
     Number(percent),
     SCALE_RANGES[type][0],
@@ -154,6 +183,8 @@ export function setScale(type: 'text' | 'zoom', percent: number): void {
   );
   if (type === 'text') {
     textScaleRef.value = value;
+  } else if (type === 'line') {
+    lineScaleRef.value = value;
   } else {
     zoomScaleRef.value = value;
   }
@@ -161,7 +192,7 @@ export function setScale(type: 'text' | 'zoom', percent: number): void {
 }
 
 /** 恢复默认（100%） */
-export function resetScale(type: 'text' | 'zoom', el?: HTMLElement): void {
+export function resetScale(type: 'text' | 'zoom' | 'line', el?: HTMLElement): void {
   setScale(type, DEFAULT_SCALE);
   if (type === 'zoom') {
     applyZoomScale(DEFAULT_SCALE, el);
@@ -170,7 +201,10 @@ export function resetScale(type: 'text' | 'zoom', el?: HTMLElement): void {
 
 function persist(): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ text: textScaleRef.value, zoom: zoomScaleRef.value }));
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ text: textScaleRef.value, zoom: zoomScaleRef.value, line: lineScaleRef.value }),
+    );
   } catch (e) {
     // 隐私模式等场景写不进 localStorage：缩放仍然生效，只是刷新后不保留
   }
@@ -185,5 +219,6 @@ export function initFontScale(el: HTMLElement | { style: Record<string, string> 
   const stored = readStoredScale();
   textScaleRef.value = stored.text;
   zoomScaleRef.value = stored.zoom;
+  lineScaleRef.value = stored.line;
   applyZoomScale(stored.zoom, el);
 }

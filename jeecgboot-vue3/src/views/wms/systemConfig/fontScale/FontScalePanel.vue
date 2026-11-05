@@ -57,26 +57,41 @@
     clampScale,
     getTextScale,
     getZoomScale,
+    getLineScale,
     setScale,
   } from '/@/hooks/web/useFontScale';
 
   /**
    * 字体缩放设置面板。
    *
-   * type=text 联动 antd token 基准字号；type=zoom 对整页写 CSS zoom。
+   * type=text 联动 antd token 基准字号；type=zoom 对整页写 CSS zoom；
+   * type=line 只调 antd token.lineHeight（**垂直方向**的文字行高），不影响任何水平间距。
    * 拖动/输入/档位都会立即生效并自动保存（localStorage）。
    */
-  const props = defineProps<{ type: 'text' | 'zoom' }>();
+  const props = defineProps<{ type: 'text' | 'zoom' | 'line' }>();
 
-  const range = computed(() => (props.type === 'text' ? SCALE_RANGES.text : SCALE_RANGES.zoom));
-  const panelTitle = computed(() => (props.type === 'text' ? '文字缩放' : '界面缩放'));
-  const panelDesc = computed(() =>
-    props.type === 'text'
-      ? '调整系统内组件文字的基准字号（默认 14px × 比例），按钮、输入框等控件高度与表格、表单文字一并放大；布局结构不变，个别页面写死的字号不受影响。'
-      : '对整个页面（含弹窗、消息提示）整体等比缩放，效果类似浏览器的 Ctrl + 滚轮。'
+  const range = computed(() => SCALE_RANGES[props.type]);
+
+  const panelTitle = computed(
+    () => ({ text: '文字缩放', zoom: '界面缩放', line: '行间距调节' })[props.type]
   );
 
-  const percent = ref<number>(props.type === 'text' ? getTextScale() : getZoomScale());
+  const panelDesc = computed(
+    () =>
+      ({
+        text: '调整系统内组件文字的基准字号（默认 14px × 比例），按钮、输入框等控件高度与表格、表单文字一并放大；布局结构不变，个别页面写死的字号不受影响。',
+        zoom: '对整个页面（含弹窗、消息提示）整体等比缩放，效果类似浏览器的 Ctrl + 滚轮。',
+        line: '只调整文字的垂直行高（antd token.lineHeight，默认 100%），表格行、表单标签、列表文字的行与行之间会更松或更紧；字号与任何水平间距（列宽、字间距、控件宽度）都不受影响。',
+      })[props.type]
+  );
+
+  function currentValue(): number {
+    if (props.type === 'text') return getTextScale();
+    if (props.type === 'line') return getLineScale();
+    return getZoomScale();
+  }
+
+  const percent = ref<number>(currentValue());
 
   const marks = computed(() => {
     const [min, max] = range.value;
@@ -87,8 +102,13 @@
     return m;
   });
 
-  const presets = computed(() =>
-    props.type === 'text' ? [80, 100, 120, 150] : [50, 100, 125, 150, 200]
+  const presets = computed(
+    () =>
+      ({
+        text: [80, 100, 120, 150],
+        zoom: [50, 100, 125, 150, 200],
+        line: [80, 100, 120, 150, 180],
+      })[props.type]
   );
 
   function formatter(v?: number) {

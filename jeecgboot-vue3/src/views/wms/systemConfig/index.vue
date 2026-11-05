@@ -18,6 +18,7 @@
             <Menu.SubMenu key="fontScale" title="字体缩放">
               <a-menu-item key="fontScale-text">文字缩放</a-menu-item>
               <a-menu-item key="fontScale-zoom">界面缩放</a-menu-item>
+              <a-menu-item key="fontScale-line">行间距调节</a-menu-item>
             </Menu.SubMenu>
           </a-menu>
         </a-card>
@@ -27,6 +28,7 @@
       <a-col :xl="18" :lg="16" :md="24">
         <FontScalePanel v-if="currentGroup === 'fontScale-text'" type="text" />
         <FontScalePanel v-else-if="currentGroup === 'fontScale-zoom'" type="zoom" />
+        <FontScalePanel v-else-if="currentGroup === 'fontScale-line'" type="line" />
         <a-card v-else :bordered="false" size="small">
           <template #title>
             <span>{{ currentGroupName }}</span>

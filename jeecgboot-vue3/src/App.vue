@@ -17,7 +17,7 @@
   import { useRootSetting } from '/@/hooks/setting/useRootSetting';
   import { ThemeEnum } from '/@/enums/appEnum';
   import { changeTheme } from '/@/logics/theme/index';
-  import { buildFontTokens, getTextScale, initFontScale, textScaleRef } from '/@/hooks/web/useFontScale';
+  import { buildFontTokens, getTextScale, initFontScale, lineScaleRef, textScaleRef } from '/@/hooks/web/useFontScale';
 
   const appStore = useAppStore();
   // 解决日期时间国际化问题
@@ -100,6 +100,16 @@
     { immediate: true }
   );
   // 文字缩放比例变化时同步 antd token 基准字号（界面缩放走 body zoom，与此处无关）
+  // 行间距变化同样走这条链路：buildFontTokens 会按当前行距档位算 lineHeight
+  watch(lineScaleRef, () => {
+    appTheme.value = {
+      ...appTheme.value,
+      token: {
+        ...appTheme.value.token,
+        ...buildFontTokens(getTextScale()),
+      },
+    };
+  });
   watch(textScaleRef, (pct) => {
     appTheme.value = {
       ...appTheme.value,
