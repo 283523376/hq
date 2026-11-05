@@ -90,6 +90,7 @@
     columns: recordColumns,
     rowKey: 'id',
     formConfig: { schemas: recordSearchFormSchema },
+    useSearchForm: true,
     actionColumn: { width: 100 },
     showIndexColumn: false,
   });

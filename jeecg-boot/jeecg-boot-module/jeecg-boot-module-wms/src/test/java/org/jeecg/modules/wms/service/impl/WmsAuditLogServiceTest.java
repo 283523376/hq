@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -185,6 +186,46 @@ class WmsAuditLogServiceTest {
         assertTrue(captor.getValue().getParamNameValuePairs().values().stream()
                         .anyMatch(v -> String.valueOf(v).contains("MO1")),
                 "单号条件没有进入参数表：" + captor.getValue().getParamNameValuePairs());
+    }
+
+    /**
+     * 全局关键词：一个框同时搜业务单号与操作人（口径：单号 OR 操作人，任一子串命中即返回）。
+     * 三断言：命中 biz_no、命中 operator、关键词为空时不产生任何单号/操作人条件。
+     */
+    @Test
+    void pageQuery_keyword_hitsBizNoOrOperator_blankAddsNothing() {
+        when(mapper.selectPage(any(), any())).thenReturn(
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<WmsAuditLog>());
+
+        org.jeecg.modules.wms.dto.WmsAuditQueryDTO query = new org.jeecg.modules.wms.dto.WmsAuditQueryDTO();
+        query.setKeyword("MO1");
+        service.pageQuery(query);
+
+        org.jeecg.modules.wms.dto.WmsAuditQueryDTO blank = new org.jeecg.modules.wms.dto.WmsAuditQueryDTO();
+        blank.setKeyword("   ");
+        service.pageQuery(blank);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WmsAuditLog>>
+                captor = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(mapper, times(2)).selectPage(any(), captor.capture());
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WmsAuditLog> kwWrapper = captor.getAllValues().get(0);
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WmsAuditLog> blankWrapper = captor.getAllValues().get(1);
+
+        String kwSql = kwWrapper.getSqlSegment();
+        // 命中单号
+        assertTrue(kwSql.contains("biz_no"), "实际：" + kwSql);
+        // 命中操作人，且与单号是 OR 关系
+        assertTrue(kwSql.contains("operator"), "实际：" + kwSql);
+        assertTrue(kwSql.toUpperCase().contains(" OR "), "单号与操作人必须是 OR 关系：" + kwSql);
+        // like 值包成 %MO1% 进参数表
+        assertTrue(kwWrapper.getParamNameValuePairs().values().stream()
+                        .anyMatch(v -> "%MO1%".equals(String.valueOf(v))),
+                "关键词没有进入参数表：" + kwWrapper.getParamNameValuePairs());
+        // 不命中：空白关键词不加任何单号/操作人条件
+        String blankSql = blankWrapper.getSqlSegment();
+        assertFalse(blankSql.contains("biz_no"), "空关键词不应加条件：" + blankSql);
+        assertFalse(blankSql.contains("operator"), "空关键词不应加条件：" + blankSql);
     }
 
     /** 分页参数越界要夹住，避免 pageSize=100000 拖垮库。 */

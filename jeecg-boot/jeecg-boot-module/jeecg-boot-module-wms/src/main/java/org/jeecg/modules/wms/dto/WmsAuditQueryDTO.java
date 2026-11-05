@@ -28,6 +28,13 @@ public class WmsAuditQueryDTO implements Serializable {
     @Schema(description = "操作人")
     private String operator;
 
+    /**
+     * 全局关键词：业务单号/操作人 任意连续子串，口径为「单号 OR 操作人」任一命中即返回。
+     * 与 bizNo/operator 单独条件可叠加（关键词成组括号，不与其余 eq 条件串优先级）。
+     */
+    @Schema(description = "全局关键词：业务单号/操作人 任意连续子串")
+    private String keyword;
+
     @Schema(description = "通道")
     private String channel;
 

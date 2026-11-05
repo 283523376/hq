@@ -51,8 +51,8 @@ export const columns: BasicColumn[] = [
 ];
 
 // 全局关键词用 Input 发裸值：JInput 会包 `*xxx*`，后端手写 like 不剥星号会恒 0 行
-// （详见 materialGroupMap.data.ts 说明）。注意：WmsAuditQueryDTO 目前没有 keyword 字段、
-// pageQuery 也不消费它，本框当前不产生任何过滤效果；等后端补 keyword 模糊时这里发裸值即正确。
+// （详见 materialGroupMap.data.ts 说明）。后端 WmsAuditQueryDTO.keyword 已消费该值：
+// biz_no / operator 双列 like、单号 OR 操作人（见 WmsAuditLogServiceImpl.pageQuery）。
 export const searchFormSchema: FormSchema[] = [
   {
     label: '全局关键词',

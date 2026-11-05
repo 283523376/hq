@@ -110,6 +110,12 @@ public class WmsAuditLogServiceImpl implements IWmsAuditLogService {
         if (oConvertUtils.isNotEmpty(q.getOperator())) {
             wrapper.eq(WmsAuditLog::getOperator, q.getOperator().trim());
         }
+        String keyword = q.getKeyword() == null ? null : q.getKeyword().trim();
+        if (oConvertUtils.isNotEmpty(keyword)) {
+            // 全局关键词一个框同时搜业务单号与操作人（口径：单号 OR 操作人）。
+            // 必须括号成组，否则 OR 会和上面各 eq 条件串成错误优先级。
+            wrapper.and(w -> w.like(WmsAuditLog::getBizNo, keyword).or().like(WmsAuditLog::getOperator, keyword));
+        }
         if (oConvertUtils.isNotEmpty(q.getChannel())) {
             wrapper.eq(WmsAuditLog::getChannel, q.getChannel());
         }

@@ -70,6 +70,7 @@
     columns,
     formConfig: { schemas: searchFormSchema },
     showTableSetting: true,
+    useSearchForm: true,
     actionColumn: { width: 160, title: '操作', dataIndex: 'action' },
   });
 
