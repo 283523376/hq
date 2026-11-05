@@ -187,12 +187,41 @@ public class WmsKingdeePurchaseReceiveWriterImpl implements IWmsKingdeePurchaseR
             // 字段名是小写 d（FSupplierId）：2026-11-04 金蝶报错 FieldName 直接给出，
             // 大写 FSupplierID 会被当成没传（与受托单 STK_OEMInStock 的"大写 ID"规律相反）
             model.put("FSupplierId", dict(supplier));
+            // 供货方/结算方/付款方：金蝶界面新增时由供应商自动带出，API 需显式给
+            model.put("FSupplyId", dict(supplier));
+            model.put("FSettleId", dict(supplier));
+            model.put("FChargeId", dict(supplier));
         }
         // 货主是组织：字段名小写 d（FOwnerIdHead），采购组织同为本组织
         model.put("FOwnerTypeIdHead", WmsConstants.KD_OWNER_TYPE_ORG);
         model.put("FOwnerIdHead", dict(orgNumber));
         model.put("FPurOrgId", dict(orgNumber));
+        // 需求组织：与收料组织一致（金蝶界面默认带出）
+        model.put("FDemandOrgId", dict(orgNumber));
+        // 采购业务类型：不传会导致头字段校验错位
+        model.put("FBusinessType", WmsConstants.KD_BUSINESS_TYPE_PURCHASE);
         model.put("FNote", note(order));
+        // 财务信息子实体：结算币别是硬必填，缺了报「结算币别是必填项」；
+        // 且该子实体缺失会连带把整个 Model 的校验错位成「供应商/货主必填」（实测）
+        Map<String, Object> finance = new LinkedHashMap<>();
+        finance.put("FEntryId", 0);
+        finance.put("FSettleOrgId", dict(orgNumber));
+        finance.put("FSettleCurrId", dict(WmsConstants.KD_CURRENCY_CNY));
+        finance.put("FLocalCurrId", dict(WmsConstants.KD_CURRENCY_CNY));
+        finance.put("FIsIncludedTax", "false");
+        finance.put("FISPRICEEXCLUDETAX", "false");
+        finance.put("FExchangeRate", 1);
+        finance.put("FAllDisCount", 0);
+        model.put("FinanceEntity", finance);
+        // 金蝶 Save 对「模板键缺失」敏感：缺键会导致整个 Model 校验错位，
+        // 报出来的却是无关字段的「必填项」（2026-11-05 实测，13 轮误判的根因）
+        model.putIfAbsent("FReceiveDeptId", dict(""));
+        model.putIfAbsent("FStockGroupId", dict(""));
+        model.putIfAbsent("FReceiverId", dict(""));
+        model.putIfAbsent("FCorrespondOrgId", dict(""));
+        model.putIfAbsent("FPurDeptId", dict(""));
+        model.putIfAbsent("FPurGroupId", dict(""));
+        model.putIfAbsent("FPurchaserId", dict(""));
         model.put(ENTRY_KEY, entries);
 
         log.info("回写金蝶{}({})：WMS 单号 {}，明细 {} 行，供应商={}", BILL_NAME, formId,

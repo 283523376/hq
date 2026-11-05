@@ -1047,6 +1047,10 @@ public final class WmsConstants {
      * <p>收料单头/分录均按此值声明货主（{@code FOwnerTypeIdHead} / {@code FOwnerTypeId}）。
      */
     public static final String KD_OWNER_TYPE_ORG = "BD_OwnerOrg";
+    /** 金蝶采购业务类型（Purchasing business type）：采购收料单头必填。 */
+    public static final String KD_BUSINESS_TYPE_PURCHASE = "CG";
+    /** 金蝶本位币编码（人民币）：结算币别/本地币别硬必填。 */
+    public static final String KD_CURRENCY_CNY = "PRE001";
 
     /**
      * 金蝶受托加工材料入库单单据类型（{@code STK_OEMInStock}，2026-11-04 测试账套实测）。

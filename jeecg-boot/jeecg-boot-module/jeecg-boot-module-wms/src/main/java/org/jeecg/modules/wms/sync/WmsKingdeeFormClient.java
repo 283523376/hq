@@ -137,7 +137,20 @@ public class WmsKingdeeFormClient {
      */
     public WmsKingdeeResult save(String formId, Map<String, Object> model, boolean isDeleteEntry) {
         Map<String, Object> data = new LinkedHashMap<>();
+        // 与金蝶 WebAPI 官方样例逐键对齐：这些参数缺失会让服务端按不同路径解析 Model，
+        // 把错误报成无关字段的「必填项」（2026-11-05 逐键 diff 实测）
         data.put("NeedUpDateFields", new ArrayList<>());
+        data.put("NeedReturnFields", new ArrayList<>());
+        data.put("SubSystemId", "");
+        data.put("IsVerifyBaseDataField", "false");
+        data.put("IsEntryBatchFill", "true");
+        data.put("ValidateFlag", "true");
+        data.put("NumberSearch", "true");
+        data.put("IsAutoAdjustField", "true");
+        data.put("InterationFlags", "");
+        data.put("IgnoreInterationFlag", "");
+        data.put("IsControlPrecision", "false");
+        data.put("ValidateRepeatJson", "false");
         // 与金蝶 WebAPI 官方样例对齐：IsDeleteEntry 传字符串 "true"/"false"，
         // 不带 IsEntryBatchFill。注：这两项经实测**不是** Save 失败的成因，
         // 仅为消除与官方样例的差异，便于下次排错时缩小变量。
@@ -209,6 +222,12 @@ public class WmsKingdeeFormClient {
             return WmsKingdeeResult.fail("金蝶鉴权失败");
         }
         try {
+            if ("true".equals(System.getProperty("wms.kd.dump"))) {
+                try {
+                    log.info("金蝶请求原文 {}：{}", path, new com.fasterxml.jackson.databind.ObjectMapper()
+                            .writeValueAsString(body));
+                } catch (Exception ignore) { }
+            }
             ResponseEntity<String> response = restTemplate.postForEntity(
                     join(properties.getBaseUrl(), path), new HttpEntity<>(body, headers), String.class);
             String raw = response.getBody() == null ? "" : response.getBody();
