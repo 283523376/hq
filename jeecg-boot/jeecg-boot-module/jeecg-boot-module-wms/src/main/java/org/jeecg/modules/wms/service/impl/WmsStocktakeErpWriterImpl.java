@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.wms.entity.WmsStocktakeDetail;
 import org.jeecg.modules.wms.entity.WmsStocktakeOrder;
+import org.jeecg.modules.wms.entity.WmsMaterial;
+import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
@@ -48,15 +50,18 @@ public class WmsStocktakeErpWriterImpl {
     private final WmsKingdeeFormClient formClient;
     private final WmsStocktakeDetailMapper detailMapper;
     private final WmsStocktakeOrderMapper orderMapper;
+    private final WmsMaterialMapper materialMapper;
 
     public WmsStocktakeErpWriterImpl(WmsKingdeeProperties properties,
                                      WmsKingdeeFormClient formClient,
                                      WmsStocktakeDetailMapper detailMapper,
-                                     WmsStocktakeOrderMapper orderMapper) {
+                                     WmsStocktakeOrderMapper orderMapper,
+                                     WmsMaterialMapper materialMapper) {
         this.properties = properties;
         this.formClient = formClient;
         this.detailMapper = detailMapper;
         this.orderMapper = orderMapper;
+        this.materialMapper = materialMapper;
     }
 
     /** 盘盈 → 其他入库单 QTRK。 */
@@ -90,10 +95,23 @@ public class WmsStocktakeErpWriterImpl {
             if ((gain && !isGain) || (!gain && !isLoss)) {
                 continue;
             }
+            // 盘点明细只存 material_id，material_code 一直是空的（2026-11-06 真账套实测：
+            // 直接拿 code 会发出 {"FNumber": null}，金蝶报「物料编码是必填项」）。
+            // 这里按 id 反查物料编码，查不到就显式失败，不发半成品报文。
+            String materialCode = resolveMaterialCode(detail);
+            if (!StringUtils.hasText(materialCode)) {
+                return WmsOrderSyncResult.fail("盘点明细[" + detail.getId()
+                        + "]物料编码为空且按 id 反查失败，无法回写" + formId);
+            }
             Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("FMaterialId", mapByNumber(detail.getMaterialCode()));
+            entry.put("FMaterialId", mapByNumber(materialCode));
             entry.put("FQty", diff.abs());
-            entry.put("FLot", detail.getBatchNo());
+            // 批号必须是字典：QTCK（STK_MisDelivery）收到裸字符串会报
+            // 「字段Key：FLot…格式错误，不能转换为字典类型」（2026-11-06 真账套实测；
+            // 盘盈侧 QTRK 恰好容忍裸串，所以只挂了一半，别据此认为两边口径不同）
+            if (StringUtils.hasText(detail.getBatchNo())) {
+                entry.put("FLot", mapByNumber(detail.getBatchNo()));
+            }
             entries.add(entry);
         }
         if (entries.isEmpty()) {
@@ -106,6 +124,10 @@ public class WmsStocktakeErpWriterImpl {
         Map<String, Object> model = new LinkedHashMap<>();
         model.put("FDate", java.time.LocalDate.now().toString());
         model.put("FStockId", mapByNumber(properties.getStocktake().getStockCode()));
+        // 其他出库单必填之一：部门（或客户），缺了报「部门和客户不允许同时为空！」（真账套实测）
+        if (StringUtils.hasText(properties.getStocktake().getDeptNumber())) {
+            model.put("FDeptId", mapByNumber(properties.getStocktake().getDeptNumber().trim()));
+        }
         model.put("FEntity", entries);
         WmsKingdeeResult result = formClient.save(formId, model);
         if (!result.isSuccess()) {
@@ -143,6 +165,18 @@ public class WmsStocktakeErpWriterImpl {
         patch.setErpBillNo(joined);
         orderMapper.updateById(patch);
         order.setErpBillNo(joined);
+    }
+
+    /** 明细里的物料编码可能为空（历史数据/建单只写了 id），回写前按 id 兜底反查。 */
+    private String resolveMaterialCode(WmsStocktakeDetail detail) {
+        if (StringUtils.hasText(detail.getMaterialCode())) {
+            return detail.getMaterialCode().trim();
+        }
+        if (!StringUtils.hasText(detail.getMaterialId())) {
+            return null;
+        }
+        WmsMaterial material = materialMapper.selectById(detail.getMaterialId());
+        return material == null ? null : material.getMaterialCode();
     }
 
     private static Map<String, Object> mapByNumber(String number) {

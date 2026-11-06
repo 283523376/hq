@@ -657,6 +657,14 @@ wms:
             bill-type: "SCRKD01_SYS"
         # 默认业务流程：现网是否统一尚未确认、后续可能扩展；仅用于提示与将来 WMS 建单
         default-business-flow: "${KINGDEE_DEFAULT_BUSINESS_FLOW:生产直接入库流程}"
+        # ---- 盘点差异回写（盘盈 QTRK / 盘亏 QTCK，其他出入库单） ----
+        # stock-code 为空时回写**明确报错**（不静默成功）；2026-11-06 按方案 A 填立库 D.02
+        stocktake:
+          stock-code: "${KINGDEE_STOCKTAKE_STOCK_CODE:D.02}"
+          # 盘亏走其他出库单，金蝶要求「部门或客户」必填（2026-11-06 实测）；取 101 组织实际发货部门
+          dept-number: "${KINGDEE_STOCKTAKE_DEPT:10.10.11.11}"
+          # MIS = 其他出入库单（默认）；预留 STOCK_COUNT
+          writeback-mode: "MIS"
         # ---- CK-001/CK-002 出库回写（单据类型均已实测存在） ----
         pick-bill-type: "${KINGDEE_PICK_BILL_TYPE:SCLLD01_SYS}"
         sale-order-bill-type: "${KINGDEE_SALE_ORDER_BILL_TYPE:XSDD01_SYS}"

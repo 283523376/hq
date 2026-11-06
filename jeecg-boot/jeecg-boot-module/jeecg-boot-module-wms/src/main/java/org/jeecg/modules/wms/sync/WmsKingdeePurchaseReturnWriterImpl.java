@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>头：{@code FSupplierId.FNumber}（View 里实查的键名为 {@code SUPPLIERID}）、
  *       {@code FStockOrgId} / {@code FStockId.FNumber}、{@code FBillTypeID.FNumber}
- *       （{@link WmsConstants#KD_BILL_TYPE_PURCHASE_RETURN}）、{@code FDate}、{@code FNote}；</li>
+ *       （{@link WmsConstants#KD_BILL_TYPE_PURCHASE_RETURN}）、{@code FDate}、{@code FDescription}；</li>
  *   <li>数量字段：<b>{@code FRMREALQTY}（实退数量）/ {@code FRMMUSTQTY}（应退数量）</b>，
  *       实查 {@code FQty} 不存在；本类写实退数量；</li>
  *   <li>批次：{@code FLot.FNumber}。</li>
@@ -55,7 +55,7 @@ import java.util.regex.Pattern;
  * Writer 不因开关关闭而返回 mock 成功。
  *
  * <p>{@link #existsByReference(String)} 供幂等查重：用<b>等值</b>匹配
- * {@code FNote='来源单:<ref>'} 查询金蝶是否已有该退货单。不用 LIKE：金蝶 FilterString
+ * {@code FDescription='来源单:<ref>'} 查询金蝶是否已有该退货单。不用 LIKE：金蝶 FilterString
  * 对 LIKE 的支持与底层方言转义层数均未验证。查询失败抛错而不是返回 false——
  * 把查询失败当成「不存在」会让重试重复开单。
  *
@@ -70,8 +70,16 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
     private static final WmsConfigKey FORM_KEY = WmsConfigKey.KD_FORM_PURCHASE_RETURN;
     /** 幂等定位符（来源单号）的合法形态：WMS 单号即字母/数字/下划线/连字符。 */
     private static final Pattern REFERENCE_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
-    /** 分录实体键：View 显示 PUR_MRBENTRY，Save 侧按 K3Cloud 惯例加 F 前缀（待试写确认）。 */
-    static final String ENTRY_KEY = "FPUR_MRBENTRY";
+    /**
+     * 分录实体键：**实测是 {@code FPURMRBENTRY}**（无下划线）。
+     *
+     * <p>2026-11-06 真账套逐个试写：{@code FPUR_MRBENTRY} / {@code FEntity} / {@code FBillEntry}
+     * 都会被当成「没给分录」，金蝶随即报一串「第1行字段 XX 是必填项」的误导性错误；
+     * 只有 {@code FPURMRBENTRY} 才真正解析分录。别再按「表名 + ENTRY」猜。
+     */
+    static final String ENTRY_KEY = "FPURMRBENTRY";
+    /** 分录必填的货主类型（与入库/出库回写同一口径）。 */
+    private static final String OWNER_TYPE_ORG = "BD_OwnerOrg";
 
     private final WmsKingdeeFormClient formClient;
     private final IWmsSystemConfigService configService;
@@ -122,6 +130,21 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
 
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("FMaterialId", Map.of("FNumber", record.getMaterialCode()));
+        // 库存单位必填（2026-11-06 真账套试写报「库存单位是必填项」）。
+        // 单位以金蝶物料档案为准（ERP 是主数据唯一来源），不取 WMS 侧冗余字段：
+        // 物料档案查不到就显式失败，不发缺单位的报文
+        String unit = resolveMaterialUnit(record.getMaterialCode());
+        // 分录必填：库存单位 / 计价单位 / 采购单位（三者都传同一库存单位）、货主、供应商、仓库与库存状态。
+        // 全部是 2026-11-06 真账套试写出来的必填项，少一个就整单失败。
+        entry.put("FUnitID", Map.of("FNumber", unit));
+        entry.put("FPRICEUNITID", Map.of("FNumber", unit));
+        entry.put("FCarryUnitId", Map.of("FNumber", unit));
+        entry.put("FOwnerTypeId", OWNER_TYPE_ORG);
+        entry.put("FOWNERID", Map.of("FNumber", properties.getDefaultOrgNumber()));
+        entry.put("FStockId", Map.of("FNumber", stockCode));
+        if (oConvertUtils.isNotEmpty(properties.getStockStatusId())) {
+            entry.put("FStockStatusId", Map.of("FNumber", properties.getStockStatusId()));
+        }
         // PUR_MRB 实查数量字段为 FRMREALQTY（实退数量），FQty 不存在
         entry.put("FRMREALQTY", qty);
         if (oConvertUtils.isNotEmpty(record.getBatchNo())) {
@@ -139,6 +162,8 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
             // 受托方（基础资料按编码绑定）；不良品记录不存受托方，由调用方反查入库单的客户后传入。
             // 先 trim 再判空：纯空格不得发成 {FNumber: ""}，金蝶会报必填项缺失
             model.put("FSupplierId", Map.of("FNumber", supplier));
+            // 分录级供应商也是必填（真账套实测），与表头同一口径
+            entry.put("FSupplierID", Map.of("FNumber", supplier));
         }
         String orgNumber = properties.getDefaultOrgNumber();
         if (oConvertUtils.isEmpty(orgNumber) || orgNumber.trim().isEmpty()) {
@@ -146,8 +171,10 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
         }
         model.put("FStockOrgId", Map.of("FNumber", orgNumber.trim()));
         model.put("FStockId", Map.of("FNumber", stockCode));
-        // 备注恰好为「来源单:<ref>」——它同时是幂等定位符，不能拼原因等可变内容
-        model.put("FNote", "来源单:" + reference);
+        // 备注恰好为「来源单:<ref>」——它同时是幂等定位符，不能拼原因等可变内容。
+        // 2026-11-06 真账套试写：实体属性是 DESCRIPTION，写 FNote 报「实体不存在此属性」，
+        // 查得到 FNote 只是查询层别名，Save 侧必须用 FDescription。
+        model.put("FDescription", "来源单:" + reference);
         model.put(ENTRY_KEY, entries);
 
         log.info("回写金蝶{}({})：不良记录 {}，来源单 {}，受托方 {}，仓库 {}", BILL_NAME, formId,
@@ -155,13 +182,35 @@ public class WmsKingdeePurchaseReturnWriterImpl implements IWmsKingdeePurchaseRe
         return formClient.save(formId, model);
     }
 
+    /**
+     * 取物料的库存单位编码（{@code BD_Material.FBaseUnitId.FNumber}）。
+     *
+     * <p>为什么不在 WMS 侧读 {@code wms_material.unit}：单位属于 ERP 主数据，
+     * 回写单据的一切字段都以金蝶为准（ERP 是单据信息唯一来源）；查不到直接失败，
+     * 而不是把可能过期的本地值写进单据。
+     */
+    private String resolveMaterialUnit(String materialCode) {
+        String filter = "FNumber='" + materialCode.replace("'", "''") + "'";
+        WmsKingdeeResult result = formClient.executeBillQuery("BD_Material", "FBaseUnitId.FNumber", filter, 1);
+        if (!result.isSuccess()) {
+            throw new IllegalStateException("查询物料[" + materialCode + "]库存单位失败："
+                    + result.getMessage() + "（无法回写" + BILL_NAME + "）");
+        }
+        if (result.getRows() == null || result.getRows().isEmpty()
+                || result.getRows().get(0).isEmpty()
+                || oConvertUtils.isEmpty(String.valueOf(result.getRows().get(0).get(0)))) {
+            throw new IllegalStateException("物料[" + materialCode + "]在金蝶没有库存单位，无法回写" + BILL_NAME);
+        }
+        return String.valueOf(result.getRows().get(0).get(0)).trim();
+    }
+
     @Override
     public boolean existsByReference(String ref) {
         String reference = requireReference(ref);
         String formId = requireFormId();
-        // 等值匹配：写入的 FNote 恰好是「来源单:<ref>」，两边同一口径；
+        // 等值匹配：写入的 FDescription 恰好是「来源单:<ref>」，两边同一口径；
         // LIKE 在金蝶 FilterString 下的可用性与方言转义层数未验证，不采用
-        String filter = "FNote='" + "来源单:" + reference.replace("'", "''") + "'";
+        String filter = "FDescription='" + "来源单:" + reference.replace("'", "''") + "'";
         WmsKingdeeResult result = formClient.executeBillQuery(formId, "FBillNo", filter, 1);
         if (!result.isSuccess()) {
             // 查重失败不能当成「不存在」：那会在重试时重复开单

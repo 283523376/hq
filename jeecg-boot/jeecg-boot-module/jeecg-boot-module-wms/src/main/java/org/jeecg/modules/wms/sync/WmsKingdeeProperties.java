@@ -282,6 +282,14 @@ public class WmsKingdeeProperties {
         /** 回写用的金蝶仓库编码；空 = 回写明确报错。 */
         private String stockCode;
 
+        /**
+         * 回写单据的部门编码（{@code FDeptId}）。
+         *
+         * <p>其他出库单（QTCK/STK_MisDelivery）强制「部门和客户不允许同时为空」——
+         * 2026-11-06 真账套实测，不传部门直接 Save 失败；其他入库单不要求，但带上也无害。
+         */
+        private String deptNumber;
+
         /** 回写单据形态：MIS=其他出入库单；预留 STOCK_COUNT。 */
         private String writebackMode = "MIS";
     }

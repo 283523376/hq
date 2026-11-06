@@ -39,6 +39,7 @@ class WmsStocktakeErpWriterTest {
     private WmsKingdeeProperties properties;
     private WmsStocktakeDetailMapper detailMapper;
     private WmsStocktakeOrderMapper orderMapper;
+    private org.jeecg.modules.wms.mapper.WmsMaterialMapper materialMapper;
     private WmsStocktakeErpWriterImpl writer;
 
     @BeforeEach
@@ -48,7 +49,8 @@ class WmsStocktakeErpWriterTest {
         properties.setEnabled(true);
         detailMapper = mock(WmsStocktakeDetailMapper.class);
         orderMapper = mock(WmsStocktakeOrderMapper.class);
-        writer = new WmsStocktakeErpWriterImpl(properties, formClient, detailMapper, orderMapper);
+        materialMapper = mock(org.jeecg.modules.wms.mapper.WmsMaterialMapper.class);
+        writer = new WmsStocktakeErpWriterImpl(properties, formClient, detailMapper, orderMapper, materialMapper);
     }
 
     private WmsStocktakeOrder order() {

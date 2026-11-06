@@ -415,6 +415,9 @@ class WmsKingdeeGapWritersTest {
         stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
         when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "CTHD0001", "1003"));
+        // 2026-11-06 起 write 先查物料库存单位（分录必填），单测须打桩
+        when(formClient.executeBillQuery(eq("BD_Material"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("zhi")), null, null));
 
         WmsKingdeeResult result = purchaseReturnWriter.write(defectRecord(), "CUST01", "WH01");
 
@@ -424,7 +427,7 @@ class WmsKingdeeGapWritersTest {
         Map<String, Object> model = modelCaptor.getValue();
         assertFalse(model.containsKey("FBillNo"), "单号以 ERP 为准，不得传 FBillNo");
         // 备注恰好是幂等定位符，不拼原因等可变内容
-        assertEquals("来源单:RK20261104001", model.get("FNote"));
+        assertEquals("来源单:RK20261104001", model.get("FDescription"));
         // 受托方（客户）由调用方传入
         assertEquals(Map.of("FNumber", "CUST01"), model.get("FSupplierId"));
         assertEquals(Map.of("FNumber", "WH01"), model.get("FStockId"));
@@ -686,7 +689,7 @@ class WmsKingdeeGapWritersTest {
 
         ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
         verify(formClient).executeBillQuery(eq("PUR_MRRedReturn"), anyString(), filter.capture(), anyInt());
-        assertEquals("FNote='来源单:RK20261104001'", filter.getValue());
+        assertEquals("FDescription='来源单:RK20261104001'", filter.getValue());
     }
 
     /** 参考号字符集收紧：控制字符、引号、通配符、超长一律拒绝，不拼进查询。 */
@@ -725,19 +728,21 @@ class WmsKingdeeGapWritersTest {
         stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
         when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "CTHD0009", "1009"));
+        when(formClient.executeBillQuery(eq("BD_Material"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("zhi")), null, null));
         String ref = "RK_2026-1104";
 
         assertTrue(purchaseReturnWriter.write(defectRecord().setSourceBillNo(ref), "CUST01", "WH01").isSuccess());
 
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
         verify(formClient).save(eq("PUR_MRRedReturn"), modelCaptor.capture());
-        String note = String.valueOf(modelCaptor.getValue().get("FNote"));
+        String note = String.valueOf(modelCaptor.getValue().get("FDescription"));
         assertEquals("来源单:" + ref, note);
 
         when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
                 .thenAnswer(invocation -> {
                     String filter = invocation.getArgument(2);
-                    return ("FNote='" + note + "'").equals(filter)
+                    return ("FDescription='" + note + "'").equals(filter)
                             ? WmsKingdeeResult.ok("[]", List.of(List.of("CTHD0009")), null, null)
                             : WmsKingdeeResult.ok("[]", List.of(), null, null);
                 });
@@ -752,6 +757,8 @@ class WmsKingdeeGapWritersTest {
         stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
         when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "CTHD0010", "1010"));
+        when(formClient.executeBillQuery(eq("BD_Material"), anyString(), anyString(), anyInt()))
+                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("zhi")), null, null));
 
         purchaseReturnWriter.write(defectRecord(), "   ", "WH01");
 
