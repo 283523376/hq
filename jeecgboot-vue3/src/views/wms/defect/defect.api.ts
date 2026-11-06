@@ -34,7 +34,7 @@ export const recordInbound = (params) =>
   defHttp.post({ url: Api.inbound, params }, { successMessageMode: 'none' });
 
 /**
- * 受托不良退货（生成采购退货单）。
+ * 受托不良退货（生成受托加工材料退料单）。
  *
  * 返回更新后的记录：**`returnBillNo` 可能为空**——金蝶侧已存在同来源单据时后端只置
  * 「已退货」并留空单号等人工回填，页面必须把这种情况提示清楚，不能显示成失败。

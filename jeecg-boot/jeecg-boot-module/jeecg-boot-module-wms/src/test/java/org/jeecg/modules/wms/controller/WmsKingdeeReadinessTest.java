@@ -35,7 +35,7 @@ class WmsKingdeeReadinessTest {
             WmsConfigKey.KD_FORM_CONSIGNED_ORDER.getKey(),
             WmsConfigKey.KD_FORM_PURCHASE_INBOUND.getKey(),
             WmsConfigKey.KD_FORM_CONSIGNED_INBOUND.getKey(),
-            WmsConfigKey.KD_FORM_PURCHASE_RETURN.getKey()
+            WmsConfigKey.KD_FORM_CONSIGNED_RETURN.getKey()
     };
 
     private IWmsSystemConfigService configService;

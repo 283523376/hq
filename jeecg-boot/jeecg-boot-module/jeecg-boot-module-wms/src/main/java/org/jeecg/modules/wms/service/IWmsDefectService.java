@@ -11,7 +11,7 @@ import org.jeecg.modules.wms.vo.WmsScrapResultVO;
  * @Description: 不良品处置（XT-001）——查询废品仓台账、执行报废出库。
  *
  * <p>RK-005（2026-11-04）扩展两类不良来源：生产不良（入自有废品仓）与
- * 受托原材料不良（扣受托库存，处置二选一：入废品仓不转自有 / 退货生成采购退货单）。
+ * 受托原材料不良（扣受托库存，处置二选一：入废品仓不转自有 / 退货生成受托加工材料退料单）。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-11-02
@@ -58,7 +58,7 @@ public interface IWmsDefectService {
     void recordInbound(WmsDefectInboundDTO dto, String operator);
 
     /**
-     * 受托不良退货：反查受托方 → 查重/聚合 → 回写金蝶采购退货单 → Submit →
+     * 受托不良退货：反查受托方 → 查重/聚合 → 回写金蝶受托加工材料退料单 → Submit →
      * 回存 {@code return_bill_no} 并置已退货。
      *
      * <p>同一来源单的多条 RETURN 记录聚合共用一张退货单：物料+批次相同的聚合成一条分录

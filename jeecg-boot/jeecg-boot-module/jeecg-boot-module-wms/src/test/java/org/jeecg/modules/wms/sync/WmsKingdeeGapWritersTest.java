@@ -60,7 +60,7 @@ class WmsKingdeeGapWritersTest {
     private WmsKingdeeRawOrderReaderImpl reader;
     private WmsKingdeeConsignedInboundWriterImpl consignedWriter;
     private WmsKingdeePurchaseReceiveWriterImpl purchaseReceiveWriter;
-    private WmsKingdeePurchaseReturnWriterImpl purchaseReturnWriter;
+    private WmsKingdeeConsignedReturnWriterImpl consignedReturnWriter;
 
     @BeforeEach
     void setUp() {
@@ -81,7 +81,7 @@ class WmsKingdeeGapWritersTest {
                 formClient, configService, detailMapper, properties, warehouseResolver, materialService);
         purchaseReceiveWriter = new WmsKingdeePurchaseReceiveWriterImpl(
                 formClient, configService, detailMapper, properties, warehouseResolver, materialService);
-        purchaseReturnWriter = new WmsKingdeePurchaseReturnWriterImpl(
+        consignedReturnWriter = new WmsKingdeeConsignedReturnWriterImpl(
                 formClient, configService, properties);
     }
 
@@ -161,14 +161,14 @@ class WmsKingdeeGapWritersTest {
     }
 
     @Test
-    void purchaseReturnWriterShallFailExplicitlyWhenFormIdMissing() {
+    void consignedReturnWriterShallFailExplicitlyWhenFormIdMissing() {
         stubEmptyConfig();
 
         IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> purchaseReturnWriter.write(defectRecord(), "CUST01", "WH01"));
+                () -> consignedReturnWriter.write(defectRecord(), "CUST01", "WH01", null));
 
-        assertTrue(e.getMessage().contains("采购退货单"), e.getMessage());
-        assertTrue(e.getMessage().contains(WmsConfigKey.KD_FORM_PURCHASE_RETURN.getKey()), e.getMessage());
+        assertTrue(e.getMessage().contains("受托加工材料退料单"), e.getMessage());
+        assertTrue(e.getMessage().contains(WmsConfigKey.KD_FORM_CONSIGNED_RETURN.getKey()), e.getMessage());
         verify(formClient, never()).save(anyString(), any());
     }
 
@@ -411,38 +411,45 @@ class WmsKingdeeGapWritersTest {
     }
 
     @Test
-    void purchaseReturnWriterShouldBuildPayloadFromDefectRecord() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
-        when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
+    void consignedReturnWriterShouldBuildPayloadFromDefectRecord() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
+        when(formClient.save(eq("STK_OEMInStockRETURN"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "CTHD0001", "1003"));
         // 2026-11-06 起 write 先查物料库存单位（分录必填），单测须打桩
         when(formClient.executeBillQuery(eq("BD_Material"), anyString(), anyString(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("zhi")), null, null));
 
-        WmsKingdeeResult result = purchaseReturnWriter.write(defectRecord(), "CUST01", "WH01");
+        WmsKingdeeResult result = consignedReturnWriter.write(defectRecord(), "CUST01", "WH01", null);
 
         assertTrue(result.isSuccess());
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
-        verify(formClient).save(eq("PUR_MRRedReturn"), modelCaptor.capture());
+        verify(formClient).save(eq("STK_OEMInStockRETURN"), modelCaptor.capture());
         Map<String, Object> model = modelCaptor.getValue();
         assertFalse(model.containsKey("FBillNo"), "单号以 ERP 为准，不得传 FBillNo");
-        // 备注恰好是幂等定位符，不拼原因等可变内容
-        assertEquals("来源单:RK20261104001", model.get("FDescription"));
-        // 受托方（客户）由调用方传入
-        assertEquals(Map.of("FNumber", "CUST01"), model.get("FSupplierId"));
+        // 备注恰好是幂等定位符，不拼原因等可变内容（退料单备注字段是 FNote）
+        assertEquals("来源单:RK20261104001", model.get("FNote"));
+        // 受托方（客户）走 FCustId —— 采购退料单的 FSupplierId 在这里用不了
+        assertEquals(Map.of("FNumber", "CUST01"), model.get("FCustId"));
+        assertFalse(model.containsKey("FSupplierId"), "受托加工材料退料单没有供应商字段");
         assertEquals(Map.of("FNumber", "WH01"), model.get("FStockId"));
         assertEquals(Map.of("FNumber", "101"), model.get("FStockOrgId"));
-        assertEquals(Map.of("FNumber", WmsConstants.KD_BILL_TYPE_PURCHASE_RETURN),
+        assertEquals(Map.of("FNumber", WmsConstants.KD_BILL_TYPE_CONSIGNED_RETURN),
                 model.get("FBillTypeID"));
         // 日期取记录创建时间，不取执行瞬间
         assertEquals("2026-11-02", model.get("FDate"));
-        // PUR_MRB 的分录实体键按 K3Cloud 惯例推导为 FPUR_MRBENTRY（待真实试写确认）
-        Map<String, Object> entry = firstEntry(model, WmsKingdeePurchaseReturnWriterImpl.ENTRY_KEY);
+        // 分录实体键实测为 FBillEntry；照抄采购退料单的 FPURMRBENTRY 会被当成没给分录
+        assertEquals("FBillEntry", WmsKingdeeConsignedReturnWriterImpl.ENTRY_KEY);
+        Map<String, Object> entry = firstEntry(model, WmsKingdeeConsignedReturnWriterImpl.ENTRY_KEY);
         assertEquals(Map.of("FNumber", "WA.1"), entry.get("FMaterialId"));
-        // 数量字段为 FRMREALQTY（实退数量），FQty 不存在
-        assertEquals(new BigDecimal("2"), entry.get("FRMREALQTY"));
-        assertFalse(entry.containsKey("FQty"), "采购退料单的数量字段必须是 FRMREALQTY");
+        // 数量字段就是 FQty（不是采购退料单的 FRMREALQTY）
+        assertEquals(new BigDecimal("2"), entry.get("FQty"));
+        assertFalse(entry.containsKey("FRMREALQTY"), "受托加工材料退料单的数量字段是 FQty");
         assertEquals(Map.of("FNumber", "B009"), entry.get("FLot"));
+        // 真账套试写确定的其余分录必填项
+        assertEquals(Map.of("FNumber", "zhi"), entry.get("FUnitID"), "单位取物料档案的库存单位");
+        assertEquals(Map.of("FNumber", "WH01"), entry.get("FStockId"));
+        assertEquals("BD_Customer", entry.get("FOwnerTypeId"), "受托库存的货主类型是客户");
+        assertEquals(Map.of("FNumber", "CUST01"), entry.get("FOwnerId"));
     }
 
     // ------------------------------------------------------------------ 短装行 / 校验
@@ -568,7 +575,7 @@ class WmsKingdeeGapWritersTest {
 
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
         verify(formClient).save(eq("PUR_ReceiveBill"), modelCaptor.capture());
-        assertFalse(modelCaptor.getValue().containsKey("FSupplierId"));
+        assertFalse(modelCaptor.getValue().containsKey("FCustId"));
     }
 
     /** 来源类型不匹配必须抛错：采购单不能走受托入库、反之亦然。 */
@@ -588,14 +595,14 @@ class WmsKingdeeGapWritersTest {
         verify(formClient, never()).save(anyString(), any());
     }
 
-    /** 报废记录不能走采购退货单。 */
+    /** 报废记录不能走受托加工材料退料单。 */
     @Test
-    void purchaseReturnWriterShouldRejectNonReturnDisposal() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+    void consignedReturnWriterShouldRejectNonReturnDisposal() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
         WmsDefectRecord scrap = defectRecord().setDisposalType(WmsConstants.DEFECT_DISPOSAL_SCRAP);
 
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> purchaseReturnWriter.write(scrap, "CUST01", "WH01"));
+                () -> consignedReturnWriter.write(scrap, "CUST01", "WH01", null));
 
         assertTrue(e.getMessage().contains("disposal_type=RETURN"), e.getMessage());
         verify(formClient, never()).save(anyString(), any());
@@ -644,12 +651,12 @@ class WmsKingdeeGapWritersTest {
         verify(formClient, never()).save(anyString(), any());
     }
 
-    /** 退货缺仓库编码 → 显式失败（PUR_MRB 的 FStockId 必填）。 */
+    /** 退货缺仓库编码 → 显式失败（退料单的 FStockId 必填）。 */
     @Test
-    void purchaseReturnWriterShouldFailWhenWarehouseMissing() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+    void consignedReturnWriterShouldFailWhenWarehouseMissing() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
 
-        WmsKingdeeResult result = purchaseReturnWriter.write(defectRecord(), "CUST01", "  ");
+        WmsKingdeeResult result = consignedReturnWriter.write(defectRecord(), "CUST01", "  ", null);
 
         assertFalse(result.isSuccess());
         assertTrue(result.getMessage().contains("退货仓库"), result.getMessage());
@@ -660,46 +667,46 @@ class WmsKingdeeGapWritersTest {
 
     @Test
     void existsByReferenceShouldReturnTrueWhenBillExists() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
-        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(),
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
+        when(formClient.executeBillQuery(eq("STK_OEMInStockRETURN"), anyString(),
                 contains("RK20261104001"), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("CTHD0001")), null, null));
 
-        assertTrue(purchaseReturnWriter.existsByReference("RK20261104001"));
+        assertTrue(consignedReturnWriter.existsByReference("RK20261104001"));
     }
 
     @Test
     void existsByReferenceShouldReturnFalseWhenNoBill() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
-        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(),
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
+        when(formClient.executeBillQuery(eq("STK_OEMInStockRETURN"), anyString(),
                 contains("RK20261104001"), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
 
-        assertFalse(purchaseReturnWriter.existsByReference("RK20261104001"));
+        assertFalse(consignedReturnWriter.existsByReference("RK20261104001"));
     }
 
     /** 查重过滤条件必须是等值匹配，且与写入的备注（来源单:<ref>）同一口径。 */
     @Test
     void existsByReferenceShouldUseEqualityFilter() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
-        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
+        when(formClient.executeBillQuery(eq("STK_OEMInStockRETURN"), anyString(), anyString(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
 
-        assertFalse(purchaseReturnWriter.existsByReference("RK20261104001"));
+        assertFalse(consignedReturnWriter.existsByReference("RK20261104001"));
 
         ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
-        verify(formClient).executeBillQuery(eq("PUR_MRRedReturn"), anyString(), filter.capture(), anyInt());
-        assertEquals("FDescription='来源单:RK20261104001'", filter.getValue());
+        verify(formClient).executeBillQuery(eq("STK_OEMInStockRETURN"), anyString(), filter.capture(), anyInt());
+        assertEquals("FNote='来源单:RK20261104001'", filter.getValue());
     }
 
     /** 参考号字符集收紧：控制字符、引号、通配符、超长一律拒绝，不拼进查询。 */
     @Test
     void existsByReferenceShouldRejectInvalidReference() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
 
         for (String bad : new String[]{"RK\n001", "RK'001", "A%B", "A B", "R".repeat(65)}) {
             IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                    () -> purchaseReturnWriter.existsByReference(bad), "应拒绝参考号：" + bad);
+                    () -> consignedReturnWriter.existsByReference(bad), "应拒绝参考号：" + bad);
             assertTrue(e.getMessage().contains("不合法"), e.getMessage());
         }
         verify(formClient, never()).executeBillQuery(anyString(), anyString(), anyString(), anyInt());
@@ -707,11 +714,11 @@ class WmsKingdeeGapWritersTest {
 
     /** write 侧与 exists 侧共用同一套来源单号校验。 */
     @Test
-    void purchaseReturnWriterShouldRejectInvalidSourceBillNo() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
+    void consignedReturnWriterShouldRejectInvalidSourceBillNo() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
 
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> purchaseReturnWriter.write(defectRecord().setSourceBillNo("RK'001"), "CUST01", "WH01"));
+                () -> consignedReturnWriter.write(defectRecord().setSourceBillNo("RK'001"), "CUST01", "WH01", null));
 
         assertTrue(e.getMessage().contains("不合法"), e.getMessage());
         verify(formClient, never()).save(anyString(), any());
@@ -725,57 +732,53 @@ class WmsKingdeeGapWritersTest {
      */
     @Test
     void existsByReferenceShouldMatchTheNoteWrittenByWrite() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
-        when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
+        when(formClient.save(eq("STK_OEMInStockRETURN"), any())).thenReturn(
                 WmsKingdeeResult.ok("{}", null, "CTHD0009", "1009"));
         when(formClient.executeBillQuery(eq("BD_Material"), anyString(), anyString(), anyInt()))
                 .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("zhi")), null, null));
         String ref = "RK_2026-1104";
 
-        assertTrue(purchaseReturnWriter.write(defectRecord().setSourceBillNo(ref), "CUST01", "WH01").isSuccess());
+        assertTrue(consignedReturnWriter.write(defectRecord().setSourceBillNo(ref), "CUST01", "WH01", null).isSuccess());
 
         ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
-        verify(formClient).save(eq("PUR_MRRedReturn"), modelCaptor.capture());
-        String note = String.valueOf(modelCaptor.getValue().get("FDescription"));
+        verify(formClient).save(eq("STK_OEMInStockRETURN"), modelCaptor.capture());
+        String note = String.valueOf(modelCaptor.getValue().get("FNote"));
         assertEquals("来源单:" + ref, note);
 
-        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
+        when(formClient.executeBillQuery(eq("STK_OEMInStockRETURN"), anyString(), anyString(), anyInt()))
                 .thenAnswer(invocation -> {
                     String filter = invocation.getArgument(2);
-                    return ("FDescription='" + note + "'").equals(filter)
+                    return ("FNote='" + note + "'").equals(filter)
                             ? WmsKingdeeResult.ok("[]", List.of(List.of("CTHD0009")), null, null)
                             : WmsKingdeeResult.ok("[]", List.of(), null, null);
                 });
 
-        assertTrue(purchaseReturnWriter.existsByReference(ref),
+        assertTrue(consignedReturnWriter.existsByReference(ref),
                 "写单备注与查重过滤条件必须自洽，否则幂等保护形同虚设");
     }
 
-    /** 纯空格的受托方不得发成 {FNumber: ""}。 */
+    /** 纯空格的受托方不得发成 {FNumber: ""}：FCustId 是表头与分录货主的必填项，直接失败。 */
     @Test
-    void purchaseReturnWriterShouldNotSendBlankSupplier() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
-        when(formClient.save(eq("PUR_MRRedReturn"), any())).thenReturn(
-                WmsKingdeeResult.ok("{}", null, "CTHD0010", "1010"));
-        when(formClient.executeBillQuery(eq("BD_Material"), anyString(), anyString(), anyInt()))
-                .thenReturn(WmsKingdeeResult.ok("[]", List.of(List.of("zhi")), null, null));
+    void consignedReturnWriterShouldRejectBlankCustomer() {
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
 
-        purchaseReturnWriter.write(defectRecord(), "   ", "WH01");
+        WmsKingdeeResult result = consignedReturnWriter.write(defectRecord(), "   ", "WH01", null);
 
-        ArgumentCaptor<Map<String, Object>> modelCaptor = modelCaptor();
-        verify(formClient).save(eq("PUR_MRRedReturn"), modelCaptor.capture());
-        assertFalse(modelCaptor.getValue().containsKey("FSupplierId"));
+        assertFalse(result.isSuccess());
+        assertTrue(result.getMessage().contains("受托方客户编码"), result.getMessage());
+        verify(formClient, never()).save(anyString(), any());
     }
 
     /** 查重失败不能当成「不存在」，否则重试会重复开单。 */
     @Test
     void existsByReferenceShouldThrowWhenQueryFails() {
-        stubConfig(WmsConfigKey.KD_FORM_PURCHASE_RETURN, "PUR_MRRedReturn");
-        when(formClient.executeBillQuery(eq("PUR_MRRedReturn"), anyString(), anyString(), anyInt()))
+        stubConfig(WmsConfigKey.KD_FORM_CONSIGNED_RETURN, "STK_OEMInStockRETURN");
+        when(formClient.executeBillQuery(eq("STK_OEMInStockRETURN"), anyString(), anyString(), anyInt()))
                 .thenReturn(WmsKingdeeResult.fail("金蝶超时"));
 
         IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> purchaseReturnWriter.existsByReference("RK20261104001"));
+                () -> consignedReturnWriter.existsByReference("RK20261104001"));
 
         assertTrue(e.getMessage().contains("查重失败"), e.getMessage());
     }
@@ -786,14 +789,14 @@ class WmsKingdeeGapWritersTest {
         assertTrue(reader.isEnabled());
         assertTrue(consignedWriter.isEnabled());
         assertTrue(purchaseReceiveWriter.isEnabled());
-        assertTrue(purchaseReturnWriter.isEnabled());
+        assertTrue(consignedReturnWriter.isEnabled());
 
         properties.setEnabled(false);
 
         assertFalse(reader.isEnabled());
         assertFalse(consignedWriter.isEnabled());
         assertFalse(purchaseReceiveWriter.isEnabled());
-        assertFalse(purchaseReturnWriter.isEnabled());
+        assertFalse(consignedReturnWriter.isEnabled());
     }
 
     // ------------------------------------------------------------------ 夹具

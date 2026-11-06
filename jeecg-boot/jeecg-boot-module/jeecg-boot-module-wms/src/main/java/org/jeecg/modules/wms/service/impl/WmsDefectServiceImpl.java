@@ -40,7 +40,7 @@ import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.service.IWmsCustomerService;
 import org.jeecg.modules.wms.service.IWmsDefectService;
 import org.jeecg.modules.wms.service.IWmsSystemConfigService;
-import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReturnWriter;
+import org.jeecg.modules.wms.sync.IWmsKingdeeConsignedReturnWriter;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
 import org.jeecg.modules.wms.sync.WmsWarehouseCodeResolver;
@@ -76,7 +76,7 @@ import java.util.Set;
  *   <li><b>受托不良</b>：来源单号必须等于受托入库单号——受托方不在记录里存，
  *       一律按 来源单号 → 入库单 → consignor_id 反查客户档案（Task 1 Ruling；V2.4 起为客户）；
  *       SCRAP 扣受托库存（物料+批次+受托方匹配）后入废品仓仍记 CONSIGNED，不转自有；
- *       RETURN 只登记（待处理），退货时聚合同来源单记录共用一张采购退货单。</li>
+ *       RETURN 只登记（待处理），退货时聚合同来源单记录共用一张受托加工材料退料单。</li>
  * </ul>
  *
  * @Author: 永鑫WMS
@@ -101,7 +101,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
     private final WmsInboundOrderMapper inboundOrderMapper;
     private final IWmsCustomerService customerService;
     private final WmsWarehouseCodeResolver warehouseResolver;
-    private final IWmsKingdeePurchaseReturnWriter purchaseReturnWriter;
+    private final IWmsKingdeeConsignedReturnWriter consignedReturnWriter;
     private final WmsKingdeeFormClient formClient;
     private final IWmsSystemConfigService configService;
     private final ISysBaseAPI sysBaseAPI;
@@ -123,7 +123,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
                                 WmsInboundOrderMapper inboundOrderMapper,
                                 IWmsCustomerService customerService,
                                 WmsWarehouseCodeResolver warehouseResolver,
-                                IWmsKingdeePurchaseReturnWriter purchaseReturnWriter,
+                                IWmsKingdeeConsignedReturnWriter consignedReturnWriter,
                                 WmsKingdeeFormClient formClient,
                                 IWmsSystemConfigService configService,
                                 ISysBaseAPI sysBaseAPI) {
@@ -139,7 +139,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         this.inboundOrderMapper = inboundOrderMapper;
         this.customerService = customerService;
         this.warehouseResolver = warehouseResolver;
-        this.purchaseReturnWriter = purchaseReturnWriter;
+        this.consignedReturnWriter = consignedReturnWriter;
         this.formClient = formClient;
         this.configService = configService;
         this.sysBaseAPI = sysBaseAPI;
@@ -541,17 +541,17 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             return applyReturned(record, billNo);
         }
 
-        if (!purchaseReturnWriter.isEnabled()) {
-            throw new RuntimeException("金蝶同步未启用，不能退货；请先启用金蝶同步并配置采购退货单 formId");
+        if (!consignedReturnWriter.isEnabled()) {
+            throw new RuntimeException("金蝶同步未启用，不能退货；请先启用金蝶同步并配置受托加工材料退料单 formId");
         }
         String formId = requireReturnFormId();
-        if (purchaseReturnWriter.existsByReference(sourceBillNo)) {
+        if (consignedReturnWriter.existsByReference(sourceBillNo)) {
             // 上次 Save 成功但本地回存被回滚（进程中断/提交失败）：ERP 已有单，
             // Writer 不提供单号查询，再 write 必然重复开单——置已退货、单号留空并告警，
             // ERP 侧凭 FNote=来源单:<来源单号> 可定位到该单
             deductReturnedInventory(sourceBillNo, pending, consignor);
             markReturned(pending, null, operator);
-            String warn = "金蝶已存在来源单[" + sourceBillNo + "]的采购退货单（FNote=来源单:" + sourceBillNo
+            String warn = "金蝶已存在来源单[" + sourceBillNo + "]的受托加工材料退料单（FNote=来源单:" + sourceBillNo
                     + "），本地未回存单号，已按已退货处理，请人工在金蝶核对单号并回填。"
                     + uncoveredHint(pending, null);
             log.warn(warn);
@@ -580,8 +580,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         for (int attempt = 1; attempt <= RETURN_MAX_ATTEMPTS; attempt++) {
             try {
                 if (billNo == null) {
-                    WmsKingdeeResult saved = purchaseReturnWriter.write(payload,
-                            consignor.getCustomerCode(), ref.warehouseCode());
+                    WmsKingdeeResult saved = consignedReturnWriter.write(payload,
+                            consignor.getCustomerCode(), ref.warehouseCode(), ref.erpBillNo());
                     if (saved == null || !saved.isSuccess() || oConvertUtils.isEmpty(saved.getNumber())) {
                         throw new IllegalStateException("金蝶保存失败："
                                 + (saved == null ? "无返回" : saved.getMessage()));
@@ -643,8 +643,9 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
      *
      * @param customer      客户档案（受托方）
      * @param warehouseCode 退货仓库编码；来源入库单明细没有库位时为 null（仅退货回写需要）
+     * @param erpBillNo     来源入库单的金蝶单号（{@code FSrcBillNo}，溯源用）；未回写成功时为空
      */
-    private record ConsignorRef(WmsCustomer customer, String warehouseCode) {
+    private record ConsignorRef(WmsCustomer customer, String warehouseCode, String erpBillNo) {
     }
 
     /**
@@ -676,7 +677,8 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         if (oConvertUtils.isEmpty(customer.getCustomerCode())) {
             throw new RuntimeException("受托方[" + customer.getCustomerName() + "]缺少客户编码，无法回写金蝶");
         }
-        return new ConsignorRef(customer, warehouseResolver.byInboundOrder(order.getId()));
+        return new ConsignorRef(customer, warehouseResolver.byInboundOrder(order.getId()),
+                order.getErpBillNo());
     }
 
     /**
@@ -834,10 +836,10 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
 
     /** 退货提交用的 formId：未配置显式失败（Writer 侧同样校验，双保险且报错更早）。 */
     private String requireReturnFormId() {
-        String formId = configService.getString(WmsConfigKey.KD_FORM_PURCHASE_RETURN.getKey(), "");
+        String formId = configService.getString(WmsConfigKey.KD_FORM_CONSIGNED_RETURN.getKey(), "");
         if (oConvertUtils.isEmpty(formId) || formId.trim().isEmpty()) {
-            throw new RuntimeException("金蝶采购退货单未配置 formId（配置项 "
-                    + WmsConfigKey.KD_FORM_PURCHASE_RETURN.getKey() + "），不能退货");
+            throw new RuntimeException("金蝶受托加工材料退料单未配置 formId（配置项 "
+                    + WmsConfigKey.KD_FORM_CONSIGNED_RETURN.getKey() + "），不能退货");
         }
         return formId.trim();
     }

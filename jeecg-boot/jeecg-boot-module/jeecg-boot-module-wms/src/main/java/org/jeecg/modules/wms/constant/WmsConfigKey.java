@@ -94,8 +94,15 @@ public enum WmsConfigKey {
     KD_FORM_PURCHASE_INBOUND("kingdee.form.purchase-inbound", "采购收料单 FormId",
             WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
 
-    /** 采购退货单 FormId（WMS→ERP 回写，spec §3.3 受托不良退货）。 */
-    KD_FORM_PURCHASE_RETURN("kingdee.form.purchase-return", "采购退货单 FormId",
+    /**
+     * 受托加工材料退料单 FormId（WMS→ERP 回写，spec §3.3 受托不良退货）。
+     *
+     * <p>2026-11-06 拍板改投 {@code STK_OEMInStockRETURN}（单据类型 {@code STCLTL01_SYS}）：
+     * 原方案用采购退料单 {@code PUR_MRB}，但它强制「供应商」，而受托方是**客户**档案，
+     * 真账套直接报「字段“供应商”是必填项」。受托加工材料退料单天然按受托方 + 受托入库单走，
+     * 不需要供应商。旧键 {@code kingdee.form.purchase-return} 已停用（配置行已删）。
+     */
+    KD_FORM_CONSIGNED_RETURN("kingdee.form.consigned-return", "受托加工材料退料单 FormId",
             WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
 
     /** 采购订单 FormId（ERP→WMS 读取，spec §3.2 到货登记校验）。 */

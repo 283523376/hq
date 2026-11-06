@@ -80,13 +80,13 @@ class WmsGapConstantsTest {
         List<WmsConfigKey> keys = List.of(
                 WmsConfigKey.KD_FORM_CONSIGNED_INBOUND,
                 WmsConfigKey.KD_FORM_PURCHASE_INBOUND,
-                WmsConfigKey.KD_FORM_PURCHASE_RETURN,
+                WmsConfigKey.KD_FORM_CONSIGNED_RETURN,
                 WmsConfigKey.KD_FORM_PURCHASE_ORDER,
                 WmsConfigKey.KD_FORM_CONSIGNED_ORDER);
         List<String> expectedKeys = List.of(
                 "kingdee.form.consigned-inbound",
                 "kingdee.form.purchase-inbound",
-                "kingdee.form.purchase-return",
+                "kingdee.form.consigned-return",
                 "kingdee.form.purchase-order",
                 "kingdee.form.consigned-order");
         for (int i = 0; i < keys.size(); i++) {

@@ -45,8 +45,8 @@ public enum WmsKingdeeSyncScope {
             "待控制台确认（kingdee.form.consigned-inbound）", Direction.UP, Status.PENDING),
     PURCHASE_INBOUND("purchase-inbound", "采购收料单回写（段差棒直入，formId 待配置）",
             "PUR_ReceiveBill（kingdee.form.purchase-inbound）", Direction.UP, Status.PENDING),
-    PURCHASE_RETURN("purchase-return", "采购退货单回写（受托不良退货，formId 待确认）",
-            "待控制台确认（kingdee.form.purchase-return）", Direction.UP, Status.PENDING),
+    CONSIGNED_RETURN("consigned-return", "受托加工材料退料单回写（受托不良退货）",
+            "STK_OEMInStockRETURN", Direction.UP, Status.PENDING),
 
     // ---------------------------------------------------------------- 金蝶 → WMS（读取主数据/单据）
     WORK_ORDER("work-order", "生产工单同步（PRD_MO）", "PRD_MO",

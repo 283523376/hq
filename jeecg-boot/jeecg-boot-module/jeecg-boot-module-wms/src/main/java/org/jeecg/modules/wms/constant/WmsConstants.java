@@ -1015,7 +1015,7 @@ public final class WmsConstants {
     /** 不良处置方式：入废品仓（受托不良仍记在受托方名下，不转自有）。 */
     public static final String DEFECT_DISPOSAL_SCRAP = "SCRAP";
 
-    /** 不良处置方式：退货（受托不良生成采购退货单，`wms_defect_record.return_bill_no` 回存单号）。 */
+    /** 不良处置方式：退货（受托不良生成受托加工材料退料单，`wms_defect_record.return_bill_no` 回存单号）。 */
     public static final String DEFECT_DISPOSAL_RETURN = "RETURN";
 
     /** 不良记录状态：待处理（RETURN 登记后的初始态，等待退货；台账待办来源）。 */
@@ -1024,7 +1024,7 @@ public final class WmsConstants {
     /** 不良记录状态：已处置（SCRAP 落废品仓后的终态）。 */
     public static final String DEFECT_STATUS_DISPOSED = "已处置";
 
-    /** 不良记录状态：已退货（采购退货单回写成功后的终态）。 */
+    /** 不良记录状态：已退货（受托加工材料退料单回写成功后的终态）。 */
     public static final String DEFECT_STATUS_RETURNED = "已退货";
 
     /** 受托不良退货失败告警标题。 */
@@ -1065,9 +1065,11 @@ public final class WmsConstants {
     public static final String KD_BILL_TYPE_CONSIGNED_INBOUND = "STCLRK01_SYS";
 
     /**
-     * 金蝶采购退料单单据类型（{@code PUR_MRB}，2026-11-04 测试账套实测）。
+     * 金蝶受托加工材料退料单单据类型（{@code STK_OEMInStockRETURN}，2026-11-06 真账套实测）。
+     *
+     * <p>取代原「采购退料单 {@code TLD02_SYS}」：后者强制供应商，而受托方是客户档案。
      */
-    public static final String KD_BILL_TYPE_PURCHASE_RETURN = "TLD02_SYS";
+    public static final String KD_BILL_TYPE_CONSIGNED_RETURN = "STCLTL01_SYS";
 
     /**
      * 金蝶单据 formId 配置键的公共前缀。

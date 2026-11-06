@@ -360,7 +360,7 @@ class WmsConsignedInventoryIsolationTest {
                 mock(org.jeecg.modules.wms.mapper.WmsInboundOrderMapper.class),
                 mock(org.jeecg.modules.wms.service.IWmsCustomerService.class),
                 mock(org.jeecg.modules.wms.sync.WmsWarehouseCodeResolver.class),
-                mock(org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReturnWriter.class),
+                mock(org.jeecg.modules.wms.sync.IWmsKingdeeConsignedReturnWriter.class),
                 mock(org.jeecg.modules.wms.sync.WmsKingdeeFormClient.class),
                 mock(org.jeecg.modules.wms.service.IWmsSystemConfigService.class),
                 mock(org.jeecg.common.system.api.ISysBaseAPI.class));

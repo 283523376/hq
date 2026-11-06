@@ -60,7 +60,7 @@ public class WmsDefectRecord extends JeecgEntity {
     @Schema(description = "处置方式：SCRAP 入废品仓 / RETURN 退货")
     private String disposalType;
 
-    /** 采购退货单号（处置方式=RETURN 时回填）。 */
+    /** 受托加工材料退料单号（处置方式=RETURN 时回填）。 */
     @Schema(description = "退货单号")
     private String returnBillNo;
 

@@ -9,7 +9,7 @@ import org.jeecg.modules.wms.service.IWmsAuditLogService;
 import org.jeecg.modules.wms.sync.IWmsKingdeeInboundWriter;
 import org.jeecg.modules.wms.sync.IWmsKingdeeOutstockWriter;
 import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReceiveWriter;
-import org.jeecg.modules.wms.sync.IWmsKingdeePurchaseReturnWriter;
+import org.jeecg.modules.wms.sync.IWmsKingdeeConsignedReturnWriter;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
 import org.jeecg.modules.wms.sync.WmsOrderSyncResult;
 import org.junit.jupiter.api.BeforeEach;
@@ -162,15 +162,15 @@ class SyncAuditRecordingTest {
         assertTrue(event.getErrorMsg().contains("FSupplierId"), "实际：" + event.getErrorMsg());
     }
 
-    /** 采购退货回写的业务类型是不良品记录，单号取来源单号。 */
+    /** 受托加工材料退料回写的业务类型是不良品记录，单号取来源单号。 */
     @Test
     void purchaseReturnWriteback_recordsDefectRecordBiz() {
         WmsDefectRecord record = new WmsDefectRecord()
                 .setSourceBillNo("SL001").setDisposalType("RETURN");
-        FakePurchaseReturnWriter writer = new FakePurchaseReturnWriter(
+        FakeConsignedReturnWriter writer = new FakeConsignedReturnWriter(
                 WmsKingdeeResult.ok("{}", null, "TH001", "erpId2"));
 
-        ((IWmsKingdeePurchaseReturnWriter) proxy(writer)).write(record, "C001", "WH01");
+        ((IWmsKingdeeConsignedReturnWriter) proxy(writer)).write(record, "C001", "WH01", null);
 
         WmsAuditEvent event = capture();
         assertEquals("不良品记录", event.getBizType());
@@ -230,10 +230,10 @@ class SyncAuditRecordingTest {
         }
     }
 
-    static class FakePurchaseReturnWriter implements IWmsKingdeePurchaseReturnWriter {
+    static class FakeConsignedReturnWriter implements IWmsKingdeeConsignedReturnWriter {
         private final WmsKingdeeResult next;
 
-        FakePurchaseReturnWriter(WmsKingdeeResult next) {
+        FakeConsignedReturnWriter(WmsKingdeeResult next) {
             this.next = next;
         }
 
@@ -243,7 +243,8 @@ class SyncAuditRecordingTest {
         }
 
         @Override
-        public WmsKingdeeResult write(WmsDefectRecord record, String customerNumber, String warehouseCode) {
+        public WmsKingdeeResult write(WmsDefectRecord record, String customerNumber,
+                                      String warehouseCode, String sourceErpBillNo) {
             return next;
         }
 

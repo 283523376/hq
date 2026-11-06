@@ -83,7 +83,7 @@ public class WmsDefectController {
         }
     }
 
-    @Operation(summary = "不良品-受托退货（生成采购退货单）")
+    @Operation(summary = "不良品-受托退货（生成受托加工材料退料单）")
     @PostMapping(value = "/return")
     @RequiresPermissions("wms:defect:return")
     @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_DEFECT_RECORD, action = WmsConstants.AUDIT_ACTION_RETURN,

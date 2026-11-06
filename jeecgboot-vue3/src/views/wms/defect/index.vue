@@ -126,7 +126,7 @@
     Modal.confirm({
       title: `受托不良退货（来源单 ${record.sourceBillNo}）？`,
       content: h('div', [
-        h('p', '将在金蝶生成采购退货单；同一来源单的待退记录会聚合到一张退货单。'),
+        h('p', '将在金蝶生成受托加工材料退料单；同一来源单的待退记录会聚合到一张退料单。'),
         h(Input, {
           placeholder: '备注（可选，仅本地留存，不写金蝶）',
           maxlength: 200,
