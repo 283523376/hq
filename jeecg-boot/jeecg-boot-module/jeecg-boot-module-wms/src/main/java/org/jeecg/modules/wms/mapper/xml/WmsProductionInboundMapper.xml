@@ -35,8 +35,11 @@
                stack_code    = COALESCE(#{stackCode}, stack_code),
                complete_time = NOW(),
                <!-- 方案 B：工序汇报来源由 ERP 车间汇报生成生产入库单，WMS 只记账，
-                    绝不能刷成「待同步」——否则每轮同步都会撞「ERP 尚未汇报入库」 -->
-               sync_status   = CASE WHEN erp_entry_key IS NOT NULL AND erp_entry_key &lt;&gt; ''
+                    绝不能刷成「待同步」——否则每轮同步都会撞「ERP 尚未汇报入库」。
+                    2026-11-06 拍板：半成品一律走工序汇报通道，同样豁免（与 erp_entry_key 并列）；
+                    漏掉这条会让改制产出的半成品每 5 分钟撞一次「业务流程」门槛（实测失败 31 次） -->
+               sync_status   = CASE WHEN (erp_entry_key IS NOT NULL AND erp_entry_key &lt;&gt; '')
+                                     OR product_type = '半成品'
                                     THEN '无需同步' ELSE '待同步' END,
                update_time   = NOW()
          WHERE wcs_task_no = #{taskNo}

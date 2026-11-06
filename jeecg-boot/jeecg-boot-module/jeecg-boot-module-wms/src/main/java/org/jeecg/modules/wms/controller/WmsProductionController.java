@@ -88,6 +88,9 @@ public class WmsProductionController {
                 // 事务已提交（service.submit 的代理已返回），异步调用外部设备接口，
                 // 避免 RMS/WCS 超时把提交请求拖到前端 axios 超时
                 taskService.dispatchInboundAsync(record.getId());
+            } else if (WmsConstants.PRODUCT_TYPE_SEMI.equals(record.getProductType())) {
+                // 方案 B：半成品不回写 PRD_INSTOCK（含纯不良提交），提交即终态
+                log.info("半成品走工序汇报通道，跳过提交后的即时回写：{}", record.getId());
             } else if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
                 // 自动同步已关闭：良品为 0 也留在「待同步」，由页面手工推送
                 log.info("自动同步已关闭，跳过提交后的即时回写：{}", record.getId());
@@ -137,6 +140,11 @@ public class WmsProductionController {
                                                       @RequestBody(required = false) WmsProductionManualCompleteDTO dto) {
         try {
             service.manualComplete(id, dto);
+            if (WmsConstants.PRODUCT_TYPE_SEMI.equals(service.getById(id).getProductType())) {
+                // 方案 B：半成品不回写，转人工完成即终态
+                log.info("半成品走工序汇报通道，跳过转人工完成后的即时回写：{}", id);
+                return Result.OK("转人工完成；半成品走工序汇报通道，WMS 不回写金蝶", null);
+            }
             if (WmsSyncAutoGate.isManualOnly(systemConfigService)) {
                 log.info("自动同步已关闭，跳过转人工完成后的即时回写：{}", id);
                 return Result.OK("转人工完成；自动同步已关闭，请点「同步金蝶」手工同步", null);
@@ -195,6 +203,11 @@ public class WmsProductionController {
             }
             if (!WmsConstants.PROD_STATUS_INBOUND.equals(record.getStatus())) {
                 return Result.error("仅已入库记录可同步");
+            }
+            // 方案 B（2026-11-06 拍板）：半成品由车间工序汇报生成 ERP 入库单，WMS 不回写。
+            // 手工同步对这类单只会撞「业务流程」门槛，显式拒绝并说明原因，不给假成功。
+            if (WmsConstants.PRODUCT_TYPE_SEMI.equals(record.getProductType())) {
+                return Result.error("半成品走工序汇报通道：ERP 侧由车间汇报生成入库单，WMS 不回写金蝶，无需手工同步");
             }
             Date staleBefore = service.syncStaleBefore();
             if (service.claimForSync(id, staleBefore) == 0) {

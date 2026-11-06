@@ -40,6 +40,10 @@ class WmsProductionInboundMapperXmlTest {
                 "回执完成必须区分工序汇报来源：这类单据的 sync_status 不能刷成「待同步」");
         assertTrue(statement.contains("无需同步"),
                 "工序汇报来源回执后应保持「无需同步」，永不进入回写队列");
+        // 2026-11-06 拍板：半成品一律走工序汇报通道，完成回执后同样豁免。
+        // 漏掉这条，改制产出的半成品每 5 分钟撞一次「业务流程」门槛（真账套实测失败 31 次）。
+        assertTrue(statement.contains("product_type"),
+                "半成品（product_type='半成品'）必须在回执时豁免回写");
     }
 
     @Test

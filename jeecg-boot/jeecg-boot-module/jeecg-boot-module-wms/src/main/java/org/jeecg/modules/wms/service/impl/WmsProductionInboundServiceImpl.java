@@ -188,8 +188,11 @@ public class WmsProductionInboundServiceImpl
                         ? WmsConstants.TASK_STATUS_NOT_DISPATCHED : WmsConstants.TASK_STATUS_FINISHED)
                 .setDefectRemark(dto.getDefectRemark())
                 .setRemark(dto.getRemark())
-                .setSyncStatus(hasGood
-                        ? WmsConstants.SYNC_STATUS_NOT_REQUIRED : WmsConstants.SYNC_STATUS_PENDING)
+                // 方案 B（2026-11-06 拍板）：半成品由车间工序汇报生成 ERP 入库单，WMS 不回写 PRD_INSTOCK——
+                // 良品/纯不良都不进同步队列（不良品走不良品台账通道，与本单无关）；
+                // 成品只有纯不良（无设备任务、提交即入库）才需要立即排队回写
+                .setSyncStatus(!semi && !hasGood
+                        ? WmsConstants.SYNC_STATUS_PENDING : WmsConstants.SYNC_STATUS_NOT_REQUIRED)
                 .setRetryCount(0)
                 .setOperator(WmsUtils.currentUsername())
                 .setSubmitTime(new Date())
@@ -392,8 +395,10 @@ public class WmsProductionInboundServiceImpl
                 .set("status", WmsConstants.PROD_STATUS_INBOUND)
                 .set("task_status", WmsConstants.TASK_STATUS_FINISHED)
                 .set("complete_time", new Date())
-                // 方案 B：工序汇报来源由 ERP 车间汇报生成入库单，WMS 永不进回写队列
+                // 方案 B：工序汇报来源由 ERP 车间汇报生成入库单，WMS 永不进回写队列；
+                // 2026-11-06 扩：半成品同样豁免（走工序汇报通道，不回写 PRD_INSTOCK）
                 .set("sync_status", oConvertUtils.isNotEmpty(record.getErpEntryKey())
+                        || WmsConstants.PRODUCT_TYPE_SEMI.equals(record.getProductType())
                         ? WmsConstants.SYNC_STATUS_NOT_REQUIRED : WmsConstants.SYNC_STATUS_PENDING)
                 .set("manual_remark", remark)
                 .setSql("task_error = NULL")

@@ -234,10 +234,31 @@ class WmsProductionInboundServiceImplTest {
         assertEquals("载具正在使用中", e.getMessage());
     }
 
+    /**
+     * 方案 B（2026-11-06 拍板）：半成品由车间工序汇报生成 ERP 入库单，WMS 不回写 PRD_INSTOCK。
+     * 半成品无论良品/纯不良都不进同步队列——漏了这条，改制产出的半成品会每 5 分钟
+     * 撞一次「业务流程」门槛（真账套实测连续失败 31 次）。
+     */
     @Test
-    void submit_noGoodQty_isInboundImmediately() {
+    void submit_semiFinished_neverEntersSyncQueue() {
         stubWorkOrder("半成品", "0");
+        // 良品（走设备上架）
+        service.submit(dto("8", "0", "RFID-1"));
+        // 纯不良（提交即入库，无设备任务）
         service.submit(dto("0", "2", "RFID-1"));
+        ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
+        verify(inboundMapper, org.mockito.Mockito.times(2)).insert(captor.capture());
+        assertEquals(2, captor.getAllValues().size());
+        for (WmsProductionInbound record : captor.getAllValues()) {
+            assertEquals("无需同步", record.getSyncStatus(), "半成品必须豁免回写");
+        }
+    }
+
+    /** 成品纯不良仍走回写队列（旧行为保持）：提交即入库，无设备任务，立即排队推 PRD_INSTOCK。 */
+    @Test
+    void submit_finished_noGoodQty_stillPendingSync() {
+        stubWorkOrder("成品", "0");
+        service.submit(dto("0", "2", "QR-1"));
         ArgumentCaptor<WmsProductionInbound> captor = ArgumentCaptor.forClass(WmsProductionInbound.class);
         verify(inboundMapper).insert(captor.capture());
         assertEquals("已入库", captor.getValue().getStatus());
