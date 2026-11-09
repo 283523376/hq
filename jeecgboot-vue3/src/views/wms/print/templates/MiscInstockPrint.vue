@@ -31,7 +31,7 @@
           </tr>
           <tr v-if="pi === data.totalPages - 1" class="total-row">
             <td colspan="4" class="center">合计</td>
-            <td class="num">{{ data.totalsOnLastPage['数量'] }}</td>
+            <td>{{ data.totalsOnLastPage['数量'] }}</td>
             <td></td>
             <td></td>
           </tr>

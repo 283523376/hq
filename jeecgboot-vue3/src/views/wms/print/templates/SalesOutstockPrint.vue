@@ -38,11 +38,11 @@
             <td v-for="(cell, ci) in row" :key="ci" :class="{ center: ci === 1 || ci === 2 || ci === 3 || ci === 4 }">{{ cell }}</td>
           </tr>
           <tr v-if="pi === data.totalPages - 1" class="total-row">
-            <td class="total-left">合计</td>
+            <td>合计</td>
             <td></td>
-            <td class="num">{{ data.totalsOnLastPage['数量'] }}</td>
+            <td>{{ data.totalsOnLastPage['数量'] }}</td>
             <td></td>
-            <td class="num">{{ data.totalsOnLastPage['货款'] || '' }}</td>
+            <td>{{ data.totalsOnLastPage['货款'] || '' }}</td>
             <td></td>
           </tr>
         </tbody>

@@ -334,8 +334,10 @@ public class WmsPrintDataAssembler {
         vo.setColumns(columns);
         vo.getHeaders().put("购货单位", nvl(firstNonBlank(get(head, "FSettleCustId.FName"), get(head, "FCustomerId.FName"))));
         vo.getHeaders().put("日期", dateOnly(get(head, "FDate")));
-        // 样单 XSTHD10126110003：只有「保管员」「送提货人签名」两个落款（无发货签名）
+        // 样单 XSTHD10126110003 落款四栏（客户 2026-11-09 确认：在「如有数量问题」上方补齐前两项）
         vo.setFooters(List.of(
+                "客户签收盖章：",
+                "发货签名：",
                 "保管员：" + nvl(get(head, "FKeeperId.FName")),
                 "送提货人签名："));
         vo.getExtras().put("公司信息块", List.of(

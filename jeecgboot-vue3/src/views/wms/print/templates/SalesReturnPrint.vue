@@ -4,7 +4,7 @@
     <div v-for="(page, pi) in data.pages" :key="pi" class="print-page">
       <div class="sheet-company">{{ company }}</div>
       <div class="sheet-title">{{ data.title }}</div>
-      <div class="sheet-title-rule single"></div>
+      <div class="sheet-title-rule"></div>
       <div class="sheet-meta">
         <div class="meta-block meta-left">
           <span class="meta-item">购货单位：{{ data.headers['购货单位'] }}</span>
@@ -59,17 +59,16 @@
 </script>
 
 <style scoped>
+  /* 四栏落款（样单位置）：客户签收 0% / 发货签名 ~24% / 保管员 ~61% / 送提货人 ~81% */
   .return-footers {
-    display: flex;
+    display: grid;
+    grid-template-columns: 24% 36% 21% 19%;
     margin-top: 10px;
     font-size: 12px;
+    gap: 6px;
   }
 
-  .return-footers .footer-0 {
-    margin-left: 62%;
-  }
-
-  .return-footers .footer-1 {
-    margin-left: 12%;
+  .return-footers span {
+    white-space: nowrap;
   }
 </style>

@@ -77,6 +77,8 @@
   line-height: 1.35;
   word-break: break-all;
   vertical-align: middle;
+  /* 客户口径：所有单元格内容一律居中（2026-11-09） */
+  text-align: center;
 }
 
 /* 空行与数据行同高（样单整表行高一致）；内容多时自然撑高 */
@@ -96,17 +98,16 @@
 }
 
 .sheet-table td.num {
-  text-align: right;
+  text-align: center;
 }
 
 .sheet-table .total-row td {
   font-weight: normal;
 }
 
-/* 销售出库单纸样：合计文字靠左 */
-.sheet-table .total-row td.total-left {
-  text-align: left;
-  padding-left: 6px;
+/* 合计文字一律居中（2026-11-09 客户口径） */
+.sheet-table .total-row td {
+  text-align: center;
 }
 
 .sheet-footers {
@@ -158,10 +159,7 @@
   letter-spacing: 2px;
 }
 
-/* 合计文字贴合并格右端（委外领料单样单） */
-.sheet-table .total-row td.total-right {
-  text-align: right;
-}
+
 
 /* 打印：只输出 .print-area，界面控件一律隐藏 */
 @media print {

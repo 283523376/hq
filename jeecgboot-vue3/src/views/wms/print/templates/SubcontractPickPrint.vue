@@ -35,8 +35,8 @@
             <td v-for="(cell, ci) in row" :key="ci" :class="{ center: ci === 4 || ci === 7 }">{{ cell }}</td>
           </tr>
           <tr v-if="pi === data.totalPages - 1" class="total-row">
-            <td colspan="4" class="total-right">合计</td>
-            <td class="num">{{ data.totalsOnLastPage['实发数量'] }}</td>
+            <td colspan="4">合计</td>
+            <td>{{ data.totalsOnLastPage['实发数量'] }}</td>
             <td colspan="4"></td>
           </tr>
         </tbody>
