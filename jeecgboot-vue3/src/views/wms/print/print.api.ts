@@ -15,9 +15,14 @@ enum Api {
 export const getBills = (params: { billType: string; keyword?: string; pageNo: number; pageSize: number }) =>
   defHttp.get({ url: Api.bills, params });
 
-/** 取打印数据（分页已由后端切好；快照回退时 snapshotTime 非空） */
+/**
+ * 取打印数据（分页已由后端切好；快照回退时 snapshotTime 非空）。
+ *
+ * 不转换响应：业务失败（如「单据不存在或未审核」）时 defHttp 默认不 reject，
+ * 页面会「点了没反应」——这里拿完整 Result，由调用方按 success/message 处理。
+ */
 export const getPrintData = (params: { billType: string; billNo: string }) =>
-  defHttp.get({ url: Api.data, params }, { successMessageMode: 'none' });
+  defHttp.get({ url: Api.data, params }, { isTransformResponse: false, errorMessageMode: 'none' });
 
 /** 本地单号下拉（盘盈亏查盘点单、销售出库查本地出库单；其他类型返回空数组） */
 export const getLocalBills = (params: { billType: string; keyword?: string }) =>

@@ -164,7 +164,13 @@
     previewLoading.value = true;
     editing.value = false;
     try {
-      data.value = await getPrintData({ billType: activeType.value, billNo });
+      const res: any = await getPrintData({ billType: activeType.value, billNo });
+      if (res && res.success) {
+        data.value = res.result;
+      } else {
+        data.value = null;
+        createMessage.error(res?.message || '查询失败');
+      }
     } catch (e: any) {
       data.value = null;
       createMessage.error(e?.message || '查询失败');
