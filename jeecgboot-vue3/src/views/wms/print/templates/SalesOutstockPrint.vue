@@ -48,8 +48,14 @@
       <div class="sheet-footers">
         <span v-for="(footer, fi) in data.footers" :key="fi">{{ footer }}</span>
       </div>
-      <div class="sheet-company-info">
-        <div v-for="(line, li) in companyInfo" :key="li">{{ line }}</div>
+      <!-- 公司信息块：左栏（提示/工厂地址/办事处地址）+ 右栏（工厂电话/传真），与样单同高 -->
+      <div class="sheet-info-block">
+        <div class="info-left">
+          <div v-for="(line, li) in infoLeft" :key="li">{{ line }}</div>
+        </div>
+        <div class="info-right">
+          <div v-for="(line, li) in infoRight" :key="li">{{ line }}</div>
+        </div>
       </div>
       <div class="sheet-copies">
         <span v-for="(copy, ci) in copies" :key="ci">{{ copy }}</span>
@@ -68,6 +74,10 @@
   const company = computed(() => props.data.extras?.['公司名'] || '宜昌永鑫精工科技股份有限公司');
   const companyInfo = computed<string[]>(() => props.data.extras?.['公司信息块'] || []);
   const copies = computed<string[]>(() => props.data.extras?.['联次行'] || []);
+  // 左栏 3 行（提示/工厂地址/办事处地址），右栏 2 行（电话/传真）——与样单布局一致
+  const leftCount = computed(() => Number(props.data.extras?.['公司信息块左行数'] ?? 3));
+  const infoLeft = computed(() => companyInfo.value.slice(0, leftCount.value));
+  const infoRight = computed(() => companyInfo.value.slice(leftCount.value));
 
   function colWidth(index: number) {
     const widths = ['44%', '8%', '12%', '10%', '12%', '14%'];
@@ -96,5 +106,18 @@
     width: 200px;
     font-size: 12px;
     text-align: left;
+  }
+
+  .sheet-info-block {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .info-right {
+    text-align: left;
+    white-space: nowrap;
   }
 </style>

@@ -48,13 +48,20 @@ public class WmsPrintDataAssembler {
     private static final List<String> SALES_COPIES = List.of(
             "白色：存根", "红色：回单", "黄联：仓库", "绿联：客户");
 
-    /** 公司信息块默认文案（逐字取自样单 XSCK1012619868；服务层可按配置覆盖）。 */
+    /**
+     * 销售出库单公司信息块（逐字取自样单 XSCK1012619868，服务层可按配置覆盖）。
+     * 版式：前 3 行左侧、后 2 行右侧（样单里电话/传真与提示语、工厂地址同高）——
+     * 模板按 {@link #COMPANY_INFO_LEFT_LINES} 拆分。
+     */
     private static final List<String> SALES_COMPANY_INFO = List.of(
             "如有数量问题请在24小时内通知我司，逾期后果自负",
             "工厂地址：湖北省宜都市红花套镇开发区永鑫工业园",
             "销售办事处地址：东莞市大岭山镇元新路2号创福汇10楼1001室",
-            "工厂电话：0717-48825188",
+            "工厂电话：0717-4885188",
             "工厂传真：0717-4815666");
+
+    /** 公司信息块左侧行数（其余放右侧）；前端模板据此分栏。 */
+    public static final int COMPANY_INFO_LEFT_LINES = 3;
 
     // ------------------------------------------------------------ 盘盈/盘亏清单（xlsx 表头）
 
@@ -247,6 +254,7 @@ public class WmsPrintDataAssembler {
         vo.getExtras().put("logo", SALES_LOGO);
         vo.getExtras().put("联次行", SALES_COPIES);
         vo.getExtras().put("公司信息块", SALES_COMPANY_INFO);
+        vo.getExtras().put("公司信息块左行数", COMPANY_INFO_LEFT_LINES);
         finish(vo, body);
         vo.getTotalsOnLastPage().put("数量", plain(totalQty));
         if (totalAmount.signum() > 0) {
@@ -286,6 +294,7 @@ public class WmsPrintDataAssembler {
         vo.getExtras().put("logo", SALES_LOGO);
         vo.getExtras().put("联次行", SALES_COPIES);
         vo.getExtras().put("公司信息块", SALES_COMPANY_INFO);
+        vo.getExtras().put("公司信息块左行数", COMPANY_INFO_LEFT_LINES);
         finish(vo, body);
         vo.getTotalsOnLastPage().put("数量", plain(totalQty));
         return vo;
@@ -313,13 +322,14 @@ public class WmsPrintDataAssembler {
         vo.setColumns(columns);
         vo.getHeaders().put("购货单位", nvl(firstNonBlank(get(head, "FSettleCustId.FName"), get(head, "FCustomerId.FName"))));
         vo.getHeaders().put("日期", dateOnly(get(head, "FDate")));
+        // 样单 XSTHD10126110003：只有「保管员」「送提货人签名」两个落款（无发货签名）
         vo.setFooters(List.of(
                 "保管员：" + nvl(get(head, "FKeeperId.FName")),
-                "送提货人签名：",
-                "发货签名："));
+                "送提货人签名："));
         vo.getExtras().put("公司信息块", List.of(
                 "如有数量问题请在24小时内通知我司，逾期后果自负",
-                "工厂地址：湖北省宜都市红花套镇永鑫工业园"));
+                "工厂地址：湖北省宜昌市宜都市红花套镇永鑫工业园"));
+        vo.getExtras().put("公司信息块左行数", 2);
         finish(vo, body);
         vo.getTotalsOnLastPage().put("数量", plain(totalQty));
         return vo;
