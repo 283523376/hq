@@ -8,6 +8,7 @@ import org.jeecg.modules.wms.audit.WmsAudit;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsConversionCreateDTO;
 import org.jeecg.modules.wms.dto.WmsDefectInboundDTO;
+import org.jeecg.modules.wms.dto.WmsDefectRecordQueryDTO;
 import org.jeecg.modules.wms.dto.WmsDefectReturnDTO;
 import org.jeecg.modules.wms.dto.WmsPickCancelDTO;
 import org.jeecg.modules.wms.dto.WmsPutawayDTO;
@@ -259,12 +260,14 @@ class WmsGapControllerTest {
     }
 
     @Test
-    void defectRecords_forwardsQueryEntityUntouched() {
+    void defectRecords_forwardsQueryDtoUntouched() {
         IWmsDefectService service = mock(IWmsDefectService.class);
         IPage<WmsDefectRecord> empty = new Page<>(1, 10);
-        when(service.listPage(eq(1), eq(10), any(WmsDefectRecord.class))).thenReturn(empty);
+        when(service.listPage(eq(1), eq(10), any(WmsDefectRecordQueryDTO.class))).thenReturn(empty);
         WmsDefectController controller = new WmsDefectController(service);
-        WmsDefectRecord query = new WmsDefectRecord().setMaterialCode("M00").setStatus("待处理");
+        WmsDefectRecordQueryDTO query = new WmsDefectRecordQueryDTO();
+        query.setMaterialCode("M00");
+        query.setStatus("待处理");
 
         Result<IPage<WmsDefectRecord>> result = controller.records(query, 1, 10);
 

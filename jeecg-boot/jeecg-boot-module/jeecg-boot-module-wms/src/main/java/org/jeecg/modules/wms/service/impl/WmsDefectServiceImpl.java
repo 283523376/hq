@@ -14,6 +14,7 @@ import org.jeecg.modules.wms.audit.WmsAuditRecorder;
 import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsDefectInboundDTO;
+import org.jeecg.modules.wms.dto.WmsDefectRecordQueryDTO;
 import org.jeecg.modules.wms.dto.WmsInventoryLedgerQueryDTO;
 import org.jeecg.modules.wms.dto.WmsAuditEvent;
 import org.jeecg.modules.wms.dto.WmsScrapDTO;
@@ -53,6 +54,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
@@ -352,11 +354,43 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
         }
 
         Date now = new Date();
+        rejectDuplicate(sourceType, sourceBillNo, material, batchNo, disposalType, qty);
         if (WmsConstants.DEFECT_SOURCE_PRODUCTION.equals(sourceType)) {
             recordProduction(sourceBillNo, material, batchNo, qty, dto.getReason(), disposalType, operator, now);
             return;
         }
         recordConsigned(sourceBillNo, material, batchNo, qty, dto.getReason(), disposalType, operator, now);
+    }
+
+    /**
+     * 防呆（待办 §5-22）：同 来源类型+来源单号+物料+批次+处置方式+数量 的登记视为同一次提交的
+     * 重复请求，直接拒绝——重复提交会重复扣减库存、重复落废品仓台账。
+     *
+     * <p>只拦**完全相同**的登记：同来源单再次登记但数量不同、或处置方式不同（SCRAP 与 RETURN
+     * 并存）都是合法业务，不能误伤（对应单测 {@code recordInbound_sameKeyDifferent*}）。
+     * 数量是 DECIMAL 等值比较（SQL 数值相等，3 与 3.00 视为相同）。查询用
+     * {@code selectList + LIMIT 1} 而不是 {@code selectOne}：历史数据可能重复，
+     * {@code selectOne} 会抛 TooManyResultsException 把「已登记」误报成系统错误。
+     * 两请求并发同时过检查的窗口由事务内检查兜底——未加数据库唯一索引，因为历史数据
+     * 可能已存在重复行，加索引的迁移有失败风险。
+     */
+    private void rejectDuplicate(String sourceType, String sourceBillNo, WmsMaterial material,
+                                 String batchNo, String disposalType, BigDecimal qty) {
+        List<WmsDefectRecord> existing = defectRecordMapper.selectList(Wrappers.<WmsDefectRecord>query()
+                .eq("source_type", sourceType)
+                .eq("source_bill_no", sourceBillNo)
+                .eq("material_code", material.getMaterialCode())
+                .eq("batch_no", batchNo)
+                .eq("disposal_type", disposalType)
+                .eq("qty", qty)
+                .orderByDesc("create_time")
+                .last("LIMIT 1"));
+        if (existing != null && !existing.isEmpty()) {
+            throw new RuntimeException("该不良品登记已存在（来源单[" + sourceBillNo + "]物料["
+                    + material.getMaterialCode() + "]批次[" + trimToEmpty(batchNo) + "]处置[" + disposalType
+                    + "]数量 " + qty.stripTrailingZeros().toPlainString() + "），请勿重复提交；"
+                    + "如确需再次登记请先核实历史记录");
+        }
     }
 
     /** 生产不良：生产入库单必须存在；SCRAP 落自有废品仓；退货不适用生产来源。 */
@@ -612,7 +646,7 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
     }
 
     @Override
-    public IPage<WmsDefectRecord> listPage(int pageNo, int pageSize, WmsDefectRecord query) {
+    public IPage<WmsDefectRecord> listPage(int pageNo, int pageSize, WmsDefectRecordQueryDTO query) {
         QueryWrapper<WmsDefectRecord> qw = new QueryWrapper<>();
         if (query != null) {
             if (oConvertUtils.isNotEmpty(query.getSourceType())) {
@@ -631,9 +665,26 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
             if (oConvertUtils.isNotEmpty(query.getSourceBillNo())) {
                 qw.like("source_bill_no", query.getSourceBillNo().trim());
             }
+            if (query.getCreateTimeBegin() != null) {
+                qw.ge("create_time", query.getCreateTimeBegin());
+            }
+            if (query.getCreateTimeEnd() != null) {
+                qw.le("create_time", endOfDay(query.getCreateTimeEnd()));
+            }
         }
         qw.orderByDesc("create_time").orderByDesc("id");
         return defectRecordMapper.selectPage(new Page<>(pageNo, pageSize), qw);
+    }
+
+    /** 结束日期扩到当天 23:59:59.999：入参按天传（@DateTimeFormat yyyy-MM-dd），闭区间语义。 */
+    private Date endOfDay(Date day) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(day);
+        cal.set(Calendar.HOUR_OF_DAY, 23);
+        cal.set(Calendar.MINUTE, 59);
+        cal.set(Calendar.SECOND, 59);
+        cal.set(Calendar.MILLISECOND, 999);
+        return cal.getTime();
     }
 
     // ------------------------------------------------------------ RK-005 内部支撑

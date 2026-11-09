@@ -2,6 +2,7 @@ package org.jeecg.modules.wms.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.jeecg.modules.wms.dto.WmsDefectInboundDTO;
+import org.jeecg.modules.wms.dto.WmsDefectRecordQueryDTO;
 import org.jeecg.modules.wms.dto.WmsScrapDTO;
 import org.jeecg.modules.wms.entity.WmsDefectRecord;
 import org.jeecg.modules.wms.vo.WmsDefectLedgerVO;
@@ -71,7 +72,11 @@ public interface IWmsDefectService {
     WmsDefectRecord returnToConsignor(String recordId, String operator);
 
     /**
-     * 不良品记录分页：按来源/处置/状态/物料筛选（物料为任意连续子串模糊）。
+     * 不良品记录分页：按来源/处置/状态/物料筛选（物料为任意连续子串模糊），
+     * 时间筛选用 {@code createTimeBegin/createTimeEnd}（按天，闭区间）。
+     *
+     * <p>查询条件走 {@link WmsDefectRecordQueryDTO} 而不是实体：实体的时间字段没有
+     * {@code @DateTimeFormat}，GET 直接绑实体会让日期参数 500（待办 §5-17）。
      */
-    IPage<WmsDefectRecord> listPage(int pageNo, int pageSize, WmsDefectRecord query);
+    IPage<WmsDefectRecord> listPage(int pageNo, int pageSize, WmsDefectRecordQueryDTO query);
 }

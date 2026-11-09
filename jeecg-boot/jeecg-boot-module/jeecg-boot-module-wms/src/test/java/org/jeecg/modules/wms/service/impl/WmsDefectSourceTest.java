@@ -359,6 +359,82 @@ class WmsDefectSourceTest {
         assertTrue(e.getMessage().contains("生产不良只支持入废品仓"), e.getMessage());
     }
 
+    // ------------------------------------------------------------ 重复提交防呆（§5-22）
+
+    /** 已存在的不良登记：来源单一致、物料 M001、批次/处置/数量可指定。 */
+    private WmsDefectRecord registeredRecord(String disposalType, String qty) {
+        WmsDefectRecord r = new WmsDefectRecord()
+                .setSourceType(WmsConstants.DEFECT_SOURCE_CONSIGNED)
+                .setSourceBillNo("SL20261104001")
+                .setMaterialCode("M001")
+                .setBatchNo("B1")
+                .setQty(new BigDecimal(qty))
+                .setDisposalType(disposalType)
+                .setStatus(WmsConstants.DEFECT_STATUS_DISPOSED);
+        r.setId("R0");
+        r.setCreateTime(new Date());
+        return r;
+    }
+
+    /**
+     * 完全相同的登记（同来源单+物料+批次+处置+数量）必须拒绝：
+     * 重复提交会重复扣减受托库存、重复落废品仓台账。
+     */
+    @Test
+    void recordInbound_exactDuplicate_rejected() {
+        stubConsignorChain();
+        when(inventoryMapper.selectList(any())).thenReturn(List.of(consignedRow("IV-A", "S1", "5")));
+        when(defectRecordMapper.selectList(any()))
+                .thenReturn(List.of(registeredRecord(WmsConstants.DEFECT_DISPOSAL_SCRAP, "4")));
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.recordInbound(consignedDto(WmsConstants.DEFECT_DISPOSAL_SCRAP, "4"), "tester"));
+
+        assertTrue(e.getMessage().contains("请勿重复"), e.getMessage());
+        verify(defectRecordMapper, never()).insert(any(WmsDefectRecord.class));
+        verify(inventoryMapper, never()).deductQuantity(anyString(), any());
+        verify(inventoryMapper, never()).upsertInventory(any());
+    }
+
+    /**
+     * 同来源单+物料+批次再登记但数量不同：是合法业务（又发现一批不良），不得误伤。
+     * mock 无法按 SQL 条件过滤行，所以 DB 的区分能力只能断言查重查询的**条件**——
+     * 数量/处置必须在过滤列里，不同数量/处置才会真的查到不同的结果集。
+     */
+    @Test
+    void recordInbound_sameKeyDifferentQty_allowed() {
+        stubConsignorChain();
+        when(inventoryMapper.selectList(any())).thenReturn(List.of(consignedRow("IV-A", "S1", "10")));
+        when(defectRecordMapper.selectList(any())).thenReturn(List.of());
+
+        service.recordInbound(consignedDto(WmsConstants.DEFECT_DISPOSAL_SCRAP, "6"), "tester");
+
+        verify(defectRecordMapper).insert(any(WmsDefectRecord.class));
+        ArgumentCaptor<Wrapper<WmsDefectRecord>> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(defectRecordMapper).selectList(wrapperCaptor.capture());
+        String sql = wrapperCaptor.getValue().getSqlSegment();
+        assertTrue(sql.contains("disposal_type") && sql.contains("qty"), sql);
+        com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<WmsDefectRecord> qw =
+                (com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<WmsDefectRecord>) wrapperCaptor.getValue();
+        java.util.Collection<Object> params = qw.getParamNameValuePairs().values();
+        assertTrue(params.contains(new BigDecimal("6")) && params.contains(WmsConstants.DEFECT_DISPOSAL_SCRAP),
+                params.toString());
+    }
+
+    /** 同来源单+物料+批次换个处置方式（SCRAP 与 RETURN 并存）：同样合法。 */
+    @Test
+    void recordInbound_sameKeyDifferentDisposal_allowed() {
+        stubConsignorChain();
+        when(defectRecordMapper.selectList(any())).thenReturn(List.of());
+
+        service.recordInbound(consignedDto(WmsConstants.DEFECT_DISPOSAL_RETURN, "4"), "tester");
+
+        ArgumentCaptor<WmsDefectRecord> recCaptor = ArgumentCaptor.forClass(WmsDefectRecord.class);
+        verify(defectRecordMapper).insert(recCaptor.capture());
+        assertEquals(WmsConstants.DEFECT_DISPOSAL_RETURN, recCaptor.getValue().getDisposalType());
+        verify(inventoryMapper, never()).deductQuantity(anyString(), any());
+    }
+
     // ------------------------------------------------------------ 退货
 
     /** 退货聚合：同来源单两条待退记录（同物料批次）共用一张退货单，数量合计成一条分录。 */

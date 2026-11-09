@@ -9,6 +9,7 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.modules.wms.audit.WmsAudit;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsDefectInboundDTO;
+import org.jeecg.modules.wms.dto.WmsDefectRecordQueryDTO;
 import org.jeecg.modules.wms.dto.WmsDefectReturnDTO;
 import org.jeecg.modules.wms.dto.WmsScrapDTO;
 import org.jeecg.modules.wms.entity.WmsDefectRecord;
@@ -103,14 +104,18 @@ public class WmsDefectController {
      *
      * <p>查询窗口的文本条件由服务层 {@code listPage} 统一手写 {@code like}——
      * 物料编码/来源单号都支持任意连续子串，不要在这里改回等值匹配。
+     * 时间筛选走 {@code createTimeBegin/createTimeEnd}（yyyy-MM-dd，按天闭区间）；
+     * 绑定查询 DTO 而不是实体，实体的时间字段没有 {@code @DateTimeFormat}
+     * 会让日期参数绑定失败（待办 §5-17）。
      */
     @Operation(summary = "不良品-记录分页")
     @GetMapping(value = "/records")
     @RequiresPermissions("wms:defect:list")
     public Result<IPage<WmsDefectRecord>> records(
-            WmsDefectRecord query,
+            WmsDefectRecordQueryDTO query,
             @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
             @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize) {
-        return Result.OK(defectService.listPage(pageNo, pageSize, query));
+        return Result.OK(defectService.listPage(pageNo, pageSize,
+                query == null ? new WmsDefectRecordQueryDTO() : query));
     }
 }
