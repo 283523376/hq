@@ -31,8 +31,15 @@ import java.util.Map;
 @Component
 public class WmsPrintDataAssembler {
 
-    /** 每页固定行数（对齐样单；调整版式只改这里）。 */
+    /** 每页默认固定行数（未单独指定的单据类型用这个）。 */
     public static final int ROWS_PER_PAGE = 12;
+
+    /**
+     * 按单据类型覆盖的每页行数（客户 2026-11-09：销售出库单表体只留 6 行，
+     * 12 行太密）。加类型只改这里。
+     */
+    private static final Map<String, Integer> ROWS_PER_PAGE_BY_TYPE = Map.of(
+            WmsConstants.PRINT_BILL_SALES_OUTSTOCK, 6);
 
     /** 销售出库单 logo（前端 public 资源相对路径，Task 6 模板引用）。 */
     private static final String SALES_LOGO = "youth-logo.png";
@@ -326,20 +333,21 @@ public class WmsPrintDataAssembler {
                 .setErpBillNo(billNo);
     }
 
-    /** 分页 + 末页补空行 + 回填 totalPages/rowsPerPage。 */
+    /** 分页 + 末页补空行 + 回填 totalPages/rowsPerPage（行数按类型，默认 {@link #ROWS_PER_PAGE}）。 */
     private void finish(WmsPrintDataVO vo, List<List<String>> body) {
-        int pageCount = Math.max(1, (int) Math.ceil(body.size() / (double) ROWS_PER_PAGE));
+        int perPage = ROWS_PER_PAGE_BY_TYPE.getOrDefault(vo.getBillType(), ROWS_PER_PAGE);
+        int pageCount = Math.max(1, (int) Math.ceil(body.size() / (double) perPage));
         List<List<List<String>>> pages = new ArrayList<>(pageCount);
         for (int p = 0; p < pageCount; p++) {
-            int from = p * ROWS_PER_PAGE;
-            int to = Math.min(from + ROWS_PER_PAGE, body.size());
+            int from = p * perPage;
+            int to = Math.min(from + perPage, body.size());
             List<List<String>> page = new ArrayList<>(body.subList(from, to));
-            while (page.size() < ROWS_PER_PAGE) {
+            while (page.size() < perPage) {
                 page.add(blankRow(vo.getColumns().size()));
             }
             pages.add(page);
         }
-        vo.setRowsPerPage(ROWS_PER_PAGE);
+        vo.setRowsPerPage(perPage);
         vo.setTotalPages(pageCount);
         vo.setPages(pages);
     }

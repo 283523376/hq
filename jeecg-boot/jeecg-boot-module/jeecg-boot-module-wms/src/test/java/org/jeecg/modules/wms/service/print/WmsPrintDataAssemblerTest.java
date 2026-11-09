@@ -296,6 +296,40 @@ class WmsPrintDataAssemblerTest {
         assertEquals("150", vo.getTotalsOnLastPage().get("数量"), "合计 = 15 × 10");
     }
 
+    /** 销售出库单默认只保留 6 行（客户 2026-11-09：12 行太密），其余类型仍 12 行。 */
+    @Test
+    void salesOutstock_defaultsToSixRows_perPage() {
+        WmsKingdeePrintBill bill = printBill(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XSCKD000001",
+                row("FBillNo", "XSCKD000001", "FDate", "2024-09-02",
+                        "FCustomerId.FName", "甲客户", "FMaterialId.FName", "铣刀",
+                        "FUnitId.FName", "支", "FRealQty", "100"));
+
+        WmsPrintDataVO vo = assembler.assembleSalesOutstock(bill);
+
+        assertEquals(6, vo.getRowsPerPage());
+        assertEquals(6, vo.getPages().get(0).size(), "表体只留 6 行（含数据行与空行）");
+    }
+
+    /** 销售出库单超过 6 行时分页（每页 6 行）。 */
+    @Test
+    void salesOutstock_overSixRows_paginates() {
+        List<Map<String, String>> rows = new java.util.ArrayList<>();
+        for (int i = 1; i <= 7; i++) {
+            rows.add(row("FBillNo", "XSCKD000001", "FMaterialId.FName", "铣刀" + i,
+                    "FUnitId.FName", "支", "FRealQty", "10"));
+        }
+        WmsKingdeePrintBill bill = new WmsKingdeePrintBill()
+                .setBillType(WmsConstants.PRINT_BILL_SALES_OUTSTOCK)
+                .setFormId("SAL_OUTSTOCK").setBillNo("XSCKD000001").setRows(rows);
+
+        WmsPrintDataVO vo = assembler.assembleSalesOutstock(bill);
+
+        assertEquals(2, vo.getTotalPages());
+        assertEquals(6, vo.getPages().get(0).size());
+        assertEquals(6, vo.getPages().get(1).size());
+        assertEquals("70", vo.getTotalsOnLastPage().get("数量"));
+    }
+
     /** 单页单据也补满固定行数（样单风格）。 */
     @Test
     void pagination_singlePage_paddedToRowsPerPage() {
