@@ -502,7 +502,34 @@ public final class WmsConstants {
      */
     public static final String OUTBOUND_TYPE_SCRAP = "报废出库";
 
+    // ---------------------------------------------------------------- 单据打印域（DY-001）
+
+    /** 打印单据类型码：盘盈单（金蝶其他入库单，前缀 QTRK）。 */
+    public static final String PRINT_BILL_PROFIT = "PROFIT";
+    /** 打印单据类型码：盘亏单（金蝶其他出库单，前缀 QTCK）。 */
+    public static final String PRINT_BILL_LOSS = "LOSS";
+    /** 打印单据类型码：其他出库单。 */
+    public static final String PRINT_BILL_MISC_DELIVERY = "MISC_DELIVERY";
+    /** 打印单据类型码：其他入库单。 */
+    public static final String PRINT_BILL_MISC_INSTOCK = "MISC_INSTOCK";
+    /** 打印单据类型码：委外领料单。 */
+    public static final String PRINT_BILL_SUB_PICK = "SUB_PICK";
+    /** 打印单据类型码：销售出库单。 */
+    public static final String PRINT_BILL_SALES_OUTSTOCK = "SALES_OUTSTOCK";
+    /** 打印单据类型码：销售退货单。 */
+    public static final String PRINT_BILL_SALES_RETURN = "SALES_RETURN";
+
+    /** 打印编号前缀：金蝶其他入库单（盘盈）。 */
+    public static final String PRINT_NO_PREFIX_QTRK = "QTRK";
+    /** 打印编号前缀：金蝶其他出库单（盘亏）。 */
+    public static final String PRINT_NO_PREFIX_QTCK = "QTCK";
+
     // ---------------------------------------------------------------- 审计留痕域（XT-002）
+
+    /** 审计业务类型：单据打印（DY-001，查询即留痕）。 */
+    public static final String AUDIT_BIZ_PRINT = "单据打印";
+    /** 审计动作：查询。 */
+    public static final String AUDIT_ACTION_QUERY = "查询";
 
     /** 审计业务类型：生产工单。 */
     public static final String AUDIT_BIZ_WORK_ORDER = "工单";
