@@ -298,7 +298,10 @@ public class WmsPrintDataAssembler {
         vo.getHeaders().put("购货单位", nvl(order.getCustomerName()));
         vo.getHeaders().put("订单类型", "普通销售");
         vo.getHeaders().put("客户订单号", "");
-        vo.getHeaders().put("日期", "");
+        // 日期取发货日期，缺省用创建时间（样单必有日期，不能空着）
+        java.util.Date billDate = order.getDeliveryDate() != null
+                ? order.getDeliveryDate() : order.getCreateTime();
+        vo.getHeaders().put("日期", billDate == null ? "" : slashDate(billDate));
         vo.setFooters(List.of("客户签收盖章：", "发货签名：", "放行签名：", "保管员：", "送提货人签名："));
         vo.getExtras().put("logo", SALES_LOGO);
         vo.getExtras().put("联次行", SALES_COPIES);
@@ -396,6 +399,14 @@ public class WmsPrintDataAssembler {
     /** 名称+规格直接拼接（样单「产品名称及规格」列即此形态）。 */
     private static String joinNameSpec(String name, String spec) {
         return nvl(name) + nvl(spec);
+    }
+
+    /** Date → 样单风格 2026/11/9（斜杠、不补零）。 */
+    private static String slashDate(java.util.Date date) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.setTime(date);
+        return cal.get(java.util.Calendar.YEAR) + "/" + (cal.get(java.util.Calendar.MONTH) + 1) + "/"
+                + cal.get(java.util.Calendar.DAY_OF_MONTH);
     }
 
     /** 金蝶返回 FDate 形如 2026-11-09T00:00:00，打印成样单的 2026/11/9（斜杠、不补零）。 */

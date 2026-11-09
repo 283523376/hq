@@ -4,7 +4,7 @@
     <div v-for="(page, pi) in data.pages" :key="pi" class="print-page">
       <div class="sheet-company">{{ company }}</div>
       <div class="sheet-title">{{ data.title }}</div>
-      <div class="sheet-title-rule"></div>
+      <div class="sheet-title-rule single"></div>
       <div class="sheet-meta">
         <div class="meta-block meta-left">
           <span class="meta-item">购货单位：{{ data.headers['购货单位'] }}</span>
@@ -13,8 +13,7 @@
           <span class="meta-item">日期：{{ data.headers['日期'] }}</span>
         </div>
         <div class="meta-block meta-right">
-          <span class="meta-item">编 号：{{ data.erpBillNo }}</span>
-          <span class="meta-item">第{{ pi + 1 }}页，共{{ data.totalPages }}页</span>
+          <span class="meta-item">编　　号：{{ data.erpBillNo }}</span>
         </div>
       </div>
       <table class="sheet-table">

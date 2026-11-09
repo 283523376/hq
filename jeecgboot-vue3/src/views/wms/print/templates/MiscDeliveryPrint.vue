@@ -3,11 +3,18 @@
   <div class="print-sheet">
     <div v-for="(page, pi) in data.pages" :key="pi" class="print-page">
       <div class="sheet-company">{{ company }}</div>
-      <div class="sheet-title">{{ data.title }}</div>
-      <div class="sheet-title-rule"></div>
+      <!-- 纸样：领用类型（左）+ 标题（中，带双下划线）+ 页码（右）同一行 -->
+      <div class="title-row">
+        <span class="meta-item">领用类型　{{ data.headers['领用类型'] }}</span>
+        <span class="title-center">
+          <span class="sheet-title">{{ data.title }}</span>
+          <span class="sheet-title-rule"></span>
+        </span>
+        <span class="meta-item">第{{ pi + 1 }}页，共{{ data.totalPages }}页</span>
+      </div>
+      <!-- 纸样第二行：部门（左） 日期（中） 单据编号（右） -->
       <div class="sheet-meta">
         <div class="meta-block meta-left">
-          <span class="meta-item">领用类型：{{ data.headers['领用类型'] }}</span>
           <span class="meta-item">部门：{{ data.headers['部门'] }}</span>
         </div>
         <div class="meta-block meta-center">
@@ -15,7 +22,6 @@
         </div>
         <div class="meta-block meta-right">
           <span class="meta-item">单据编号：{{ data.erpBillNo }}</span>
-          <span class="meta-item">第{{ pi + 1 }}页，共{{ data.totalPages }}页</span>
         </div>
       </div>
       <table class="sheet-table">
@@ -56,3 +62,31 @@
     return { width: widths[index] || 'auto' };
   }
 </script>
+
+<style scoped>
+  .title-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+  }
+
+  .title-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .title-center .sheet-title {
+    margin: 4px 0 2px;
+  }
+
+  .title-center .sheet-title-rule {
+    display: block;
+    width: 100%;
+    margin: 0;
+  }
+
+  .title-row > .meta-item:last-child {
+    justify-self: end;
+  }
+</style>

@@ -14,7 +14,6 @@
         </div>
         <div class="meta-block meta-right">
           <span class="meta-item">编　号：{{ data.erpBillNo }}</span>
-          <span class="meta-item">第{{ pi + 1 }}页，共{{ data.totalPages }}页</span>
         </div>
       </div>
       <!-- 样单信息行第二行单独放业务类型 -->

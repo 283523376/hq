@@ -112,10 +112,11 @@
   flex-wrap: wrap;
 }
 
+/* 联次行：按纸样铺满整行（白色 3% / 红色 31% / 黄联 58% / 绿联 82%） */
 .sheet-copies {
   margin-top: 8px;
   display: flex;
-  gap: 40px;
+  justify-content: space-between;
   font-size: 11px;
 }
 
@@ -129,12 +130,19 @@
   height: 42px;
 }
 
-/* 标题下双横线（其他出库/其他入库/销售出库/销售退货样单均有） */
+/* 标题下横线：纸样里线宽与标题相当（约 1/3 页宽居中），不是整行 */
 .sheet-title-rule {
   border-top: 1px solid #000;
   border-bottom: 1px solid #000;
   height: 4px;
-  margin: 0 0 6px;
+  width: 34%;
+  margin: 0 auto 6px;
+}
+
+/* 单线版（销售退货单纸样为单线） */
+.sheet-title-rule.single {
+  border-bottom: none;
+  height: 0;
 }
 
 /* 标题比公司名小一号的单据（委外领料单样单） */

@@ -14,7 +14,6 @@
         <div class="top-right">
           <div class="meta-item">订单类型：{{ data.headers['订单类型'] }}</div>
           <div class="meta-item">客户订单号：{{ data.headers['客户订单号'] }}</div>
-          <div class="meta-item">编 号：{{ data.erpBillNo }}</div>
         </div>
       </div>
       <div class="sheet-meta">
@@ -25,7 +24,7 @@
           <span class="meta-item">日期：{{ data.headers['日期'] }}</span>
         </div>
         <div class="meta-block meta-right">
-          <span class="meta-item">第{{ pi + 1 }}页，共{{ data.totalPages }}页</span>
+          <span class="meta-item">编　　号：{{ data.erpBillNo }}</span>
         </div>
       </div>
       <table class="sheet-table">

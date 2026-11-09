@@ -227,7 +227,8 @@ class WmsPrintDataAssemblerTest {
     void salesOutstockLocal_combinesNameAndSpec() {
         WmsOutboundOrder order = new WmsOutboundOrder()
                 .setOutboundNo("XS2118258526005280770")
-                .setCustomerName("健鼎（湖北）电子有限公司");
+                .setCustomerName("健鼎（湖北）电子有限公司")
+                .setDeliveryDate(new java.util.Date(1794201600000L));   // 2026-11-09
         order.setId("OB1");
         WmsOutboundDetail d1 = new WmsOutboundDetail()
                 .setMaterialCode("M001").setMaterialName("铣刀A").setUnit("支")
@@ -245,6 +246,7 @@ class WmsPrintDataAssemblerTest {
         assertEquals("铣刀A凤梨对接", first.get(0));
         assertEquals("", first.get(3), "本地无单价，留空");
         assertEquals("150", vo.getTotalsOnLastPage().get("数量"));
+        assertFalse(vo.getHeaders().get("日期").isEmpty(), "本地单也要有日期");
     }
 
     // ------------------------------------------------------------ 销售退货单
