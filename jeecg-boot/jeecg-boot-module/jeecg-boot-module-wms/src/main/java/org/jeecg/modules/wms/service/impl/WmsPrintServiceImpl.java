@@ -133,6 +133,10 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
                 .eq("stocktake_no", billNo)
                 .last("LIMIT 1"));
         if (order != null) {
+            // 本地草稿盘点单禁止打印（同销售出库口径）
+            if (WmsConstants.STOCKTAKE_STATUS_DRAFT.equals(order.getStatus())) {
+                throw new PrintRejectedException("盘点单[" + billNo + "]为草稿状态，不能打印");
+            }
             String erpNo = pickErpBillNo(order.getErpBillNo(), type);
             if (erpNo.isEmpty()) {
                 if (oConvertUtils.isEmpty(order.getErpBillNo())) {
@@ -186,6 +190,10 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
                 .last("LIMIT 1"));
         if (order == null) {
             return kingdeeRoute(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, billNo, null, true);
+        }
+        // 本地草稿单禁止打印（2026-11-09 客户口径）：草稿未生效，打印出去会被当凭证用
+        if (WmsConstants.OUTBOUND_STATUS_DRAFT.equals(order.getStatus())) {
+            throw new PrintRejectedException("销售出库单[" + billNo + "]为草稿状态，不能打印");
         }
         String erpNo = trim(order.getErpBillNo());
         // 已回写金蝶：以金蝶数据组装——打印编号用金蝶单号（spec §5-1）、单价/货款有值（评审 I3）。

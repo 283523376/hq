@@ -342,6 +342,31 @@ class WmsPrintServiceImplTest {
         assertNotNull(vo.getExtras().get("公司信息块"));
     }
 
+    /**
+     * 本地草稿单禁止打印（2026-11-09 客户口径）：草稿是未生效单据，
+     * 打印出去会被当凭证用。销售出库与盘点单同口径。
+     */
+    @Test
+    void localDraftBills_rejected() {
+        WmsOutboundOrder draft = new WmsOutboundOrder()
+                .setOutboundNo("XS-DRAFT-1")
+                .setOutboundType(WmsConstants.OUTBOUND_TYPE_SALES)
+                .setStatus(WmsConstants.OUTBOUND_STATUS_DRAFT);
+        draft.setId("OB9");
+        when(outboundMapper.selectOne(any())).thenReturn(draft);
+        RuntimeException e1 = assertThrows(RuntimeException.class,
+                () -> service.printData(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XS-DRAFT-1"));
+        assertTrue(e1.getMessage().contains("草稿"), e1.getMessage());
+
+        WmsStocktakeOrder draftSt = new WmsStocktakeOrder().setStocktakeNo("PD-DRAFT-1")
+                .setStatus(WmsConstants.STOCKTAKE_STATUS_DRAFT);
+        draftSt.setId("ST9");
+        when(stocktakeMapper.selectOne(any())).thenReturn(draftSt);
+        RuntimeException e2 = assertThrows(RuntimeException.class,
+                () -> service.printData(WmsConstants.PRINT_BILL_LOSS, "PD-DRAFT-1"));
+        assertTrue(e2.getMessage().contains("草稿"), e2.getMessage());
+    }
+
     /** 空参数拒绝。 */
     @Test
     void printData_rejectsBlankParams() {
