@@ -111,7 +111,20 @@ public enum WmsConfigKey {
 
     /** 受托加工订单 FormId（ERP→WMS 读取，spec §3.2 受托到货登记校验）。 */
     KD_FORM_CONSIGNED_ORDER("kingdee.form.consigned-order", "受托加工订单 FormId",
-            WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null);
+            WmsConfigGroup.KINGDEE, WmsConfigType.TEXT, "", null),
+
+    /**
+     * 打印抬头的公司名（DY-001）。空则用模板内置「宜昌永鑫精工科技股份有限公司」。
+     */
+    PRINT_COMPANY_NAME("print.company.name", "打印公司名",
+            WmsConfigGroup.PRINT, WmsConfigType.TEXT, "", null),
+
+    /**
+     * 打印落款公司信息块（DY-001）：多行文本，每行一条，如提示语/工厂地址/电话/传真。
+     * 空则用模板内置销售出库样单五行文案。
+     */
+    PRINT_COMPANY_INFO("print.company.info", "打印公司信息块（每行一条）",
+            WmsConfigGroup.PRINT, WmsConfigType.TEXT, "", null);
 
     private final String key;
     private final String label;

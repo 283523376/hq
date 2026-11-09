@@ -21,23 +21,25 @@ class WmsConfigKeyTest {
      *   审计组随 XT-002 于 2026-11-02 新增，保留期必须前端可调；
      *   同步组随 SB-001 于 2026-11-03 新增 4 项：自动对账范围 + 三个保留期；
      *   金蝶单据组随 V2.4 于 2026-11-04 新增 5 个 formId，默认空串 = 未配置；
-     *   2026-11-05 新增物料分组映射 1 项，非 formId，走 TEXT + 默认空串） */
+     *   2026-11-05 新增物料分组映射 1 项，非 formId，走 TEXT + 默认空串；
+     *   2026-11-09 单据打印组（DY-001）新增 2 项：打印公司名 + 公司信息块） */
     @Test
     void shouldExposeAllKeysInGroups() {
-        assertEquals(19, WmsConfigKey.ordered().length);
+        assertEquals(21, WmsConfigKey.ordered().length);
         assertEquals(3, WmsConfigKey.ofGroup(WmsConfigGroup.INVENTORY).size());
         assertEquals(6, WmsConfigKey.ofGroup(WmsConfigGroup.SYNC).size());
         assertEquals(1, WmsConfigKey.ofGroup(WmsConfigGroup.DEFECT).size());
         assertEquals(2, WmsConfigKey.ofGroup(WmsConfigGroup.DEVICE).size());
         assertEquals(1, WmsConfigKey.ofGroup(WmsConfigGroup.AUDIT).size());
         assertEquals(6, WmsConfigKey.ofGroup(WmsConfigGroup.KINGDEE).size());
+        assertEquals(2, WmsConfigKey.ofGroup(WmsConfigGroup.PRINT).size());
     }
 
     /** 键必须唯一——重复键会让「按 key 取值」出现两个答案。 */
     @Test
     void keysShouldBeUnique() {
         long distinct = Arrays.stream(WmsConfigKey.ordered()).map(WmsConfigKey::getKey).distinct().count();
-        assertEquals(19, distinct);
+        assertEquals(21, distinct);
     }
 
     /** 设备两项的默认值必须与既有常量一致，否则「DB 无配置」时行为会静默改变。 */

@@ -10,6 +10,7 @@ import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.service.print.WmsPrintDataAssembler;
 import org.jeecg.modules.wms.service.store.WmsPrintSnapshotStore;
 import org.jeecg.modules.wms.sync.IWmsKingdeePrintReader;
@@ -53,6 +54,7 @@ class WmsPrintServiceImplTest {
     private WmsOutboundOrderMapper outboundMapper;
     private WmsOutboundDetailMapper detailMapper;
     private WmsMaterialMapper materialMapper;
+    private IWmsSystemConfigService configService;
     private WmsPrintServiceImpl service;
 
     @BeforeEach
@@ -64,8 +66,10 @@ class WmsPrintServiceImplTest {
         outboundMapper = mock(WmsOutboundOrderMapper.class);
         detailMapper = mock(WmsOutboundDetailMapper.class);
         materialMapper = mock(WmsMaterialMapper.class);
+        configService = mock(IWmsSystemConfigService.class);
+        when(configService.getString(anyString(), anyString())).thenReturn("");
         service = new WmsPrintServiceImpl(store, reader, assembler,
-                stocktakeMapper, outboundMapper, detailMapper, materialMapper);
+                stocktakeMapper, outboundMapper, detailMapper, materialMapper, configService);
         when(reader.isEnabled()).thenReturn(true);
     }
 
@@ -240,6 +244,33 @@ class WmsPrintServiceImplTest {
         assertEquals("1", stocktakes.get(0).get("printable"));
 
         assertTrue(service.localBills(WmsConstants.PRINT_BILL_MISC_DELIVERY, "x").isEmpty());
+    }
+
+    /** 公司名/公司信息块由系统配置覆盖（spec §5-5：换主体不改代码）。 */
+    @Test
+    void companyInfo_overriddenByConfig() {
+        when(configService.getString(eq("print.company.name"), anyString())).thenReturn("测试主体有限公司");
+        when(configService.getString(eq("print.company.info"), anyString()))
+                .thenReturn("第一行提示\n第二行地址");
+        when(reader.queryApproved(eq(WmsConstants.PRINT_BILL_SALES_OUTSTOCK), eq("XSCK1012619868")))
+                .thenReturn(Optional.of(kingdeeBill(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XSCK1012619868")));
+
+        WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XSCK1012619868");
+
+        assertEquals("测试主体有限公司", vo.getExtras().get("公司名"));
+        assertEquals(List.of("第一行提示", "第二行地址"), vo.getExtras().get("公司信息块"));
+    }
+
+    /** 未配置时用模板内置默认（不因空配置丢信息）。 */
+    @Test
+    void companyInfo_fallsBackToBuiltInDefaults() {
+        when(reader.queryApproved(eq(WmsConstants.PRINT_BILL_SALES_OUTSTOCK), eq("XSCK1012619868")))
+                .thenReturn(Optional.of(kingdeeBill(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XSCK1012619868")));
+
+        WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XSCK1012619868");
+
+        assertEquals("宜昌永鑫精工科技股份有限公司", vo.getExtras().get("公司名"));
+        assertNotNull(vo.getExtras().get("公司信息块"));
     }
 
     /** 空参数拒绝。 */

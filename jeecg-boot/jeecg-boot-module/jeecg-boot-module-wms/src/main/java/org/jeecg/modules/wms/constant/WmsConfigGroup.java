@@ -24,7 +24,9 @@ public enum WmsConfigGroup {
      * <p>formId 由 BOS 控制台确认后由管理员录入；单独成组是为了让「未配置」在配置页一眼可见，
      * 不必翻到同步组里逐项找。
      */
-    KINGDEE("kingdee", "金蝶单据");
+    KINGDEE("kingdee", "金蝶单据"),
+    /** 单据打印（DY-001）：抬头公司名与落款公司信息块。 */
+    PRINT("print", "单据打印");
 
     private final String code;
     private final String name;

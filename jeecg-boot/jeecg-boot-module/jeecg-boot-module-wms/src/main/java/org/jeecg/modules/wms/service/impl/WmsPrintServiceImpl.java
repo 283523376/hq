@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConfigKey;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsOutboundDetail;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
@@ -15,6 +16,7 @@ import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
 import org.jeecg.modules.wms.service.IWmsPrintService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
 import org.jeecg.modules.wms.service.print.WmsPrintDataAssembler;
 import org.jeecg.modules.wms.service.store.WmsPrintSnapshotStore;
 import org.jeecg.modules.wms.sync.IWmsKingdeePrintReader;
@@ -52,6 +54,9 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
             new TypeReference<List<Map<String, String>>>() {
             };
 
+    /** 打印抬头默认公司名（与样单一致；系统配置 print.company.name 可覆盖）。 */
+    private static final String DEFAULT_COMPANY_NAME = "宜昌永鑫精工科技股份有限公司";
+
     private final WmsPrintSnapshotStore store;
     private final IWmsKingdeePrintReader reader;
     private final WmsPrintDataAssembler assembler;
@@ -59,11 +64,13 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
     private final WmsOutboundOrderMapper outboundMapper;
     private final WmsOutboundDetailMapper detailMapper;
     private final WmsMaterialMapper materialMapper;
+    private final IWmsSystemConfigService configService;
 
     public WmsPrintServiceImpl(WmsPrintSnapshotStore store, IWmsKingdeePrintReader reader,
                                WmsPrintDataAssembler assembler, WmsStocktakeOrderMapper stocktakeMapper,
                                WmsOutboundOrderMapper outboundMapper,
-                               WmsOutboundDetailMapper detailMapper, WmsMaterialMapper materialMapper) {
+                               WmsOutboundDetailMapper detailMapper, WmsMaterialMapper materialMapper,
+                               IWmsSystemConfigService configService) {
         this.store = store;
         this.reader = reader;
         this.assembler = assembler;
@@ -71,6 +78,7 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
         this.outboundMapper = outboundMapper;
         this.detailMapper = detailMapper;
         this.materialMapper = materialMapper;
+        this.configService = configService;
     }
 
     @Override
@@ -83,16 +91,39 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
         if (no.isEmpty()) {
             throw new RuntimeException("单据号不能为空");
         }
+        WmsPrintDataVO vo;
         if (WmsConstants.PRINT_BILL_PROFIT.equals(type) || WmsConstants.PRINT_BILL_LOSS.equals(type)) {
-            return inventoryRoute(type, no);
-        }
-        if (WmsConstants.PRINT_BILL_SALES_OUTSTOCK.equals(type)) {
-            return salesOutstockRoute(no);
-        }
-        if (!isSupported(type)) {
+            vo = inventoryRoute(type, no);
+        } else if (WmsConstants.PRINT_BILL_SALES_OUTSTOCK.equals(type)) {
+            vo = salesOutstockRoute(no);
+        } else if (!isSupported(type)) {
             throw new RuntimeException("不支持的打印单据类型：" + type);
+        } else {
+            vo = kingdeeRoute(type, no, null, true);
         }
-        return kingdeeRoute(type, no, null, true);
+        applyCompanyConfig(vo);
+        return vo;
+    }
+
+    /**
+     * 抬头公司名与落款公司信息块：系统配置（print.company.name / print.company.info）优先，
+     * 未配置时用模板内置默认值——换打印主体不改代码（spec §5-5）。
+     */
+    private void applyCompanyConfig(WmsPrintDataVO vo) {
+        String name = trim(configService.getString(WmsConfigKey.PRINT_COMPANY_NAME.getKey(), ""));
+        vo.getExtras().put("公司名", name.isEmpty() ? DEFAULT_COMPANY_NAME : name);
+        String info = configService.getString(WmsConfigKey.PRINT_COMPANY_INFO.getKey(), "");
+        if (oConvertUtils.isNotEmpty(info)) {
+            List<String> lines = new ArrayList<>();
+            for (String line : info.split("\\r?\\n")) {
+                if (!line.trim().isEmpty()) {
+                    lines.add(line.trim());
+                }
+            }
+            if (!lines.isEmpty()) {
+                vo.getExtras().put("公司信息块", lines);
+            }
+        }
     }
 
     // ------------------------------------------------------------ 盘盈/盘亏
