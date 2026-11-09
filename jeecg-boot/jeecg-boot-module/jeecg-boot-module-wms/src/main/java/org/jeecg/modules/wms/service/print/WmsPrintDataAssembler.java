@@ -35,12 +35,21 @@ public class WmsPrintDataAssembler {
     public static final int ROWS_PER_PAGE = 12;
 
     /**
-     * 按单据类型覆盖的每页行数（客户 2026-11-09：销售出库/销售退货表体只留 6 行，
-     * 12 行太密）。加类型只改这里。
+     * 按单据类型覆盖的每页行数（客户 2026-11-09 逐张核对样单后定）：
+     * 销售出库/销售退货/其他入库表体各 6 行，其余默认 12。加类型只改这里。
      */
     private static final Map<String, Integer> ROWS_PER_PAGE_BY_TYPE = Map.of(
             WmsConstants.PRINT_BILL_SALES_OUTSTOCK, 6,
-            WmsConstants.PRINT_BILL_SALES_RETURN, 6);
+            WmsConstants.PRINT_BILL_SALES_RETURN, 6,
+            WmsConstants.PRINT_BILL_MISC_INSTOCK, 6);
+
+    /**
+     * 不补空行的单据类型（客户 2026-11-09：其他出库单、委外领料单按实际行数出表，
+     * 有几行打几行）。其余类型末页补空行到固定行数。
+     */
+    private static final java.util.Set<String> NO_PADDING_TYPES = java.util.Set.of(
+            WmsConstants.PRINT_BILL_MISC_DELIVERY,
+            WmsConstants.PRINT_BILL_SUB_PICK);
 
     /** 销售出库单 logo（前端 public 资源相对路径，Task 6 模板引用）。 */
     private static final String SALES_LOGO = "youth-logo.png";
@@ -347,13 +356,14 @@ public class WmsPrintDataAssembler {
     /** 分页 + 末页补空行 + 回填 totalPages/rowsPerPage（行数按类型，默认 {@link #ROWS_PER_PAGE}）。 */
     private void finish(WmsPrintDataVO vo, List<List<String>> body) {
         int perPage = ROWS_PER_PAGE_BY_TYPE.getOrDefault(vo.getBillType(), ROWS_PER_PAGE);
+        boolean padBlank = !NO_PADDING_TYPES.contains(vo.getBillType());
         int pageCount = Math.max(1, (int) Math.ceil(body.size() / (double) perPage));
         List<List<List<String>>> pages = new ArrayList<>(pageCount);
         for (int p = 0; p < pageCount; p++) {
             int from = p * perPage;
             int to = Math.min(from + perPage, body.size());
             List<List<String>> page = new ArrayList<>(body.subList(from, to));
-            while (page.size() < perPage) {
+            while (padBlank && page.size() < perPage) {
                 page.add(blankRow(vo.getColumns().size()));
             }
             pages.add(page);

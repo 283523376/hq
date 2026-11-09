@@ -43,7 +43,7 @@
 
 .sheet-meta .meta-block {
   display: flex;
-  gap: 18px;
+  gap: 32px;
   flex-wrap: wrap;
 }
 
@@ -65,6 +65,12 @@
   line-height: 1.35;
   word-break: break-all;
   vertical-align: middle;
+}
+
+/* 空行与数据行同高（样单整表行高一致）；内容多时自然撑高 */
+.sheet-table tbody td {
+  height: 26px;
+  box-sizing: border-box;
 }
 
 .sheet-table th {

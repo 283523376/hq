@@ -268,7 +268,7 @@ class WmsPrintDataAssemblerTest {
 
     // ------------------------------------------------------------ 分页
 
-    /** 15 行 × 每页 12 → 2 页（12/3），第二页补空行到 12，合计只在末页且为全量。 */
+    /** 15 行 × 每页 12（盘盈清单默认行数）→ 2 页（12/3），末页补空行，合计只在末页且为全量。 */
     @Test
     void pagination_slicesRows_padsLastPage_andTotalsOnlyOnLastPage() {
         List<Map<String, String>> rows = new java.util.ArrayList<>();
@@ -278,22 +278,21 @@ class WmsPrintDataAssemblerTest {
                     "FUnitId.FName", "支", "FQty", "10"));
         }
         WmsKingdeePrintBill bill = new WmsKingdeePrintBill()
-                .setBillType(WmsConstants.PRINT_BILL_MISC_INSTOCK)
+                .setBillType(WmsConstants.PRINT_BILL_PROFIT)
                 .setFormId("STK_MISCELLANEOUS")
                 .setBillNo("QTRK10126110010")
                 .setRows(rows);
 
-        WmsPrintDataVO vo = assembler.assembleMiscInstock(bill);
+        WmsPrintDataVO vo = assembler.assembleInventoryList(WmsConstants.PRINT_BILL_PROFIT, bill, null);
 
         assertEquals(WmsPrintDataAssembler.ROWS_PER_PAGE, vo.getRowsPerPage());
         assertEquals(2, vo.getTotalPages());
         assertEquals(2, vo.getPages().size());
         assertEquals(WmsPrintDataAssembler.ROWS_PER_PAGE, vo.getPages().get(0).size());
         assertEquals(WmsPrintDataAssembler.ROWS_PER_PAGE, vo.getPages().get(1).size(), "末页补空行到固定行数");
-        assertEquals("M1", vo.getPages().get(0).get(0).get(2));
-        assertEquals("M13", vo.getPages().get(1).get(0).get(2), "第二页从第 13 行起");
-        assertEquals("", vo.getPages().get(1).get(3).get(2), "补的空行首列为空");
-        assertEquals("150", vo.getTotalsOnLastPage().get("数量"), "合计 = 15 × 10");
+        assertEquals("M1", vo.getPages().get(0).get(0).get(4));
+        assertEquals("M13", vo.getPages().get(1).get(0).get(4), "第二页从第 13 行起");
+        assertEquals("", vo.getPages().get(1).get(3).get(4), "补的空行物料编码为空");
     }
 
     /** 销售退货单同样 6 行（客户 2026-11-09：与销售出库一致）。 */
@@ -354,7 +353,7 @@ class WmsPrintDataAssemblerTest {
         WmsPrintDataVO vo = assembler.assembleMiscInstock(bill);
 
         assertEquals(1, vo.getTotalPages());
-        assertEquals(WmsPrintDataAssembler.ROWS_PER_PAGE, vo.getPages().get(0).size());
+        assertEquals(6, vo.getPages().get(0).size(), "其他入库单表体固定 6 行");
         assertEquals("5", vo.getTotalsOnLastPage().get("数量"));
     }
 
@@ -374,5 +373,30 @@ class WmsPrintDataAssemblerTest {
             map.put(kv[i], kv[i + 1]);
         }
         return map;
+    }
+
+    /** 其他出库单按实际行数出表，不补空行（客户 2026-11-09）。 */
+    @Test
+    void miscDelivery_noBlankRows() {
+        WmsKingdeePrintBill bill = printBill(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK10126090100",
+                row("FBillNo", "QTCK10126090100", "FDate", "2026-09-04",
+                        "FMaterialId.FName", "微动开关", "FMaterialId.FNumber", "Y.P.010.0032",
+                        "FUnitId.FName", "个", "FQty", "1"));
+
+        WmsPrintDataVO vo = assembler.assembleMiscDelivery(bill);
+
+        assertEquals(1, vo.getPages().get(0).size(), "只有 1 行数据就没有空行");
+    }
+
+    /** 委外领料单同样按实际行数出表，不补空行。 */
+    @Test
+    void subcontractPick_noBlankRows() {
+        WmsKingdeePrintBill bill = printBill(WmsConstants.PRINT_BILL_SUB_PICK, "WWLL00008180",
+                row("FBillNo", "WWLL00008180", "FDate", "2026-09-04",
+                        "FMaterialId.FName", "料", "FUnitId.FName", "支", "FAppQty", "2"));
+
+        WmsPrintDataVO vo = assembler.assembleSubcontractPick(bill, Map.of());
+
+        assertEquals(1, vo.getPages().get(0).size(), "只有 1 行数据就没有空行");
     }
 }
