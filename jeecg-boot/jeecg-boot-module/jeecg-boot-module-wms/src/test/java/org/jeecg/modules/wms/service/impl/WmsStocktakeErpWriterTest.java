@@ -125,6 +125,37 @@ class WmsStocktakeErpWriterTest {
         return detail;
     }
 
+    /**
+     * 盘盈分录必须带收货仓库与库存状态（2026-11-09 真账套：缺这两项报「分录第1行字段"收货仓库"/"库存状态"是必填项」，
+     * 开出 QTRK10126110002）；盘亏侧 STK_MisDelivery 不带也能存，别顺手加过去改坏了既有报文。
+     */
+    @Test
+    void gainEntryCarriesStockAndStatusRequiredByQtrk() {
+        properties.getStocktake().setStockCode("D.01");
+        properties.setStockStatusId("KCZT01_SYS");
+        when(detailMapper.selectList(any())).thenReturn(List.of(
+                detail("loc-1", "m1", "10", "12"),   // 盈 2
+                detail("loc-2", "m2", "10", "7")));  // 亏 3
+        when(formClient.save(anyString(), any())).thenReturn(WmsKingdeeResult.ok("{}", List.of(), "QTRK000001", "1"));
+
+        writer.writeGain(order());
+        writer.writeLoss(order());
+
+        ArgumentCaptor<Map<String, Object>> modelCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(formClient, org.mockito.Mockito.times(2)).save(anyString(), modelCaptor.capture());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> gainEntries =
+                (List<Map<String, Object>>) modelCaptor.getAllValues().get(0).get("FEntity");
+        assertEquals(Map.of("FNumber", "D.01"), gainEntries.get(0).get("FStockId"));
+        assertEquals(Map.of("FNumber", "KCZT01_SYS"), gainEntries.get(0).get("FStockStatusId"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lossEntries =
+                (List<Map<String, Object>>) modelCaptor.getAllValues().get(1).get("FEntity");
+        assertFalse(lossEntries.get(0).containsKey("FStockId"), "盘亏侧不要加 FStockId");
+        assertFalse(lossEntries.get(0).containsKey("FStockStatusId"), "盘亏侧不要加 FStockStatusId");
+    }
+
     @Test
     void zeroDiffRowsAreExcludedFromBothSides() {
         properties.getStocktake().setStockCode("D.01");

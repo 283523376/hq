@@ -112,6 +112,15 @@ public class WmsStocktakeErpWriterImpl {
             if (StringUtils.hasText(detail.getBatchNo())) {
                 entry.put("FLot", mapByNumber(detail.getBatchNo()));
             }
+            // 盘盈（QTRK/STK_Miscellaneous）分录比盘亏多两个必填：收货仓库 FStockId 与库存状态
+            // FStockStatusId。缺了报「分录第1行字段"收货仓库"/"库存状态"是必填项」（2026-11-09 真账套实测，
+            // 开出 QTRK10126110002）；盘亏侧 STK_MisDelivery 不带这两项也能存，故只补盘盈侧。
+            if (gain) {
+                entry.put("FStockId", mapByNumber(properties.getStocktake().getStockCode()));
+                if (StringUtils.hasText(properties.getStockStatusId())) {
+                    entry.put("FStockStatusId", mapByNumber(properties.getStockStatusId()));
+                }
+            }
             entries.add(entry);
         }
         if (entries.isEmpty()) {
