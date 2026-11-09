@@ -82,6 +82,11 @@
           margin-bottom: 20px;
         }
 
+        /* 楠柏莞 logo 是深墨色透明 PNG，深色主题下反色才看得见 */
+        html[data-theme='dark'] .app-loading .app-loading-logo {
+          filter: invert(1);
+        }
+
         .dot {
           position: relative;
           display: inline-block;
