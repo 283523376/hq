@@ -35,11 +35,12 @@ public class WmsPrintDataAssembler {
     public static final int ROWS_PER_PAGE = 12;
 
     /**
-     * 按单据类型覆盖的每页行数（客户 2026-11-09：销售出库单表体只留 6 行，
+     * 按单据类型覆盖的每页行数（客户 2026-11-09：销售出库/销售退货表体只留 6 行，
      * 12 行太密）。加类型只改这里。
      */
     private static final Map<String, Integer> ROWS_PER_PAGE_BY_TYPE = Map.of(
-            WmsConstants.PRINT_BILL_SALES_OUTSTOCK, 6);
+            WmsConstants.PRINT_BILL_SALES_OUTSTOCK, 6,
+            WmsConstants.PRINT_BILL_SALES_RETURN, 6);
 
     /** 销售出库单 logo（前端 public 资源相对路径，Task 6 模板引用）。 */
     private static final String SALES_LOGO = "youth-logo.png";

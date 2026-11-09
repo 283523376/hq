@@ -296,6 +296,20 @@ class WmsPrintDataAssemblerTest {
         assertEquals("150", vo.getTotalsOnLastPage().get("数量"), "合计 = 15 × 10");
     }
 
+    /** 销售退货单同样 6 行（客户 2026-11-09：与销售出库一致）。 */
+    @Test
+    void salesReturn_defaultsToSixRows_perPage() {
+        WmsKingdeePrintBill bill = printBill(WmsConstants.PRINT_BILL_SALES_RETURN, "XSTHD000001",
+                row("FBillNo", "XSTHD000001", "FDate", "2024-11-21",
+                        "FSettleCustId.FName", "乙客户", "FMaterialId.FName", "料",
+                        "FUnitId.FName", "支", "FRealQty", "10"));
+
+        WmsPrintDataVO vo = assembler.assembleSalesReturn(bill);
+
+        assertEquals(6, vo.getRowsPerPage());
+        assertEquals(6, vo.getPages().get(0).size());
+    }
+
     /** 销售出库单默认只保留 6 行（客户 2026-11-09：12 行太密），其余类型仍 12 行。 */
     @Test
     void salesOutstock_defaultsToSixRows_perPage() {
