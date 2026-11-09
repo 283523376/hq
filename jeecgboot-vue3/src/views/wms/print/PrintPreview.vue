@@ -1,13 +1,13 @@
 <template>
   <div class="print-preview">
-    <!-- 快照回退标注：显著提示数据时间，打印时隐藏 -->
+    <!-- 数据提示：快照回退标注数据时间；仅 warn（如本地单金蝶价税取不到）也要显示；打印时隐藏 -->
     <a-alert
-      v-if="data.snapshotTime"
+      v-if="data.snapshotTime || data.extras?.warn"
       class="no-print"
       type="warning"
       show-icon
-      :message="`金蝶暂不可达，本次预览为 ${snapshotTimeText} 的数据`"
-      :description="data.extras?.warn || ''"
+      :message="alertMessage"
+      :description="alertDescription"
       style="margin-bottom: 12px"
     />
     <div class="print-area">
@@ -47,4 +47,13 @@
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
+
+  /** 有快照：提示数据时间；无快照仅有 warn（如本地单金蝶价税取不到）：直接展示原因 */
+  const alertMessage = computed(() =>
+    props.data.snapshotTime
+      ? `金蝶暂不可达，本次预览为 ${snapshotTimeText.value} 的数据`
+      : '打印数据提示',
+  );
+
+  const alertDescription = computed(() => props.data.extras?.warn || '');
 </script>

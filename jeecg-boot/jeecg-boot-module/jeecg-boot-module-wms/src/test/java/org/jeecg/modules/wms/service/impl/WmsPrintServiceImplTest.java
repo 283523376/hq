@@ -167,6 +167,74 @@ class WmsPrintServiceImplTest {
         assertTrue(e.getMessage().contains("不存在或未审核"), e.getMessage());
     }
 
+    /**
+     * 评审 I1（Critical）：查空 ≠ 金蝶故障。单据被反审核/作废后必须**拒绝**，
+     * 绝不能拿旧快照放行打印（会让已失效单据当凭证用）。
+     */
+    @Test
+    void kingdeeEmpty_doesNotFallBackToSnapshot() {
+        when(reader.queryApproved(anyString(), anyString())).thenReturn(Optional.empty());
+        WmsPrintDocument stale = new WmsPrintDocument()
+                .setBillType(WmsConstants.PRINT_BILL_MISC_DELIVERY)
+                .setErpBillNo("QTCK10126110327")
+                .setPayload(JSON.toJSONString(List.of(miscRow())))
+                .setSnapshotTime(new Date());
+        stale.setId("DOC9");
+        when(store.find(anyString(), anyString())).thenReturn(Optional.of(stale));
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.printData(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK10126110327"));
+        assertTrue(e.getMessage().contains("不存在或未审核"), e.getMessage());
+    }
+
+    /**
+     * 评审 I2：快照回退必须保留模板 extras（联次行/公司信息块/logo），
+     * 否则「离线重打」正好丢掉版式要素。
+     */
+    @Test
+    void kingdeeDown_withSnapshot_keepsTemplateExtras() {
+        when(reader.queryApproved(anyString(), anyString()))
+                .thenThrow(new RuntimeException("金蝶查询失败：网络超时"));
+        WmsPrintDocument snap = new WmsPrintDocument()
+                .setBillType(WmsConstants.PRINT_BILL_SALES_OUTSTOCK)
+                .setErpBillNo("XSCK1012619868")
+                .setPayload(JSON.toJSONString(List.of(salesRow())))
+                .setSnapshotTime(new Date());
+        snap.setId("DOC3");
+        when(store.find(anyString(), anyString())).thenReturn(Optional.of(snap));
+
+        WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XSCK1012619868");
+
+        assertNotNull(vo.getExtras().get("logo"), "回退后 logo 不能丢");
+        assertNotNull(vo.getExtras().get("联次行"), "回退后联次行不能丢");
+        assertNotNull(vo.getExtras().get("公司信息块"), "回退后公司信息块不能丢");
+        assertNotNull(vo.getExtras().get("warn"));
+    }
+
+    /**
+     * 评审 I3：本地单已回写金蝶时，以金蝶数据组装——打印编号用金蝶单号（spec §5-1），
+     * 单价/货款有值（不是本地兜底的空串）。
+     */
+    @Test
+    void salesOutstock_localBill_writtenBack_usesKingdeeData() {
+        WmsOutboundOrder order = new WmsOutboundOrder()
+                .setOutboundNo("XS2118258526005280770")
+                .setOutboundType(WmsConstants.OUTBOUND_TYPE_SALES)
+                .setErpBillNo("XSCK1012619868")
+                .setCustomerName("健鼎（湖北）电子有限公司");
+        order.setId("OB1");
+        when(outboundMapper.selectOne(any())).thenReturn(order);
+        when(reader.queryApproved(eq(WmsConstants.PRINT_BILL_SALES_OUTSTOCK), eq("XSCK1012619868")))
+                .thenReturn(Optional.of(kingdeeBill(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XSCK1012619868")));
+
+        WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XS2118258526005280770");
+
+        assertEquals("XSCK1012619868", vo.getErpBillNo(), "打印编号必须是金蝶单号");
+        List<String> first = vo.getPages().get(0).get(0);
+        assertEquals("0.68", first.get(3), "单价取自金蝶");
+        assertEquals("17680", first.get(4), "货款取自金蝶");
+    }
+
     /** 金蝶未启用：有快照走快照，无快照报未启用。 */
     @Test
     void kingdeeDisabled_usesSnapshot_orReportsDisabled() {
@@ -210,9 +278,10 @@ class WmsPrintServiceImplTest {
         WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XS2118258526005280770");
 
         assertEquals("销售出库单", vo.getTitle());
-        assertEquals("XS2118258526005280770", vo.getErpBillNo());
+        // 已回写的单，打印编号用金蝶单号（spec §5-1）；本地号只作查询入口
+        assertEquals("XSCK1012619868", vo.getErpBillNo());
         assertEquals("健鼎（湖北）电子有限公司", vo.getHeaders().get("购货单位"));
-        assertNotNull(vo.getExtras().get("warn"), "金蝶补字段失败必须提示但不阻断");
+        assertNotNull(vo.getExtras().get("warn"), "金蝶取数失败必须提示但不阻断");
     }
 
     /** XSCK 金蝶单号（本地查无）：走金蝶链路并落快照。 */
@@ -334,6 +403,8 @@ class WmsPrintServiceImplTest {
         r.put("FMaterialId.FName", "铣刀");
         r.put("FUnitId.FName", "支");
         r.put("FRealQty", "26000");
+        r.put("FPrice", "0.68");
+        r.put("FAmount", "17680");
         return r;
     }
 }

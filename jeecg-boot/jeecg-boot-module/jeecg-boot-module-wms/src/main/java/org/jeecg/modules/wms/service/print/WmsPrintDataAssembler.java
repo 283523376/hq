@@ -76,9 +76,10 @@ public class WmsPrintDataAssembler {
             line.add(nvl(get(r, "FMaterialId.FName")));
             line.add(nvl(get(r, "FMaterialId.FSpecification")));
             line.add(nvl(get(r, "FUnitId.FName")));
-            line.add(nvl(get(r, "FQty")));
-            line.add("");
-            line.add("");
+            line.add(numText(get(r, "FQty")));
+            // 成本价/总成本取金蝶分录自身字段（评审 I6：spec §4-T1 口径）
+            line.add(numText(get(r, "FPrice")));
+            line.add(numText(get(r, "FAmount")));
             line.add("");
             body.add(line);
         }
@@ -105,7 +106,7 @@ public class WmsPrintDataAssembler {
                     nvl(get(r, "FMaterialId.FSpecification")),
                     nvl(get(r, "FMaterialId.FNumber")),
                     nvl(get(r, "FUnitId.FName")),
-                    nvl(get(r, "FQty")),
+                    numText(get(r, "FQty")),
                     nvl(get(r, "FEntryNote")).trim()));
         }
         Map<String, String> head = first(rows);
@@ -137,7 +138,7 @@ public class WmsPrintDataAssembler {
                     nvl(get(r, "FMaterialId.FSpecification")),
                     nvl(get(r, "FMaterialId.FNumber")),
                     nvl(get(r, "FUnitId.FName")),
-                    nvl(get(r, "FQty")),
+                    numText(get(r, "FQty")),
                     nvl(get(r, "FLot.FNumber")),
                     nvl(get(r, "FStockId.FName"))));
         }
@@ -217,7 +218,7 @@ public class WmsPrintDataAssembler {
             body.add(List.of(
                     joinNameSpec(get(r, "FMaterialId.FName"), get(r, "FMaterialId.FSpecification")),
                     nvl(get(r, "FUnitId.FName")),
-                    nvl(get(r, "FRealQty")),
+                    numText(get(r, "FRealQty")),
                     nvl(get(r, "FPrice")),
                     nvl(get(r, "FAmount")),
                     nvl(get(r, "FEntryNote")).trim()));
@@ -296,7 +297,7 @@ public class WmsPrintDataAssembler {
                     nvl(get(r, "FMaterialId.FSpecification")),
                     nvl(get(r, "FMaterialId.FNumber")),
                     nvl(get(r, "FUnitId.FName")),
-                    nvl(get(r, "FRealQty")),
+                    numText(get(r, "FRealQty")),
                     nvl(get(r, "FEntryNote")).trim()));
         }
         Map<String, String> head = first(rows);
@@ -368,14 +369,27 @@ public class WmsPrintDataAssembler {
         return nvl(name) + nvl(spec);
     }
 
-    /** 金蝶返回 FDate 形如 2026-11-09T00:00:00，打印只要日期。 */
+    /** 金蝶返回 FDate 形如 2026-11-09T00:00:00，打印成样单的 2026/11/9（斜杠、不补零）。 */
     private static String dateOnly(String value) {
         if (value == null) {
             return "";
         }
         String v = value.trim();
         int t = v.indexOf('T');
-        return t > 0 ? v.substring(0, t) : (v.length() > 10 ? v.substring(0, 10) : v);
+        String d = t > 0 ? v.substring(0, t) : v;
+        if (d.length() > 10) {
+            d = d.substring(0, 10);
+        }
+        String[] parts = d.split("-");
+        if (parts.length == 3) {
+            try {
+                return Integer.parseInt(parts[0]) + "/" + Integer.parseInt(parts[1]) + "/"
+                        + Integer.parseInt(parts[2]);
+            } catch (NumberFormatException e) {
+                return d;
+            }
+        }
+        return d;
     }
 
     private static String firstNonBlank(String... values) {
@@ -385,6 +399,18 @@ public class WmsPrintDataAssembler {
             }
         }
         return "";
+    }
+
+    /** 数量/金额展示：空值留空，非空去尾零（金蝶返回 26000.0 时打印 26000，与合计同格式）。 */
+    private static String numText(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "";
+        }
+        try {
+            return new BigDecimal(value.trim()).stripTrailingZeros().toPlainString();
+        } catch (NumberFormatException e) {
+            return value.trim();
+        }
     }
 
     private static String nvl(String value) {

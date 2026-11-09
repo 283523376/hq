@@ -187,6 +187,25 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
         if (order == null) {
             return kingdeeRoute(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, billNo, null, true);
         }
+        String erpNo = trim(order.getErpBillNo());
+        // 已回写金蝶：以金蝶数据组装——打印编号用金蝶单号（spec §5-1）、单价/货款有值（评审 I3）。
+        // 金蝶不可达或单据未审核时才回落本地明细，并在预览页提示。
+        String kingdeeWarn = null;
+        if (!erpNo.isEmpty() && reader.isEnabled()) {
+            try {
+                Optional<WmsKingdeePrintBill> bill =
+                        reader.queryApproved(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, erpNo);
+                if (bill.isPresent()) {
+                    store.upsert(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, erpNo,
+                            JSON.toJSONString(bill.get().getRows()));
+                    return assemble(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, bill.get(), null, null);
+                }
+                kingdeeWarn = "金蝶单据[" + erpNo + "]未审核，价税信息待审核后补全";
+            } catch (RuntimeException e) {
+                log.warn("销售出库单[{}]金蝶取数失败，改用本地明细：{}", billNo, e.getMessage());
+                kingdeeWarn = "金蝶暂不可达，价税信息暂不可用：" + e.getMessage();
+            }
+        }
         List<WmsOutboundDetail> details = detailMapper.selectList(
                 new QueryWrapper<WmsOutboundDetail>().eq("outbound_id", order.getId())
                         .orderByAsc("line_no"));
@@ -195,21 +214,12 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
         }
         Map<String, String> specByCode = loadSpecs(details);
         WmsPrintDataVO vo = assembler.assembleSalesOutstockLocal(order, details, specByCode);
-        // 已回写金蝶的本地单：尝试补齐价税等金蝶字段；失败只 warn（本地数据已够打印）
-        if (oConvertUtils.isNotEmpty(order.getErpBillNo())) {
-            try {
-                Optional<WmsKingdeePrintBill> bill = reader.isEnabled()
-                        ? reader.queryApproved(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, order.getErpBillNo())
-                        : Optional.empty();
-                if (bill.isPresent()) {
-                    store.upsert(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, order.getErpBillNo(),
-                            JSON.toJSONString(bill.get().getRows()));
-                    vo.getExtras().put("erpBillNo", order.getErpBillNo());
-                }
-            } catch (RuntimeException e) {
-                log.warn("销售出库单[{}]金蝶补字段失败，仅打印本地数据：{}", billNo, e.getMessage());
-                vo.getExtras().put("warn", "金蝶价税信息暂不可用：" + e.getMessage());
-            }
+        // 已回写的单，编号仍以金蝶单号为准（本地号只作查询入口）
+        if (!erpNo.isEmpty()) {
+            vo.setErpBillNo(erpNo);
+        }
+        if (kingdeeWarn != null) {
+            vo.getExtras().put("warn", kingdeeWarn);
         }
         return vo;
     }
@@ -245,11 +255,14 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
             try {
                 Optional<WmsKingdeePrintBill> bill = reader.queryApproved(type, erpBillNo);
                 if (bill.isEmpty()) {
-                    throw new RuntimeException("单据不存在或未审核，不能打印（单号：" + erpBillNo
+                    // 查空 ≠ 金蝶故障：单据可能被反审核/作废。绝不能拿旧快照放行打印（评审 I1）。
+                    throw new PrintRejectedException("单据不存在或未审核，不能打印（单号：" + erpBillNo
                             + "，单据类型：" + type + "）");
                 }
                 store.upsert(type, erpBillNo, JSON.toJSONString(bill.get().getRows()));
                 return assemble(type, bill.get(), stocktakeNo, null);
+            } catch (PrintRejectedException e) {
+                throw e;
             } catch (IllegalArgumentException e) {
                 throw e;
             } catch (RuntimeException e) {
@@ -268,10 +281,21 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
             WmsKingdeePrintBill bill = new WmsKingdeePrintBill()
                     .setBillType(type).setBillNo(erpBillNo)
                     .setRows(rows == null ? List.of() : rows);
-            return assemble(type, bill, stocktakeNo, doc.getSnapshotTime())
-                    .setExtras(mergeWarn(null, failure.getMessage()));
+            WmsPrintDataVO vo = assemble(type, bill, stocktakeNo, doc.getSnapshotTime());
+            // 保留组装器写入的版式要素（logo/联次行/公司信息块），只追加 warn（评审 I2）
+            vo.setExtras(mergeWarn(vo.getExtras(), failure.getMessage()));
+            return vo;
         }
         throw failure;
+    }
+
+    /** 打印被拒绝（单据不存在/未审核）：不是金蝶故障，不得回退快照。 */
+    private static class PrintRejectedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        PrintRejectedException(String message) {
+            super(message);
+        }
     }
 
     private WmsPrintDataVO assemble(String type, WmsKingdeePrintBill bill, String stocktakeNo,

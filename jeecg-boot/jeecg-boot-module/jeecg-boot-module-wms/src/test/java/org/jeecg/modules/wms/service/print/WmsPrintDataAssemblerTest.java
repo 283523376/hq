@@ -67,15 +67,55 @@ class WmsPrintDataAssemblerTest {
         List<String> firstRow = vo.getPages().get(0).get(0);
         assertEquals("PD202611090002", firstRow.get(0), "盘点作业编码缺失时回落 WMS 盘点单号");
         assertEquals("QTRK10126110003", firstRow.get(1));
-        assertEquals("2026-11-09", firstRow.get(2));
+        assertEquals("2026/11/9", firstRow.get(2));
         assertEquals("D.02", firstRow.get(3), "仓库取收货仓库");
         assertEquals("M001", firstRow.get(4));
         assertEquals("铜带", firstRow.get(5));
         assertEquals("3.17*0.85", firstRow.get(6));
         assertEquals("支", firstRow.get(7));
         assertEquals("1", firstRow.get(8));
-        assertEquals("", firstRow.get(9), "成本价本期留空（金蝶未提供取数口径；空串而非 null，避免前端渲染 null）");
+        assertEquals("", firstRow.get(9), "无成本字段时留空（空串而非 null，避免前端渲染 null）");
         assertEquals("QTRK10126110003", vo.getErpBillNo());
+    }
+
+    /** 评审 I6：成本价/总成本取金蝶分录自身字段（FPrice/FAmount），不再恒空。 */
+    @Test
+    void inventoryList_costColumns_filledFromEntries() {
+        WmsKingdeePrintBill bill = printBill(WmsConstants.PRINT_BILL_LOSS, "QTCK000001",
+                row("FBillNo", "QTCK000001", "FDate", "2024-11-06",
+                        "FMaterialId.FNumber", "WA.2206", "FMaterialId.FName", "UN0.30*5.5-C",
+                        "FUnitId.FName", "支", "FQty", "100",
+                        "FPrice", "0.533681", "FAmount", "53.37"));
+
+        WmsPrintDataVO vo = assembler.assembleInventoryList(WmsConstants.PRINT_BILL_LOSS, bill, null);
+
+        List<String> first = vo.getPages().get(0).get(0);
+        assertEquals("0.533681", first.get(9), "成本价取分录 FPrice");
+        assertEquals("53.37", first.get(10), "总成本取分录 FAmount");
+    }
+
+    /** 评审 Minor：数量去尾零（金蝶返回 26000.0 时打印 26000），与合计同格式。 */
+    @Test
+    void numbers_stripTrailingZeros_consistently() {
+        WmsKingdeePrintBill bill = printBill(WmsConstants.PRINT_BILL_MISC_INSTOCK, "QTRK000001",
+                row("FBillNo", "QTRK000001", "FMaterialId.FName", "料1", "FUnitId.FName", "支",
+                        "FQty", "26000.0"));
+
+        WmsPrintDataVO vo = assembler.assembleMiscInstock(bill);
+
+        assertEquals("26000", vo.getPages().get(0).get(0).get(4));
+        assertEquals("26000", vo.getTotalsOnLastPage().get("数量"));
+    }
+
+    /** 客户样单日期为 2026/11/9 形态（斜杠、不补零）。 */
+    @Test
+    void dates_useSampleSlashStyle() {
+        WmsKingdeePrintBill bill = printBill(WmsConstants.PRINT_BILL_MISC_INSTOCK, "QTRK000001",
+                row("FBillNo", "QTRK000001", "FDate", "2026-11-06T00:00:00", "FQty", "1"));
+
+        WmsPrintDataVO vo = assembler.assembleMiscInstock(bill);
+
+        assertEquals("2026/11/6", vo.getHeaders().get("日期"));
     }
 
     // ------------------------------------------------------------ 其他出库单
@@ -96,7 +136,7 @@ class WmsPrintDataAssemblerTest {
         assertEquals("QTCK10126110327", vo.getErpBillNo());
         assertEquals("配件耗材领用单", vo.getHeaders().get("领用类型"));
         assertEquals("PCB非标车间", vo.getHeaders().get("部门"));
-        assertEquals("2026-11-09", vo.getHeaders().get("日期"));
+        assertEquals("2026/11/9", vo.getHeaders().get("日期"));
         assertEquals(List.of("序号", "物料名称", "规格型号", "物料编码", "单位", "数量", "备注"), vo.getColumns());
         assertEquals("1", vo.getPages().get(0).get(0).get(0), "序号从 1 起");
         assertEquals("磨料", vo.getPages().get(0).get(0).get(1));

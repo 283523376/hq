@@ -59,19 +59,19 @@ public class WmsKingdeePrintReaderImpl implements IWmsKingdeePrintReader {
             WmsConstants.PRINT_BILL_LOSS, "FBillNo,FDocumentStatus,FDate,FDeptId.FName,FBillTypeID.FName,"
                     + "FApproverId.FName,FKeeperId.FName,FPickerId.FName,"
                     + "FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,"
-                    + "FUnitId.FName,FQty,FEntryNote,FLot.FNumber,FStockId.FName",
+                    + "FUnitId.FName,FQty,FEntryNote,FLot.FNumber,FStockId.FName,FPrice,FAmount",
             WmsConstants.PRINT_BILL_MISC_DELIVERY, "FBillNo,FDocumentStatus,FDate,FDeptId.FName,FBillTypeID.FName,"
                     + "FApproverId.FName,FKeeperId.FName,FPickerId.FName,"
                     + "FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,"
-                    + "FUnitId.FName,FQty,FEntryNote,FLot.FNumber,FStockId.FName",
+                    + "FUnitId.FName,FQty,FEntryNote,FLot.FNumber,FStockId.FName,FPrice,FAmount",
             WmsConstants.PRINT_BILL_PROFIT, "FBillNo,FDocumentStatus,FDate,FDeptId.FName,"
                     + "FApproverId.FName,FKeeperId.FName,FCreatorId.FName,"
                     + "FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,"
-                    + "FUnitId.FName,FQty,FLot.FNumber,FStockId.FName,FEntryNote",
+                    + "FUnitId.FName,FQty,FLot.FNumber,FStockId.FName,FEntryNote,FPrice,FAmount",
             WmsConstants.PRINT_BILL_MISC_INSTOCK, "FBillNo,FDocumentStatus,FDate,FDeptId.FName,"
                     + "FApproverId.FName,FKeeperId.FName,FCreatorId.FName,"
                     + "FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,"
-                    + "FUnitId.FName,FQty,FLot.FNumber,FStockId.FName,FEntryNote",
+                    + "FUnitId.FName,FQty,FLot.FNumber,FStockId.FName,FEntryNote,FPrice,FAmount",
             WmsConstants.PRINT_BILL_SUB_PICK, "FBillNo,FDocumentStatus,FDate,FSupplierId.FName,"
                     + "FApproverId.FName,FCreatorId.FName,FAppQty,"
                     + "FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSpecification,"
