@@ -96,11 +96,14 @@
   }
 
   .logo-wrap {
-    width: 220px;
+    width: 210px;
   }
 
+  /* logo 已裁掉下方公司名，按容器宽自适应（比例约 4.15:1） */
   .logo-wrap .sheet-logo {
-    height: 62px;
+    width: 100%;
+    height: auto;
+    display: block;
   }
 
   .top-center {
@@ -141,5 +144,9 @@
 
   .info-right > div:last-child {
     padding-left: 60%;
+  }
+  /* 销售出库单五栏落款：纸样 4% / 38% / 54% / 72% / 95% */
+  :deep(.sheet-footers) {
+    padding: 0 5% 0 4%;
   }
 </style>

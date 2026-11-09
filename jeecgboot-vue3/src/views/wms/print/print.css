@@ -103,21 +103,20 @@
 
 .sheet-table .total-row td {
   font-weight: normal;
-}
-
-/* 合计文字一律居中（2026-11-09 客户口径） */
-.sheet-table .total-row td {
   text-align: center;
 }
 
+
+
+/* 落款栏按纸样内缩（纸样：审核约 20% / 中间约 46% / 末项约 76%） */
 .sheet-footers {
   display: flex;
   justify-content: space-between;
   margin-top: 10px;
-  padding-right: 8%;
+  padding: 0 24% 0 18%;
   font-size: 12px;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 /* 联次行：按纸样铺满整行（白色 3% / 红色 31% / 黄联 58% / 绿联 82%） */
@@ -147,16 +146,12 @@
   margin: 0 auto 6px;
 }
 
-/* 单线版（销售退货单纸样为单线） */
-.sheet-title-rule.single {
-  border-bottom: none;
-  height: 0;
-}
 
-/* 标题比公司名小一号的单据（委外领料单样单） */
+/* 标题比公司名小一号且常规字重的单据（委外领料单样单） */
 .sheet-title.small {
   font-size: 18px;
   letter-spacing: 2px;
+  font-weight: normal;
 }
 
 

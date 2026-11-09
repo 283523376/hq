@@ -401,4 +401,29 @@ class WmsPrintDataAssemblerTest {
 
         assertEquals(1, vo.getPages().get(0).size(), "只有 1 行数据就没有空行");
     }
+
+    /** 金蝶「保管者」被配成公司/组织时，落款留空（不能把公司名印在签名栏）。 */
+    @Test
+    void keeperConfiguredAsCompany_isBlankInFooters() {
+        WmsKingdeePrintBill bill = printBill(WmsConstants.PRINT_BILL_MISC_INSTOCK, "QTRK000001",
+                row("FBillNo", "QTRK000001", "FKeeperId.FName", "宜昌永鑫精工科技股份有限公司",
+                        "FMaterialId.FName", "料", "FUnitId.FName", "支", "FQty", "1"));
+
+        WmsPrintDataVO vo = assembler.assembleMiscInstock(bill);
+
+        assertTrue(vo.getFooters().stream().anyMatch(f -> f.equals("保管：")),
+                "保管者为公司名时应留空，实际=" + vo.getFooters());
+    }
+
+    /** 保管者是人名时照常打印。 */
+    @Test
+    void keeperAsPerson_keptInFooters() {
+        WmsKingdeePrintBill bill = printBill(WmsConstants.PRINT_BILL_MISC_INSTOCK, "QTRK000001",
+                row("FBillNo", "QTRK000001", "FKeeperId.FName", "陆丽君",
+                        "FMaterialId.FName", "料", "FUnitId.FName", "支", "FQty", "1"));
+
+        WmsPrintDataVO vo = assembler.assembleMiscInstock(bill);
+
+        assertTrue(vo.getFooters().contains("保管：陆丽君"), vo.getFooters().toString());
+    }
 }

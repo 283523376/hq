@@ -141,7 +141,7 @@ public class WmsPrintDataAssembler {
         vo.getHeaders().put("日期", dateOnly(get(head, "FDate")));
         vo.setFooters(List.of(
                 "审核：" + nvl(get(head, "FApproverId.FName")),
-                "仓管员：" + nvl(get(head, "FKeeperId.FName")),
+                "仓管员：" + keeperName(get(head, "FKeeperId.FName")),
                 "领料：" + nvl(get(head, "FPickerId.FName"))));
         finish(vo, body);
         vo.getTotalsOnLastPage().put("数量", plain(total));
@@ -174,7 +174,7 @@ public class WmsPrintDataAssembler {
         vo.setFooters(List.of(
                 "审核：" + nvl(get(head, "FApproverId.FName")),
                 "验收：",
-                "保管：" + nvl(get(head, "FKeeperId.FName")),
+                "保管：" + keeperName(get(head, "FKeeperId.FName")),
                 "制单：" + nvl(get(head, "FCreatorId.FName"))));
         finish(vo, body);
         vo.getTotalsOnLastPage().put("数量", plain(total));
@@ -258,7 +258,7 @@ public class WmsPrintDataAssembler {
                 "客户签收盖章：",
                 "发货签名：",
                 "放行签名：",
-                "保管员：" + nvl(get(head, "FKeeperId.FName")),
+                "保管员：" + keeperName(get(head, "FKeeperId.FName")),
                 "送提货人签名："));
         vo.getExtras().put("logo", SALES_LOGO);
         vo.getExtras().put("联次行", SALES_COPIES);
@@ -338,7 +338,7 @@ public class WmsPrintDataAssembler {
         vo.setFooters(List.of(
                 "客户签收盖章：",
                 "发货签名：",
-                "保管员：" + nvl(get(head, "FKeeperId.FName")),
+                "保管员：" + keeperName(get(head, "FKeeperId.FName")),
                 "送提货人签名："));
         vo.getExtras().put("公司信息块", List.of(
                 "如有数量问题请在24小时内通知我司，逾期后果自负",
@@ -453,6 +453,18 @@ public class WmsPrintDataAssembler {
         } catch (NumberFormatException e) {
             return value.trim();
         }
+    }
+
+    /**
+     * 落款人名兜底：金蝶「保管者/仓管员」若被配成公司或组织（测试账套即是如此），
+     * 打印时留空而不是把公司名印在签名栏（2026-11-09 审查发现）。
+     */
+    private static String keeperName(String value) {
+        String v = nvl(value).trim();
+        if (v.isEmpty() || v.contains("有限公司") || v.contains("股份有限公司")) {
+            return "";
+        }
+        return v;
     }
 
     private static String nvl(String value) {
