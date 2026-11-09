@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-BD-004",
+  "name": "YX-WMS-BD-004 权限与系统配置流程",
+  "updatedAt": "2026-11-09T10:33:12",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "系统管理员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 8,
+  "nodes": [
+    {
+      "id": "D01",
+      "text": "登录管理端，进入系统管理（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "D02",
+      "text": "维护账号、角色与菜单权限（来源：管理员录入）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "D03",
+      "text": "校验权限编码唯一性（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "D04",
+      "text": "冲突→提示",
+      "laneId": "lane-2",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "D05",
+      "text": "配置库存预警阈值（来源：管理员录入）",
+      "laneId": "lane-0",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "D06",
+      "text": "校验阈值合法性（来源：配置规则）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "D07",
+      "text": "阈值非法→提示",
+      "laneId": "lane-2",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "D08",
+      "text": "配置同步范围与自动同步（来源：管理员录入）",
+      "laneId": "lane-0",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "D09",
+      "text": "保存同步规则（来源：WMS配置）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "D10",
+      "text": "配置不良品默认仓（来源：仓库主数据）",
+      "laneId": "lane-0",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "D11",
+      "text": "保存规则（来源：WMS配置）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "D12",
+      "text": "未配置→提示",
+      "laneId": "lane-2",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "D13",
+      "text": "配置设备告警阈值、审计与对账保留期（来源：管理员录入）",
+      "laneId": "lane-0",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "D14",
+      "text": "保存阈值（来源：WMS配置）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "D15",
+      "text": "保存全部配置（来源：管理员操作）",
+      "laneId": "lane-0",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "D16",
+      "text": "写入数据库并记录变更历史（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "D17",
+      "text": "保存失败→回滚并提示",
+      "laneId": "lane-2",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "D18",
+      "text": "支持回滚到上一版本（来源：配置历史）",
+      "laneId": "lane-1",
+      "step": 8,
+      "kind": "process"
+    },
+    {
+      "id": "D19",
+      "text": "冲突→提示",
+      "laneId": "lane-2",
+      "step": 8,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-D01-D02-0",
+      "source": "D01",
+      "target": "D02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D02-D03-1",
+      "source": "D02",
+      "target": "D03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D03-D05-2",
+      "source": "D03",
+      "target": "D05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D03-D04-3",
+      "source": "D03",
+      "target": "D04",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-D05-D06-4",
+      "source": "D05",
+      "target": "D06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D06-D08-5",
+      "source": "D06",
+      "target": "D08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D06-D07-6",
+      "source": "D06",
+      "target": "D07",
+      "label": "非法",
+      "kind": "exception"
+    },
+    {
+      "id": "e-D08-D09-7",
+      "source": "D08",
+      "target": "D09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D09-D10-8",
+      "source": "D09",
+      "target": "D10",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D10-D11-9",
+      "source": "D10",
+      "target": "D11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D11-D13-10",
+      "source": "D11",
+      "target": "D13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D11-D12-11",
+      "source": "D11",
+      "target": "D12",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-D13-D14-12",
+      "source": "D13",
+      "target": "D14",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D14-D15-13",
+      "source": "D14",
+      "target": "D15",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D15-D16-14",
+      "source": "D15",
+      "target": "D16",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D16-D18-15",
+      "source": "D16",
+      "target": "D18",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-D16-D17-16",
+      "source": "D16",
+      "target": "D17",
+      "label": "失败",
+      "kind": "exception"
+    },
+    {
+      "id": "e-D18-D04-17",
+      "source": "D18",
+      "target": "D04",
+      "label": "异常",
+      "kind": "exception"
+    }
+  ]
+}

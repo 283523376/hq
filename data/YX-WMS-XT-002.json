@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-XT-002",
+  "name": "YX-WMS-XT-002 操作日志留痕流程",
+  "updatedAt": "2026-11-09T10:33:12",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "系统管理员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 7,
+  "nodes": [
+    {
+      "id": "Q01",
+      "text": "登录管理端，进入操作留痕（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "Q02",
+      "text": "采集关键操作事件，三通道：界面/回写/同步（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "Q03",
+      "text": "记录操作人、时间、对象与前后值（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "Q04",
+      "text": "日志存档，不可修改（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "Q05",
+      "text": "按条件查询日志（来源：管理员输入）",
+      "laneId": "lane-0",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "Q06",
+      "text": "展示日志明细与影响面（来源：WMS审计表）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "Q07",
+      "text": "无匹配记录→提示更换条件",
+      "laneId": "lane-2",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "Q08",
+      "text": "导出日志（来源：管理员操作）",
+      "laneId": "lane-0",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "Q09",
+      "text": "生成异步导出任务（来源：查询结果）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "Q10",
+      "text": "导出失败→保留任务可重导",
+      "laneId": "lane-2",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "Q11",
+      "text": "按保留期清理过期日志（来源：WMS配置）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-Q01-Q02-0",
+      "source": "Q01",
+      "target": "Q02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-Q02-Q03-1",
+      "source": "Q02",
+      "target": "Q03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-Q03-Q04-2",
+      "source": "Q03",
+      "target": "Q04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-Q04-Q05-3",
+      "source": "Q04",
+      "target": "Q05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-Q05-Q06-4",
+      "source": "Q05",
+      "target": "Q06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-Q06-Q08-5",
+      "source": "Q06",
+      "target": "Q08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-Q06-Q07-6",
+      "source": "Q06",
+      "target": "Q07",
+      "label": "无匹配",
+      "kind": "exception"
+    },
+    {
+      "id": "e-Q08-Q09-7",
+      "source": "Q08",
+      "target": "Q09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-Q09-Q11-8",
+      "source": "Q09",
+      "target": "Q11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-Q09-Q10-9",
+      "source": "Q09",
+      "target": "Q10",
+      "label": "失败",
+      "kind": "exception"
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-CK-004",
+  "name": "YX-WMS-CK-004 库存调拨流程",
+  "updatedAt": "2026-11-09T10:33:12",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "仓管员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "WCS/RMS",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 5,
+  "nodes": [
+    {
+      "id": "J01",
+      "text": "创建调拨单或从ERP同步（来源：仓管员/ERP）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "J02",
+      "text": "校验调拨范围，仅同库区移库（来源：WMS配置）",
+      "laneId": "lane-1",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "J03",
+      "text": "跨库→提示由ERP执行",
+      "laneId": "lane-3",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "J04",
+      "text": "分配调出与调入库位（来源：WMS库存）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "J05",
+      "text": "库存不足→提示",
+      "laneId": "lane-3",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "J06",
+      "text": "下发移库任务（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "J07",
+      "text": "调度设备（来源：WCS/RMS）",
+      "laneId": "lane-2",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "J08",
+      "text": "设备故障→告警",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "J09",
+      "text": "接收设备回执并更新库存（来源：设备回执）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "J10",
+      "text": "回执异常→转人工",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "J11",
+      "text": "记录调拨日志与操作人（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-J01-J02-0",
+      "source": "J01",
+      "target": "J02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-J02-J04-1",
+      "source": "J02",
+      "target": "J04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-J02-J03-2",
+      "source": "J02",
+      "target": "J03",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-J04-J06-3",
+      "source": "J04",
+      "target": "J06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-J04-J05-4",
+      "source": "J04",
+      "target": "J05",
+      "label": "不足",
+      "kind": "exception"
+    },
+    {
+      "id": "e-J06-J07-5",
+      "source": "J06",
+      "target": "J07",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-J07-J09-6",
+      "source": "J07",
+      "target": "J09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-J07-J08-7",
+      "source": "J07",
+      "target": "J08",
+      "label": "故障",
+      "kind": "exception"
+    },
+    {
+      "id": "e-J09-J11-8",
+      "source": "J09",
+      "target": "J11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-J09-J10-9",
+      "source": "J09",
+      "target": "J10",
+      "label": "异常",
+      "kind": "exception"
+    }
+  ]
+}

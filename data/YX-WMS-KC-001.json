@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-KC-001",
+  "name": "YX-WMS-KC-001 库存预警与批次管理流程",
+  "updatedAt": "2026-11-09T10:33:12",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "仓管员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 8,
+  "nodes": [
+    {
+      "id": "K01",
+      "text": "登录管理端，进入库存预警（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "K02",
+      "text": "设置预警规则，最低/安全/最高库存（来源：管理员录入）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "K03",
+      "text": "校验规则合法性（来源：WMS配置规则）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "K04",
+      "text": "规则非法→提示",
+      "laneId": "lane-2",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "K05",
+      "text": "定时扫描库存并生成预警（来源：WMS库存）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "K06",
+      "text": "触发预警并推送仓管（来源：规则引擎）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "K07",
+      "text": "重复触发→合并提醒",
+      "laneId": "lane-2",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "K08",
+      "text": "接收预警并处理（来源：站内消息）",
+      "laneId": "lane-0",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "K09",
+      "text": "补料/清理超期物料（来源：仓管员操作）",
+      "laneId": "lane-0",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "K10",
+      "text": "记录处理结果（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "K11",
+      "text": "解除预警并留痕（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "K12",
+      "text": "按批次查询库存（来源：仓管员操作）",
+      "laneId": "lane-0",
+      "step": 8,
+      "kind": "process"
+    },
+    {
+      "id": "K13",
+      "text": "展示批次明细与流转记录（来源：WMS批次）",
+      "laneId": "lane-1",
+      "step": 8,
+      "kind": "process"
+    },
+    {
+      "id": "K14",
+      "text": "批次缺失→提示补充",
+      "laneId": "lane-2",
+      "step": 8,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-K01-K02-0",
+      "source": "K01",
+      "target": "K02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K02-K03-1",
+      "source": "K02",
+      "target": "K03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K03-K05-2",
+      "source": "K03",
+      "target": "K05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K03-K04-3",
+      "source": "K03",
+      "target": "K04",
+      "label": "非法",
+      "kind": "exception"
+    },
+    {
+      "id": "e-K05-K06-4",
+      "source": "K05",
+      "target": "K06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K06-K08-5",
+      "source": "K06",
+      "target": "K08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K06-K07-6",
+      "source": "K06",
+      "target": "K07",
+      "label": "重复触发",
+      "kind": "exception"
+    },
+    {
+      "id": "e-K08-K09-7",
+      "source": "K08",
+      "target": "K09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K09-K10-8",
+      "source": "K09",
+      "target": "K10",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K10-K11-9",
+      "source": "K10",
+      "target": "K11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K11-K12-10",
+      "source": "K11",
+      "target": "K12",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K12-K13-11",
+      "source": "K12",
+      "target": "K13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-K13-K14-12",
+      "source": "K13",
+      "target": "K14",
+      "label": "缺失",
+      "kind": "exception"
+    }
+  ]
+}

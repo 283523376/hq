@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-CK-001",
+  "name": "YX-WMS-CK-001 生产领料出库流程（半成品）",
+  "updatedAt": "2026-11-09T10:33:12",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "领料人",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "WCS/RMS",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 9,
+  "nodes": [
+    {
+      "id": "H01",
+      "text": "登录并选择设备与工单（来源：登录账号、设备台账、ERP工单）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "H02",
+      "text": "调出员工与工单信息（来源：ERP同步工单）",
+      "laneId": "lane-1",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "H03",
+      "text": "工单不存在→提示",
+      "laneId": "lane-3",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "H04",
+      "text": "核对工单待领物料与数量（来源：工单BOM）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "H05",
+      "text": "按工单提示待出库物料与数量（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "H06",
+      "text": "物料不符→提示",
+      "laneId": "lane-3",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "H07",
+      "text": "确认领料数量，可部分领料并修改本次数量（来源：领料人输入）",
+      "laneId": "lane-0",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "H08",
+      "text": "校验数量不超过工单需求（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "H09",
+      "text": "数量超出范围→提示",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "H10",
+      "text": "检查立库库存并分配货位（来源：WMS库存）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "H11",
+      "text": "库存不足→取消出库并通知改单",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "H12",
+      "text": "下发出库任务（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "H13",
+      "text": "接收任务并调度设备（来源：WCS/RMS）",
+      "laneId": "lane-2",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "H14",
+      "text": "设备故障→告警并转人工",
+      "laneId": "lane-3",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "H15",
+      "text": "接收设备回执（来源：设备）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "H16",
+      "text": "复核数量，确认出库并扣减库存（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "H17",
+      "text": "复核不一致→提示",
+      "laneId": "lane-3",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "H18",
+      "text": "回写金蝶生产领料单（来源：WMS单据）",
+      "laneId": "lane-1",
+      "step": 8,
+      "kind": "process"
+    },
+    {
+      "id": "H19",
+      "text": "同步失败→重试并告警",
+      "laneId": "lane-3",
+      "step": 8,
+      "kind": "process"
+    },
+    {
+      "id": "H20",
+      "text": "生成领料记录：物料/数量/领取人/工单（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 9,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-H01-H02-0",
+      "source": "H01",
+      "target": "H02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H02-H04-1",
+      "source": "H02",
+      "target": "H04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H02-H03-2",
+      "source": "H02",
+      "target": "H03",
+      "label": "不存在",
+      "kind": "exception"
+    },
+    {
+      "id": "e-H04-H05-3",
+      "source": "H04",
+      "target": "H05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H05-H07-4",
+      "source": "H05",
+      "target": "H07",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H05-H06-5",
+      "source": "H05",
+      "target": "H06",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-H07-H08-6",
+      "source": "H07",
+      "target": "H08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H08-H10-7",
+      "source": "H08",
+      "target": "H10",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H08-H09-8",
+      "source": "H08",
+      "target": "H09",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-H10-H12-9",
+      "source": "H10",
+      "target": "H12",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H10-H11-10",
+      "source": "H10",
+      "target": "H11",
+      "label": "不足",
+      "kind": "exception"
+    },
+    {
+      "id": "e-H12-H13-11",
+      "source": "H12",
+      "target": "H13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H13-H15-12",
+      "source": "H13",
+      "target": "H15",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H13-H14-13",
+      "source": "H13",
+      "target": "H14",
+      "label": "故障",
+      "kind": "exception"
+    },
+    {
+      "id": "e-H15-H16-14",
+      "source": "H15",
+      "target": "H16",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H16-H18-15",
+      "source": "H16",
+      "target": "H18",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H16-H17-16",
+      "source": "H16",
+      "target": "H17",
+      "label": "不一致",
+      "kind": "exception"
+    },
+    {
+      "id": "e-H18-H20-17",
+      "source": "H18",
+      "target": "H20",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-H18-H19-18",
+      "source": "H18",
+      "target": "H19",
+      "label": "失败",
+      "kind": "exception"
+    }
+  ]
+}

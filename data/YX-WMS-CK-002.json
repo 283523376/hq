@@ -1,0 +1,309 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-CK-002",
+  "name": "YX-WMS-CK-002 成品销售出库流程",
+  "updatedAt": "2026-11-09T10:33:12",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "仓管员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "WCS/RMS",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "SCR/分拣单元",
+      "color": "purple",
+      "width": 210
+    },
+    {
+      "id": "lane-4",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 7,
+  "nodes": [
+    {
+      "id": "I01",
+      "text": "查看出库待办（来源：ERP销售订单与发货通知单）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "I02",
+      "text": "同步订单并生成出库待办（来源：ERP）",
+      "laneId": "lane-1",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "I03",
+      "text": "订单不存在→提示",
+      "laneId": "lane-4",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "I04",
+      "text": "选择发货通知单开单（来源：仓管员操作）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "I05",
+      "text": "关联发货通知单开单，支持部分数量（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "I06",
+      "text": "库存不足→告警",
+      "laneId": "lane-4",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "I07",
+      "text": "分配料箱库位并下发出库任务（来源：WMS库存）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "I08",
+      "text": "接收任务并调度设备（来源：WCS/RMS）",
+      "laneId": "lane-2",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "I09",
+      "text": "SCR执行取箱（来源：设备）",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "I10",
+      "text": "设备故障→告警并转人工",
+      "laneId": "lane-4",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "I11",
+      "text": "分拣单元输送至出货口（来源：设备）",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "I12",
+      "text": "输送异常→告警",
+      "laneId": "lane-4",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "I13",
+      "text": "复核出库物料（来源：ERP发货通知单）",
+      "laneId": "lane-0",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "I14",
+      "text": "校验物料与订单一致性（来源：发货通知单）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "I15",
+      "text": "不一致→提示",
+      "laneId": "lane-4",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "I16",
+      "text": "确认出库（来源：仓管员操作）",
+      "laneId": "lane-0",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "I17",
+      "text": "扣减库存，生成出库单（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "I18",
+      "text": "回写金蝶销售出库单（来源：WMS单据）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "I19",
+      "text": "同步失败→重试并告警",
+      "laneId": "lane-4",
+      "step": 7,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-I01-I02-0",
+      "source": "I01",
+      "target": "I02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I02-I04-1",
+      "source": "I02",
+      "target": "I04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I02-I03-2",
+      "source": "I02",
+      "target": "I03",
+      "label": "不存在",
+      "kind": "exception"
+    },
+    {
+      "id": "e-I04-I05-3",
+      "source": "I04",
+      "target": "I05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I05-I07-4",
+      "source": "I05",
+      "target": "I07",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I05-I06-5",
+      "source": "I05",
+      "target": "I06",
+      "label": "不足",
+      "kind": "exception"
+    },
+    {
+      "id": "e-I07-I08-6",
+      "source": "I07",
+      "target": "I08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I08-I09-7",
+      "source": "I08",
+      "target": "I09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I09-I11-8",
+      "source": "I09",
+      "target": "I11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I09-I10-9",
+      "source": "I09",
+      "target": "I10",
+      "label": "故障",
+      "kind": "exception"
+    },
+    {
+      "id": "e-I11-I13-10",
+      "source": "I11",
+      "target": "I13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I11-I12-11",
+      "source": "I11",
+      "target": "I12",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-I13-I14-12",
+      "source": "I13",
+      "target": "I14",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I14-I16-13",
+      "source": "I14",
+      "target": "I16",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I14-I15-14",
+      "source": "I14",
+      "target": "I15",
+      "label": "不一致",
+      "kind": "exception"
+    },
+    {
+      "id": "e-I16-I17-15",
+      "source": "I16",
+      "target": "I17",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I17-I18-16",
+      "source": "I17",
+      "target": "I18",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-I18-I19-17",
+      "source": "I18",
+      "target": "I19",
+      "label": "失败",
+      "kind": "exception"
+    }
+  ]
+}
