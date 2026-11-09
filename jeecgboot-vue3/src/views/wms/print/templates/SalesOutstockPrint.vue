@@ -9,6 +9,7 @@
         <div class="top-center">
           <div class="sheet-company">{{ company }}</div>
           <div class="sheet-title">{{ data.title }}</div>
+          <div class="sheet-title-rule"></div>
         </div>
         <div class="top-right">
           <div class="meta-item">订单类型：{{ data.headers['订单类型'] }}</div>
@@ -17,11 +18,13 @@
         </div>
       </div>
       <div class="sheet-meta">
-        <div class="meta-block">
+        <div class="meta-block meta-left">
           <span class="meta-item">购货单位：{{ data.headers['购货单位'] }}</span>
         </div>
-        <div class="meta-block">
+        <div class="meta-block meta-center">
           <span class="meta-item">日期：{{ data.headers['日期'] }}</span>
+        </div>
+        <div class="meta-block meta-right">
           <span class="meta-item">第{{ pi + 1 }}页，共{{ data.totalPages }}页</span>
         </div>
       </div>
@@ -116,8 +119,18 @@
     line-height: 1.5;
   }
 
+  /* 样单：电话起于页宽 53%、传真起于 81%（两行错位，不是都贴右） */
+  .info-left {
+    flex: 0 0 auto;
+  }
+
   .info-right {
+    flex: 0 0 47%;
     text-align: left;
     white-space: nowrap;
+  }
+
+  .info-right > div:last-child {
+    padding-left: 60%;
   }
 </style>

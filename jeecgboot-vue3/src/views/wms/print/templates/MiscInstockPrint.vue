@@ -2,15 +2,21 @@
   <!-- 其他入库单：样单 QTRK10126110010 版式（部门/日期 + 7 列含批号/收货仓库 + 审核/验收/保管/制单） -->
   <div class="print-sheet">
     <div v-for="(page, pi) in data.pages" :key="pi" class="print-page">
-      <div class="sheet-title">{{ data.title }}</div>
+      <!-- 页码在标题行右端（样单 QTRK10126110010） -->
+      <div class="title-row">
+        <span class="sheet-title">{{ data.title }}</span>
+        <span class="meta-item title-row-page">第{{ pi + 1 }}页，共{{ data.totalPages }}页</span>
+      </div>
+      <div class="sheet-title-rule"></div>
       <div class="sheet-meta">
-        <div class="meta-block">
+        <div class="meta-block meta-left">
           <span class="meta-item">部门：{{ data.headers['部门'] }}</span>
         </div>
-        <div class="meta-block">
+        <div class="meta-block meta-center">
           <span class="meta-item">日期：{{ data.headers['日期'] }}</span>
+        </div>
+        <div class="meta-block meta-right">
           <span class="meta-item">单据编号：{{ data.erpBillNo }}</span>
-          <span class="meta-item">第{{ pi + 1 }}页，共{{ data.totalPages }}页</span>
         </div>
       </div>
       <table class="sheet-table">
@@ -44,7 +50,21 @@
   defineProps<{ data: WmsPrintDataVO }>();
 
   function colWidth(index: number) {
-    const widths = ['20%', '20%', '18%', '7%', '9%', '10%', '16%'];
+    const widths = ['17%', '17%', '12.5%', '5.5%', '6.5%', '8.5%', '33%'];
     return { width: widths[index] || 'auto' };
   }
 </script>
+
+<style scoped>
+  .title-row {
+    position: relative;
+    text-align: center;
+  }
+
+  .title-row-page {
+    position: absolute;
+    right: 0;
+    bottom: 12px;
+    font-size: 12px;
+  }
+</style>

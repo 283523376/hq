@@ -3,17 +3,27 @@
   <div class="print-sheet">
     <div v-for="(page, pi) in data.pages" :key="pi" class="print-page">
       <div class="sheet-company">{{ company }}</div>
-      <div class="sheet-title">{{ data.title }}</div>
+      <!-- 样单：标题比公司名小一号且不加粗 -->
+      <div class="sheet-title small">{{ data.title }}</div>
       <div class="sheet-meta">
-        <div class="meta-block">
+        <div class="meta-block meta-left">
           <span class="meta-item">加工单位：{{ data.headers['加工单位'] }}</span>
-          <span class="meta-item">业务类型：{{ data.headers['业务类型'] }}</span>
-          <span class="meta-item">日期：{{ data.headers['日期'] }}</span>
         </div>
-        <div class="meta-block">
-          <span class="meta-item">编号：{{ data.erpBillNo }}</span>
+        <div class="meta-block meta-center">
+          <span class="meta-item">日　期：{{ data.headers['日期'] }}</span>
+        </div>
+        <div class="meta-block meta-right">
+          <span class="meta-item">编　号：{{ data.erpBillNo }}</span>
           <span class="meta-item">第{{ pi + 1 }}页，共{{ data.totalPages }}页</span>
         </div>
+      </div>
+      <!-- 样单信息行第二行单独放业务类型 -->
+      <div class="sheet-meta sub-type-row">
+        <div class="meta-block meta-left">
+          <span class="meta-item">业务类型：{{ data.headers['业务类型'] }}</span>
+        </div>
+        <div></div>
+        <div></div>
       </div>
       <table class="sheet-table">
         <thead>
@@ -26,7 +36,7 @@
             <td v-for="(cell, ci) in row" :key="ci" :class="{ center: ci === 4 || ci === 7 }">{{ cell }}</td>
           </tr>
           <tr v-if="pi === data.totalPages - 1" class="total-row">
-            <td colspan="4" class="center">合计</td>
+            <td colspan="4" class="total-right">合计</td>
             <td class="num">{{ data.totalsOnLastPage['实发数量'] }}</td>
             <td colspan="4"></td>
           </tr>
@@ -47,7 +57,13 @@
   const company = computed(() => props.data.extras?.['公司名'] || '宜昌永鑫精工科技股份有限公司');
 
   function colWidth(index: number) {
-    const widths = ['12%', '11%', '14%', '14%', '8%', '14%', '14%', '6%', '7%'];
+    const widths = ['11%', '11%', '13%', '13%', '6%', '14%', '14%', '6%', '12%'];
     return { width: widths[index] || 'auto' };
   }
 </script>
+
+<style scoped>
+  .sub-type-row {
+    margin-top: -4px;
+  }
+</style>

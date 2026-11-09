@@ -207,7 +207,7 @@ public class WmsPrintDataAssembler {
                     nvl(get(r, "FMaterialId.FNumber")),
                     nvl(get(r, "FMaterialId.FName")),
                     nvl(get(r, "FMaterialId.FSpecification")),
-                    nvl(qtyText),
+                    numText(qtyText),
                     parts.length > 0 ? nvl(parts[0]) : "",
                     parts.length > 1 ? nvl(parts[1]) : "",
                     nvl(get(r, "FUnitId.FName")),

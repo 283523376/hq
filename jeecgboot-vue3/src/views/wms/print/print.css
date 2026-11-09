@@ -32,19 +32,31 @@
 }
 
 .sheet-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
   font-size: 12px;
   margin-bottom: 6px;
   gap: 12px;
-  flex-wrap: wrap;
 }
 
 .sheet-meta .meta-block {
   display: flex;
   gap: 32px;
   flex-wrap: wrap;
+}
+
+/* 三栏：左组贴左、日期居中、右组贴右（样单里日期落在页宽 45~50%） */
+.sheet-meta .meta-left {
+  justify-self: start;
+}
+
+.sheet-meta .meta-center {
+  justify-self: center;
+}
+
+.sheet-meta .meta-right {
+  justify-self: end;
 }
 
 .sheet-meta .meta-item {
@@ -74,7 +86,7 @@
 }
 
 .sheet-table th {
-  font-weight: bold;
+  font-weight: normal;
   text-align: center;
   background: #fff;
 }
@@ -88,7 +100,7 @@
 }
 
 .sheet-table .total-row td {
-  font-weight: bold;
+  font-weight: normal;
 }
 
 .sheet-footers {
@@ -115,6 +127,25 @@
 
 .sheet-logo {
   height: 42px;
+}
+
+/* 标题下双横线（其他出库/其他入库/销售出库/销售退货样单均有） */
+.sheet-title-rule {
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  height: 4px;
+  margin: 0 0 6px;
+}
+
+/* 标题比公司名小一号的单据（委外领料单样单） */
+.sheet-title.small {
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+
+/* 合计文字贴合并格右端（委外领料单样单） */
+.sheet-table .total-row td.total-right {
+  text-align: right;
 }
 
 /* 打印：只输出 .print-area，界面控件一律隐藏 */
