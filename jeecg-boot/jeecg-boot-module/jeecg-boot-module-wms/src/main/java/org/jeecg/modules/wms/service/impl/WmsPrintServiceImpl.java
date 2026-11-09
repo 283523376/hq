@@ -379,9 +379,11 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
     }
 
     @Override
-    public WmsPrintBillListVO bills(String billType, String keyword, int pageNo, int pageSize) {
+    public WmsPrintBillListVO bills(String billType, String keyword, String period, int pageNo,
+                                    int pageSize) {
         String type = trim(billType);
         String kw = trim(keyword);
+        java.util.Date from = periodStart(period);
         int size = pageSize <= 0 ? DEFAULT_LIST_PAGE_SIZE : Math.min(pageSize, 100);
         int page = Math.max(pageNo, 1);
         WmsPrintBillListVO result = new WmsPrintBillListVO().setPageNo(page).setPageSize(size);
@@ -391,6 +393,9 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
                     .orderByDesc("create_time");
             if (!kw.isEmpty()) {
                 qw.like("stocktake_no", kw);
+            }
+            if (from != null) {
+                qw.ge("create_time", from);
             }
             Page<WmsStocktakeOrder> pageResult = stocktakeMapper.selectPage(new Page<>(page, size), qw);
             List<Map<String, String>> records = new ArrayList<>();
@@ -414,6 +419,9 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
             if (!kw.isEmpty()) {
                 qw.like("outbound_no", kw);
             }
+            if (from != null) {
+                qw.ge("create_time", from);
+            }
             Page<WmsOutboundOrder> pageResult = outboundMapper.selectPage(new Page<>(page, size), qw);
             List<Map<String, String>> records = new ArrayList<>();
             for (WmsOutboundOrder o : pageResult.getRecords()) {
@@ -431,7 +439,9 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
             throw new RuntimeException("不支持的打印单据类型：" + type);
         }
         // 金蝶类型：分页靠多取 1 条判断 hasMore（ExecuteBillQuery 不返回总数）
-        List<Map<String, String>> rows = reader.queryApprovedPage(type, kw, (page - 1) * size, size);
+        String dateFrom = from == null ? "" : new java.text.SimpleDateFormat("yyyy-MM-dd").format(from);
+        List<Map<String, String>> rows = reader.queryApprovedPage(type, kw, dateFrom,
+                (page - 1) * size, size);
         boolean hasMore = rows.size() > size;
         List<Map<String, String>> records = new ArrayList<>();
         for (int i = 0; i < Math.min(size, rows.size()); i++) {
@@ -484,6 +494,29 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
             }
         }
         return d;
+    }
+
+
+    /** 时间筛选起点：TODAY 今日 0 点 / WEEK 本周一 0 点 / MONTH 本月 1 日 0 点 / ALL·空 = null。 */
+    private static java.util.Date periodStart(String period) {
+        String p = trim(period).toUpperCase();
+        if (p.isEmpty() || "ALL".equals(p)) {
+            return null;
+        }
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        cal.set(java.util.Calendar.MINUTE, 0);
+        cal.set(java.util.Calendar.SECOND, 0);
+        cal.set(java.util.Calendar.MILLISECOND, 0);
+        if ("WEEK".equals(p)) {
+            // 本周一（周日视为上一周的最后一天）
+            int dow = cal.get(java.util.Calendar.DAY_OF_WEEK);
+            int back = (dow + 5) % 7;
+            cal.add(java.util.Calendar.DATE, -back);
+        } else if ("MONTH".equals(p)) {
+            cal.set(java.util.Calendar.DAY_OF_MONTH, 1);
+        }
+        return cal.getTime();
     }
 
     private static String trim(String value) {

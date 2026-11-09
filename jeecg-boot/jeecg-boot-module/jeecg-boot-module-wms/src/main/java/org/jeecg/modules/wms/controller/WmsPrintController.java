@@ -76,10 +76,11 @@ public class WmsPrintController {
     public Result<WmsPrintBillListVO> bills(
             @RequestParam(name = "billType") String billType,
             @RequestParam(name = "keyword", required = false) String keyword,
+            @RequestParam(name = "period", required = false) String period,
             @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
             @RequestParam(name = "pageSize", defaultValue = "20") Integer pageSize) {
         try {
-            return Result.OK(printService.bills(billType, keyword, pageNo, pageSize));
+            return Result.OK(printService.bills(billType, keyword, period, pageNo, pageSize));
         } catch (RuntimeException e) {
             log.warn("单据打印列表失败：类型={}，原因={}", billType, e.getMessage());
             return Result.error(e.getMessage());

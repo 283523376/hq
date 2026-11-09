@@ -45,7 +45,7 @@ class WmsPrintControllerTest {
         for (String name : new String[]{"data", "localBills", "bills"}) {
             Method m = "bills".equals(name)
                     ? WmsPrintController.class.getMethod(name, String.class, String.class,
-                            Integer.class, Integer.class)
+                            String.class, Integer.class, Integer.class)
                     : WmsPrintController.class.getMethod(name, String.class, String.class);
             RequiresPermissions p = m.getAnnotation(RequiresPermissions.class);
             assertNotNull(p, name + " 缺少 @RequiresPermissions");
@@ -100,12 +100,12 @@ class WmsPrintControllerTest {
     @Test
     void bills_passesKeywordAndPaging() {
         WmsPrintBillListVO vo = new WmsPrintBillListVO().setPageNo(2).setPageSize(20).setTotal(41L);
-        when(service.bills("LOSS", "PD2026", 2, 20)).thenReturn(vo);
+        when(service.bills("LOSS", "PD2026", "MONTH", 2, 20)).thenReturn(vo);
 
-        Result<WmsPrintBillListVO> result = controller.bills("LOSS", "PD2026", 2, 20);
+        Result<WmsPrintBillListVO> result = controller.bills("LOSS", "PD2026", "MONTH", 2, 20);
 
         assertTrue(result.isSuccess());
         assertEquals(41L, result.getResult().getTotal());
-        verify(service).bills("LOSS", "PD2026", 2, 20);
+        verify(service).bills("LOSS", "PD2026", "MONTH", 2, 20);
     }
 }

@@ -19,6 +19,7 @@ import org.jeecg.modules.wms.vo.WmsPrintBillListVO;
 import org.jeecg.modules.wms.vo.WmsPrintDataVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -28,10 +29,12 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -368,6 +371,39 @@ class WmsPrintServiceImplTest {
         assertTrue(e2.getMessage().contains("草稿"), e2.getMessage());
     }
 
+    /** 时间筛选四档（2026-11-09）：今天/本周/本月/全部，传空等同全部。 */
+    @Test
+    void bills_period_filtersByDate() {
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<WmsOutboundOrder> page =
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 20);
+        page.setRecords(List.of());
+        page.setTotal(0);
+        when(outboundMapper.selectPage(any(), any())).thenReturn(page);
+
+        service.bills(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "", "TODAY", 1, 20);
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<WmsOutboundOrder>> w1 =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(outboundMapper).selectPage(any(), w1.capture());
+        assertTrue(w1.getValue().getSqlSegment().contains("create_time >="), w1.getValue().getSqlSegment());
+
+        service.bills(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "", "ALL", 1, 20);
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<WmsOutboundOrder>> w2 =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(outboundMapper, org.mockito.Mockito.times(2)).selectPage(any(), w2.capture());
+        assertFalse(w2.getAllValues().get(1).getSqlSegment().contains("create_time >="),
+                "全部 不应带日期条件");
+
+        // 金蝶类型：日期下界作为独立参数传给 Reader
+        when(reader.queryApprovedPage(anyString(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(List.of());
+        service.bills(WmsConstants.PRINT_BILL_MISC_DELIVERY, "", "MONTH", 1, 20);
+        ArgumentCaptor<String> dateFrom = ArgumentCaptor.forClass(String.class);
+        verify(reader).queryApprovedPage(eq(WmsConstants.PRINT_BILL_MISC_DELIVERY), eq(""),
+                dateFrom.capture(), eq(0), eq(20));
+        assertNotNull(dateFrom.getValue(), "本月应有日期下界");
+        assertTrue(dateFrom.getValue().matches("\\d{4}-\\d{2}-\\d{2}"), dateFrom.getValue());
+    }
+
     /**
      * 工作台列表（2026-11-09）：本地类型分页 + 单号模糊；金蝶类型走 reader 分页并以 hasMore 判定。
      */
@@ -382,7 +418,7 @@ class WmsPrintServiceImplTest {
         page.setTotal(1);
         when(stocktakeMapper.selectPage(any(), any())).thenReturn(page);
 
-        WmsPrintBillListVO local = service.bills(WmsConstants.PRINT_BILL_LOSS, "PD2026", 1, 20);
+        WmsPrintBillListVO local = service.bills(WmsConstants.PRINT_BILL_LOSS, "PD2026", "ALL", 1, 20);
         assertEquals(1, local.getTotal());
         assertEquals("PD202611060002", local.getRecords().get(0).get("billNo"));
         assertEquals("20", String.valueOf(local.getPageSize()));
@@ -392,10 +428,10 @@ class WmsPrintServiceImplTest {
         for (int i = 0; i < 21; i++) {
             kdRows.add(Map.of("FBillNo", "QTCK" + i, "FDate", "2024-11-06T00:00:00"));
         }
-        when(reader.queryApprovedPage(eq(WmsConstants.PRINT_BILL_MISC_DELIVERY), eq("QTCK"), eq(0), eq(20)))
+        when(reader.queryApprovedPage(eq(WmsConstants.PRINT_BILL_MISC_DELIVERY), eq("QTCK"), eq(""), eq(0), eq(20)))
                 .thenReturn(kdRows);
 
-        WmsPrintBillListVO kd = service.bills(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK", 1, 20);
+        WmsPrintBillListVO kd = service.bills(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK", "ALL", 1, 20);
         assertEquals(20, kd.getRecords().size());
         assertTrue(kd.getHasMore());
         assertEquals(-1L, kd.getTotal());

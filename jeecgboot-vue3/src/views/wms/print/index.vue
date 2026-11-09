@@ -13,17 +13,33 @@
       </a-tabs>
 
       <div class="toolbar">
+        <a-button-group>
+          <a-button
+            v-for="opt in PERIOD_OPTIONS"
+            :key="opt.value"
+            :type="period === opt.value ? 'primary' : 'default'"
+            @click="onPeriodChange(opt.value)"
+          >
+            {{ opt.label }}
+          </a-button>
+        </a-button-group>
         <a-input-search
           v-model:value="keyword"
           :placeholder="searchPlaceholder"
           allow-clear
-          style="width: 360px"
+          style="width: 300px"
           @search="loadList(1)"
         />
         <span class="count">共 {{ total > 0 ? total : '—' }} 条，第 {{ pageNo }} 页</span>
         <a-button :disabled="pageNo <= 1" @click="loadList(pageNo - 1)">上一页</a-button>
         <a-button :disabled="!hasMore" @click="loadList(pageNo + 1)">下一页</a-button>
+        <a-divider type="vertical" />
+        <a-switch v-model:checked="editing" :disabled="!data" checked-children="编辑中" un-checked-children="只读" />
+        <a-button :disabled="!data || !editing" @click="handleRestore">还原内容</a-button>
         <a-button type="primary" :disabled="!data" @click="handlePrint">打印</a-button>
+      </div>
+      <div v-if="editing" class="edit-tip">
+        可直接在下方预览中修改文字（表头、表格内容、签名、公司信息），<b>修改仅作用于本次打印，不会保存到单据、也不会回写金蝶</b>。
       </div>
 
       <a-table
@@ -47,7 +63,7 @@
 
     <a-spin :spinning="previewLoading">
       <div v-if="data" class="preview-wrap">
-        <PrintPreview :data="data" />
+        <PrintPreview :data="data" :editable="editing" />
       </div>
       <a-empty v-else description="点击上方列表中的单据进行预览" />
     </a-spin>
@@ -66,8 +82,16 @@
 
   const PAGE_SIZE = 20;
 
+  const PERIOD_OPTIONS = [
+    { value: 'TODAY', label: '今天' },
+    { value: 'WEEK', label: '本周' },
+    { value: 'MONTH', label: '本月' },
+    { value: 'ALL', label: '全部' },
+  ];
+
   const activeType = ref<string>(PRINT_TABS.find((t) => t.enabled)!.type);
   const keyword = ref('');
+  const period = ref<string>('ALL');
   const pageNo = ref(1);
   const total = ref(-1);
   const hasMore = ref(false);
@@ -76,6 +100,7 @@
   const previewLoading = ref(false);
   const data = ref<WmsPrintDataVO | null>(null);
   const selectedNo = ref('');
+  const editing = ref(false);
 
   const searchPlaceholder = computed(() => SEARCH_PLACEHOLDERS[activeType.value] || '按单号模糊搜索');
 
@@ -92,6 +117,12 @@
     keyword.value = '';
     data.value = null;
     selectedNo.value = '';
+    editing.value = false;
+    loadList(1);
+  }
+
+  function onPeriodChange(value: string) {
+    period.value = value;
     loadList(1);
   }
 
@@ -102,6 +133,7 @@
       const res: any = await getBills({
         billType: activeType.value,
         keyword: (keyword.value || '').trim(),
+        period: period.value,
         pageNo: p,
         pageSize: PAGE_SIZE,
       });
@@ -130,6 +162,7 @@
     if (!billNo) return;
     selectedNo.value = billNo;
     previewLoading.value = true;
+    editing.value = false;
     try {
       data.value = await getPrintData({ billType: activeType.value, billNo });
     } catch (e: any) {
@@ -138,6 +171,13 @@
     } finally {
       previewLoading.value = false;
     }
+  }
+
+  /** 还原：重新拉取原始数据（丢弃手工修改） */
+  async function handleRestore() {
+    if (!selectedNo.value) return;
+    await handlePreview(selectedNo.value);
+    createMessage.success('已还原为单据原始内容');
   }
 
   function handlePrint() {
@@ -158,6 +198,16 @@
   .count {
     color: #666;
     font-size: 12px;
+  }
+
+  .edit-tip {
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: #fffbe6;
+    border: 1px solid #ffe58f;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #614700;
   }
 
   .preview-wrap {

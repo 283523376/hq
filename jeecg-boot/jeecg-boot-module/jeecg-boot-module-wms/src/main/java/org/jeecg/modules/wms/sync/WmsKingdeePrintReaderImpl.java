@@ -153,7 +153,7 @@ public class WmsKingdeePrintReaderImpl implements IWmsKingdeePrintReader {
     }
 
     @Override
-    public List<Map<String, String>> queryApprovedPage(String billType, String keyword,
+    public List<Map<String, String>> queryApprovedPage(String billType, String keyword, String dateFrom,
                                                        int startRow, int limit) {
         String type = billType == null ? "" : billType.trim();
         String formId = FORM_ID_BY_TYPE.get(type);
@@ -164,6 +164,10 @@ public class WmsKingdeePrintReaderImpl implements IWmsKingdeePrintReader {
         String kw = keyword == null ? "" : keyword.trim();
         if (!kw.isEmpty()) {
             safeFilter += " AND FBillNo like '%" + kw.replace("'", "''") + "%'";
+        }
+        String from = dateFrom == null ? "" : dateFrom.trim();
+        if (!from.isEmpty()) {
+            safeFilter += " AND FDate>='" + from.replace("'", "''") + "'";
         }
         // 多取 1 条供上层判断 hasMore；金蝶翻页必须 TopRowCount=0 + Limit（项目既有坑）
         int safeLimit = Math.max(1, limit) + 1;

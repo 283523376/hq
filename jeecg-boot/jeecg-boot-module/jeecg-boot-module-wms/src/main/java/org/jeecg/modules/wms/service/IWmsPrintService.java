@@ -36,8 +36,9 @@ public interface IWmsPrintService {
      *
      * @param billType 打印单据类型码
      * @param keyword  单号模糊关键词（本地类型匹配本地单号，金蝶类型匹配金蝶单号）
+     * @param period   时间范围：TODAY 今天 / WEEK 本周 / MONTH 本月 / ALL 或空 = 全部
      * @param pageNo   页码（1 起）
      * @param pageSize 每页条数（默认 20，上限 100）
      */
-    WmsPrintBillListVO bills(String billType, String keyword, int pageNo, int pageSize);
+    WmsPrintBillListVO bills(String billType, String keyword, String period, int pageNo, int pageSize);
 }

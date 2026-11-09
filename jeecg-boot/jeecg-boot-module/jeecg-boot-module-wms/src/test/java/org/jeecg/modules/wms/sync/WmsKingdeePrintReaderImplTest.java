@@ -131,7 +131,7 @@ class WmsKingdeePrintReaderImplTest {
         when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt(),
                 anyString())).thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
 
-        reader.queryApprovedPage(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK10", 0, 20);
+        reader.queryApprovedPage(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK10", "", 0, 20);
 
         ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Integer> start = ArgumentCaptor.forClass(Integer.class);
@@ -151,13 +151,13 @@ class WmsKingdeePrintReaderImplTest {
     void queryApprovedPage_noKeyword_andEscapesQuote() {
         when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt(),
                 anyString())).thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
-        reader.queryApprovedPage(WmsConstants.PRINT_BILL_SALES_RETURN, "", 20, 20);
+        reader.queryApprovedPage(WmsConstants.PRINT_BILL_SALES_RETURN, "", "", 20, 20);
         ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
         org.mockito.Mockito.verify(formClient).executeBillQuery(
                 anyString(), anyString(), filter.capture(), anyInt(), anyInt(), anyString());
         assertEquals("FDocumentStatus='C'", filter.getValue());
 
-        reader.queryApprovedPage(WmsConstants.PRINT_BILL_SALES_RETURN, "a'b", 0, 20);
+        reader.queryApprovedPage(WmsConstants.PRINT_BILL_SALES_RETURN, "a'b", "", 0, 20);
         ArgumentCaptor<String> allFilters = ArgumentCaptor.forClass(String.class);
         org.mockito.Mockito.verify(formClient, org.mockito.Mockito.times(2)).executeBillQuery(
                 anyString(), anyString(), allFilters.capture(), anyInt(), anyInt(), anyString());
@@ -172,7 +172,7 @@ class WmsKingdeePrintReaderImplTest {
                 List.of(List.of("QTCK000001", "2024-11-06T00:00:00", "C")), null, null));
 
         List<Map<String, String>> rows = reader.queryApprovedPage(
-                WmsConstants.PRINT_BILL_MISC_DELIVERY, "", 0, 20);
+                WmsConstants.PRINT_BILL_MISC_DELIVERY, "", "", 0, 20);
 
         assertEquals(1, rows.size());
         assertEquals("QTCK000001", rows.get(0).get("FBillNo"));

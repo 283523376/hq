@@ -10,7 +10,8 @@
       :description="alertDescription"
       style="margin-bottom: 12px"
     />
-    <div class="print-area">
+    <!-- 编辑模式：contenteditable 直接改预览文字；打印输出当前 DOM（含修改），不落库 -->
+    <div class="print-area" :class="{ 'print-area-editable': editable }" :contenteditable="editable ? 'true' : 'false'">
       <component :is="template" :data="data" />
     </div>
   </div>
@@ -26,7 +27,9 @@
   import SalesOutstockPrint from './templates/SalesOutstockPrint.vue';
   import SalesReturnPrint from './templates/SalesReturnPrint.vue';
 
-  const props = defineProps<{ data: WmsPrintDataVO }>();
+  const props = withDefaults(defineProps<{ data: WmsPrintDataVO; editable?: boolean }>(), {
+    editable: false,
+  });
 
   const TEMPLATES: Record<string, any> = {
     PROFIT: ProfitListPrint,
@@ -57,3 +60,22 @@
 
   const alertDescription = computed(() => props.data.extras?.warn || '');
 </script>
+
+<style scoped>
+  .print-area-editable {
+    outline: 2px dashed #faad14;
+    outline-offset: 4px;
+    cursor: text;
+  }
+
+  .print-area-editable :deep(td:hover),
+  .print-area-editable :deep(th:hover) {
+    background: #fffbe6;
+  }
+
+  @media print {
+    .print-area-editable {
+      outline: none;
+    }
+  }
+</style>

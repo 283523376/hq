@@ -32,11 +32,12 @@ public interface IWmsKingdeePrintReader {
      *
      * @param billType 打印单据类型码
      * @param keyword  单号模糊关键词（空则不筛选）
+     * @param dateFrom 单据日期下界 yyyy-MM-dd（空则不筛选）
      * @param startRow 起始行（0 起）
      * @param limit    本页条数（实现内部多取 1 条判断是否还有下一页）
      * @return 头字段行（FBillNo/FDate），最多 limit 条
      * @throws RuntimeException 金蝶调用失败
      */
-    List<Map<String, String>> queryApprovedPage(String billType, String keyword,
-                                                          int startRow, int limit);
+    List<Map<String, String>> queryApprovedPage(String billType, String keyword, String dateFrom,
+                                                int startRow, int limit);
 }
