@@ -58,6 +58,7 @@
 
 <script lang="ts" name="wms-defect" setup>
   import { h, ref } from 'vue';
+  import dayjs from 'dayjs';
   import { Input, Modal } from 'ant-design-vue';
   import { BasicTable, TableAction, useTable } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
@@ -90,6 +91,15 @@
     columns: recordColumns,
     rowKey: 'id',
     formConfig: { schemas: recordSearchFormSchema },
+    // 搜索区的时间是 RangePicker（[起, 止]），后端要 createTimeBegin/createTimeEnd 两个参数（按天闭区间）
+    beforeFetch: (params) => {
+      const { timeRange, ...rest } = params;
+      if (Array.isArray(timeRange) && timeRange.length === 2) {
+        rest.createTimeBegin = dayjs(timeRange[0]).format('YYYY-MM-DD');
+        rest.createTimeEnd = dayjs(timeRange[1]).format('YYYY-MM-DD');
+      }
+      return rest;
+    },
     useSearchForm: true,
     actionColumn: { width: 100 },
     showIndexColumn: false,

@@ -46,9 +46,9 @@ export const returnToConsignor = (params) =>
 /**
  * 不良品记录分页。
  *
- * 后端该方法直接绑实体，只认 `materialCode` / `sourceBillNo` / `sourceType` /
- * `disposalType` / `status` 这些实体字段。**不要传 createTime/updateTime**——
- * 时间字段没有 @DateTimeFormat，传了会 400。
+ * 后端绑查询 DTO（`WmsDefectRecordQueryDTO`）：`materialCode` / `sourceBillNo`（模糊）、
+ * `sourceType` / `disposalType` / `status`（等值）、`createTimeBegin` / `createTimeEnd`
+ * （yyyy-MM-dd，按天闭区间）。传 DTO 之外的多余参数（如旧的 `createTime`）会被静默忽略，不再报错。
  */
 export const listRecords = (params) => defHttp.get({ url: Api.records, params });
 

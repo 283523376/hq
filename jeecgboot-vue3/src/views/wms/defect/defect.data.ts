@@ -139,8 +139,9 @@ export const recordColumns: BasicColumn[] = [
 /**
  * 不良品记录筛选条件。
  *
- * 只放后端实体里存在的字段 —— 该端点直接绑 `WmsDefectRecord`，
- * 时间字段没有 @DateTimeFormat，传入时间参数会 400。
+ * 后端已改绑查询 DTO（`WmsDefectRecordQueryDTO`）：时间筛选走 `createTimeBegin/
+ * createTimeEnd`（yyyy-MM-dd，按天闭区间），由页面的 `beforeFetch` 把 `timeRange`
+ * 拆成这两个参数——拆法与 audit 页一致。
  */
 export const recordSearchFormSchema: FormSchema[] = [
   {
@@ -166,4 +167,14 @@ export const recordSearchFormSchema: FormSchema[] = [
     componentProps: { options: DEFECT_DISPOSAL_OPTIONS },
   },
   { label: '状态', field: 'status', component: 'Select', colProps: { span: 6 }, componentProps: { options: DEFECT_STATUS_OPTIONS } },
+  {
+    label: '登记时间',
+    field: 'timeRange',
+    component: 'RangePicker',
+    colProps: { span: 12 },
+    componentProps: {
+      valueType: 'Date',
+      style: { width: '100%' },
+    },
+  },
 ];
