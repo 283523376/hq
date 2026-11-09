@@ -38,7 +38,7 @@
             <td v-for="(cell, ci) in row" :key="ci" :class="{ center: ci === 1 || ci === 2 || ci === 3 || ci === 4 }">{{ cell }}</td>
           </tr>
           <tr v-if="pi === data.totalPages - 1" class="total-row">
-            <td class="center">合计</td>
+            <td class="total-left">合计</td>
             <td></td>
             <td class="num">{{ data.totalsOnLastPage['数量'] }}</td>
             <td></td>
@@ -82,7 +82,7 @@
   const infoRight = computed(() => companyInfo.value.slice(leftCount.value));
 
   function colWidth(index: number) {
-    const widths = ['44%', '8%', '12%', '10%', '12%', '14%'];
+    const widths = ['40%', '8%', '7.5%', '7%', '9%', '27%'];
     return { width: widths[index] || 'auto' };
   }
 </script>
@@ -91,17 +91,26 @@
   .sheet-top {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
+    align-items: flex-start;
     gap: 12px;
   }
 
   .logo-wrap {
-    width: 160px;
+    width: 220px;
+  }
+
+  .logo-wrap .sheet-logo {
+    height: 62px;
   }
 
   .top-center {
     flex: 1;
     text-align: center;
+  }
+
+  .top-center :deep(.sheet-title-rule) {
+    width: 52%;
+    margin: 0 auto;
   }
 
   .top-right {
@@ -127,6 +136,7 @@
     flex: 0 0 47%;
     text-align: left;
     white-space: nowrap;
+    padding-top: 1.5em;
   }
 
   .info-right > div:last-child {

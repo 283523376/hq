@@ -50,7 +50,7 @@
   defineProps<{ data: WmsPrintDataVO }>();
 
   function colWidth(index: number) {
-    const widths = ['17%', '17%', '12.5%', '5.5%', '6.5%', '8.5%', '33%'];
+    const widths = ['17%', '17%', '15%', '7%', '8.5%', '11.5%', '24%'];
     return { width: widths[index] || 'auto' };
   }
 </script>

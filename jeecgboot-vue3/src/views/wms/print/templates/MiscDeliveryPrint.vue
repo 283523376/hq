@@ -82,7 +82,7 @@
 
   .title-center .sheet-title-rule {
     display: block;
-    width: 100%;
+    width: 540px;
     margin: 0;
   }
 

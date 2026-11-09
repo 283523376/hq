@@ -56,7 +56,7 @@
   const company = computed(() => props.data.extras?.['公司名'] || '宜昌永鑫精工科技股份有限公司');
 
   function colWidth(index: number) {
-    const widths = ['11%', '11%', '13%', '13%', '6%', '14%', '14%', '6%', '12%'];
+    const widths = ['18%', '13%', '15%', '14%', '9%', '10.5%', '9%', '4%', '7.5%'];
     return { width: widths[index] || 'auto' };
   }
 </script>
