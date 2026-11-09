@@ -1,0 +1,308 @@
+package org.jeecg.modules.wms.service.impl;
+
+import com.alibaba.fastjson2.JSON;
+import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.entity.WmsOutboundDetail;
+import org.jeecg.modules.wms.entity.WmsOutboundOrder;
+import org.jeecg.modules.wms.entity.WmsPrintDocument;
+import org.jeecg.modules.wms.entity.WmsStocktakeOrder;
+import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
+import org.jeecg.modules.wms.mapper.WmsOutboundDetailMapper;
+import org.jeecg.modules.wms.mapper.WmsOutboundOrderMapper;
+import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
+import org.jeecg.modules.wms.service.print.WmsPrintDataAssembler;
+import org.jeecg.modules.wms.service.store.WmsPrintSnapshotStore;
+import org.jeecg.modules.wms.sync.IWmsKingdeePrintReader;
+import org.jeecg.modules.wms.sync.WmsKingdeePrintBill;
+import org.jeecg.modules.wms.vo.WmsPrintDataVO;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * @Description: 单据打印编排服务单测（DY-001 Task 4）：本地入口解析、金蝶快照回退、
+ * 销售出库本地兜底、本地下拉过滤。
+ *
+ * @Author: 永鑫WMS
+ * @Date: 2026-11-09
+ */
+class WmsPrintServiceImplTest {
+
+    private WmsPrintSnapshotStore store;
+    private IWmsKingdeePrintReader reader;
+    private WmsPrintDataAssembler assembler;
+    private WmsStocktakeOrderMapper stocktakeMapper;
+    private WmsOutboundOrderMapper outboundMapper;
+    private WmsOutboundDetailMapper detailMapper;
+    private WmsMaterialMapper materialMapper;
+    private WmsPrintServiceImpl service;
+
+    @BeforeEach
+    void setUp() {
+        store = mock(WmsPrintSnapshotStore.class);
+        reader = mock(IWmsKingdeePrintReader.class);
+        assembler = new WmsPrintDataAssembler();
+        stocktakeMapper = mock(WmsStocktakeOrderMapper.class);
+        outboundMapper = mock(WmsOutboundOrderMapper.class);
+        detailMapper = mock(WmsOutboundDetailMapper.class);
+        materialMapper = mock(WmsMaterialMapper.class);
+        service = new WmsPrintServiceImpl(store, reader, assembler,
+                stocktakeMapper, outboundMapper, detailMapper, materialMapper);
+        when(reader.isEnabled()).thenReturn(true);
+    }
+
+    // ------------------------------------------------------------ 盘盈/盘亏入口
+
+    /** PD 单号 → 解析逗号合并的 erp_bill_no，按前缀取对应单号。 */
+    @Test
+    void inventoryEntry_resolvesErpBillNo_byPrefix() {
+        WmsStocktakeOrder order = new WmsStocktakeOrder().setStocktakeNo("PD202611060002");
+        order.setId("ST1");
+        order.setErpBillNo("QTRK10126110003,QTCK10126110002");
+        when(stocktakeMapper.selectOne(any())).thenReturn(order);
+        when(reader.queryApproved(eq(WmsConstants.PRINT_BILL_LOSS), eq("QTCK10126110002")))
+                .thenReturn(Optional.of(kingdeeBill(WmsConstants.PRINT_BILL_LOSS, "QTCK10126110002")));
+
+        WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_LOSS, "PD202611060002");
+
+        assertEquals("盘亏单", vo.getTitle());
+        assertEquals("QTCK10126110002", vo.getErpBillNo());
+        verify(store).upsert(eq(WmsConstants.PRINT_BILL_LOSS), eq("QTCK10126110002"), anyString());
+    }
+
+    /** 未回写的盘点单：拒绝并给出可读文案。 */
+    @Test
+    void inventoryEntry_notWrittenBack_rejected() {
+        WmsStocktakeOrder order = new WmsStocktakeOrder().setStocktakeNo("PD202611090001");
+        order.setId("ST2");
+        order.setErpBillNo(null);
+        when(stocktakeMapper.selectOne(any())).thenReturn(order);
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.printData(WmsConstants.PRINT_BILL_PROFIT, "PD202611090001"));
+        assertTrue(e.getMessage().contains("未回写金蝶"), e.getMessage());
+        verify(reader, never()).queryApproved(anyString(), anyString());
+    }
+
+    /** 盘点单只回写了盘亏单却要打盘盈单：拒绝并说明缺该类型单据。 */
+    @Test
+    void inventoryEntry_missingTypeBill_rejected() {
+        WmsStocktakeOrder order = new WmsStocktakeOrder().setStocktakeNo("PD202611060002");
+        order.setId("ST1");
+        order.setErpBillNo("QTCK10126110002");
+        when(stocktakeMapper.selectOne(any())).thenReturn(order);
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.printData(WmsConstants.PRINT_BILL_PROFIT, "PD202611060002"));
+        assertTrue(e.getMessage().contains("没有盘盈单"), e.getMessage());
+    }
+
+    // ------------------------------------------------------------ 金蝶链路与快照回退
+
+    /** 金蝶失败但有快照：回退快照组装 + snapshotTime + warn。 */
+    @Test
+    void kingdeeDown_withSnapshot_fallsBack_andMarksSnapshotTime() {
+        when(reader.queryApproved(anyString(), anyString()))
+                .thenThrow(new RuntimeException("金蝶查询失败：网络超时"));
+        Date snapTime = new Date();
+        WmsPrintDocument snap = new WmsPrintDocument()
+                .setBillType(WmsConstants.PRINT_BILL_MISC_DELIVERY)
+                .setErpBillNo("QTCK10126110327")
+                .setPayload(JSON.toJSONString(List.of(miscRow())))
+                .setSnapshotTime(snapTime);
+        snap.setId("DOC1");
+        when(store.find(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK10126110327"))
+                .thenReturn(Optional.of(snap));
+
+        WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK10126110327");
+
+        assertEquals("其他出库单", vo.getTitle());
+        assertEquals(snapTime, vo.getSnapshotTime());
+        assertNotNull(vo.getExtras().get("warn"));
+        assertTrue(String.valueOf(vo.getExtras().get("warn")).contains("网络超时"));
+    }
+
+    /** 金蝶失败且无快照：显式报错。 */
+    @Test
+    void kingdeeDown_withoutSnapshot_throws() {
+        when(reader.queryApproved(anyString(), anyString()))
+                .thenThrow(new RuntimeException("金蝶查询失败：网络超时"));
+        when(store.find(anyString(), anyString())).thenReturn(Optional.empty());
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.printData(WmsConstants.PRINT_BILL_SALES_RETURN, "XSTHD10126110003"));
+        assertTrue(e.getMessage().contains("金蝶查询失败"), e.getMessage());
+    }
+
+    /** 查无（不存在或未审核）：合并文案。 */
+    @Test
+    void kingdeeEmpty_reportsNotFoundOrUnapproved() {
+        when(reader.queryApproved(anyString(), anyString())).thenReturn(Optional.empty());
+        when(store.find(anyString(), anyString())).thenReturn(Optional.empty());
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.printData(WmsConstants.PRINT_BILL_MISC_INSTOCK, "QTRK404"));
+        assertTrue(e.getMessage().contains("不存在或未审核"), e.getMessage());
+    }
+
+    /** 金蝶未启用：有快照走快照，无快照报未启用。 */
+    @Test
+    void kingdeeDisabled_usesSnapshot_orReportsDisabled() {
+        when(reader.isEnabled()).thenReturn(false);
+        when(store.find(anyString(), anyString())).thenReturn(Optional.empty());
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.printData(WmsConstants.PRINT_BILL_SUB_PICK, "WMLL00010491"));
+        assertTrue(e.getMessage().contains("金蝶同步未启用"), e.getMessage());
+
+        WmsPrintDocument snap = new WmsPrintDocument()
+                .setBillType(WmsConstants.PRINT_BILL_SUB_PICK)
+                .setPayload(JSON.toJSONString(List.of(subPickRow())))
+                .setSnapshotTime(new Date());
+        snap.setId("DOC2");
+        when(store.find(anyString(), anyString())).thenReturn(Optional.of(snap));
+        WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_SUB_PICK, "WMLL00010491");
+        assertEquals("委外领料单", vo.getTitle());
+        assertNotNull(vo.getSnapshotTime());
+    }
+
+    // ------------------------------------------------------------ 销售出库本地兜底
+
+    /** 已回写金蝶的本地单：本地明细组装为底，金蝶补字段失败仅 warn 不阻断。 */
+    @Test
+    void salesOutstock_localBill_assemblesLocally_andWarnsWhenKingdeeFails() {
+        WmsOutboundOrder order = new WmsOutboundOrder()
+                .setOutboundNo("XS2118258526005280770")
+                .setOutboundType(WmsConstants.OUTBOUND_TYPE_SALES)
+                .setErpBillNo("XSCK1012619868")
+                .setCustomerName("健鼎（湖北）电子有限公司");
+        order.setId("OB1");
+        when(outboundMapper.selectOne(any())).thenReturn(order);
+        WmsOutboundDetail detail = new WmsOutboundDetail()
+                .setMaterialId("MAT1").setMaterialCode("M001").setMaterialName("铣刀A")
+                .setUnit("支").setActualQty(new BigDecimal("100"));
+        detail.setId("D1");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail));
+        when(reader.queryApproved(anyString(), anyString()))
+                .thenThrow(new RuntimeException("金蝶查询失败：网络超时"));
+
+        WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XS2118258526005280770");
+
+        assertEquals("销售出库单", vo.getTitle());
+        assertEquals("XS2118258526005280770", vo.getErpBillNo());
+        assertEquals("健鼎（湖北）电子有限公司", vo.getHeaders().get("购货单位"));
+        assertNotNull(vo.getExtras().get("warn"), "金蝶补字段失败必须提示但不阻断");
+    }
+
+    /** XSCK 金蝶单号（本地查无）：走金蝶链路并落快照。 */
+    @Test
+    void salesOutstock_erpBillNo_goesKingdeeRoute() {
+        when(outboundMapper.selectOne(any())).thenReturn(null);
+        when(reader.queryApproved(eq(WmsConstants.PRINT_BILL_SALES_OUTSTOCK), eq("XSCK1012619868")))
+                .thenReturn(Optional.of(kingdeeBill(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XSCK1012619868")));
+
+        WmsPrintDataVO vo = service.printData(WmsConstants.PRINT_BILL_SALES_OUTSTOCK, "XSCK1012619868");
+
+        assertEquals("销售出库单", vo.getTitle());
+        verify(store).upsert(eq(WmsConstants.PRINT_BILL_SALES_OUTSTOCK), eq("XSCK1012619868"), anyString());
+    }
+
+    // ------------------------------------------------------------ 本地下拉
+
+    /** 下拉：盘盈亏查已回写盘点单、销售出库查本地单；其他类型返回空。 */
+    @Test
+    void localBills_filtersByType() {
+        WmsStocktakeOrder order = new WmsStocktakeOrder().setStocktakeNo("PD202611060002");
+        order.setId("ST1");
+        order.setErpBillNo("QTRK10126110003");
+        when(stocktakeMapper.selectList(any())).thenReturn(List.of(order));
+
+        List<Map<String, String>> stocktakes = service.localBills(WmsConstants.PRINT_BILL_PROFIT, "PD2026");
+        assertEquals(1, stocktakes.size());
+        assertEquals("PD202611060002", stocktakes.get(0).get("billNo"));
+        assertEquals("1", stocktakes.get(0).get("printable"));
+
+        assertTrue(service.localBills(WmsConstants.PRINT_BILL_MISC_DELIVERY, "x").isEmpty());
+    }
+
+    /** 空参数拒绝。 */
+    @Test
+    void printData_rejectsBlankParams() {
+        assertThrows(RuntimeException.class, () -> service.printData("", "X"));
+        assertThrows(RuntimeException.class, () -> service.printData(WmsConstants.PRINT_BILL_LOSS, " "));
+        assertThrows(RuntimeException.class, () -> service.printData("BAD_TYPE", "X"));
+    }
+
+    // ------------------------------------------------------------ 桩
+
+    private WmsKingdeePrintBill kingdeeBill(String type, String billNo) {
+        Map<String, String> row = WmsConstants.PRINT_BILL_SALES_OUTSTOCK.equals(type)
+                ? salesRow() : (WmsConstants.PRINT_BILL_SUB_PICK.equals(type) ? subPickRow() : lossRow());
+        return new WmsKingdeePrintBill().setBillType(type).setFormId("FORM")
+                .setBillNo(billNo).setRows(List.of(row));
+    }
+
+    private Map<String, String> lossRow() {
+        Map<String, String> r = new LinkedHashMap<>();
+        r.put("FBillNo", "QTCK10126110002");
+        r.put("FDate", "2026-11-09T00:00:00");
+        r.put("FMaterialId.FNumber", "M001");
+        r.put("FMaterialId.FName", "铜带");
+        r.put("FUnitId.FName", "支");
+        r.put("FQty", "1");
+        return r;
+    }
+
+    private Map<String, String> miscRow() {
+        Map<String, String> r = new LinkedHashMap<>();
+        r.put("FBillNo", "QTCK10126110327");
+        r.put("FDate", "2026-11-09T00:00:00");
+        r.put("FDeptId.FName", "PCB非标车间");
+        r.put("FMaterialId.FNumber", "Y.P.008.0101");
+        r.put("FMaterialId.FName", "磨料");
+        r.put("FUnitId.FName", "块");
+        r.put("FQty", "1");
+        return r;
+    }
+
+    private Map<String, String> subPickRow() {
+        Map<String, String> r = new LinkedHashMap<>();
+        r.put("FBillNo", "WMLL00010491");
+        r.put("FDate", "2026-11-08T00:00:00");
+        r.put("FSupplierId.FName", "东莞钠诺美特");
+        r.put("FMaterialId.FNumber", "XA.00.01");
+        r.put("FMaterialId.FName", "非涂层-整支");
+        r.put("FUnitId.FName", "支");
+        r.put("FAppQty", "8000");
+        return r;
+    }
+
+    private Map<String, String> salesRow() {
+        Map<String, String> r = new LinkedHashMap<>();
+        r.put("FBillNo", "XSCK1012619868");
+        r.put("FDate", "2026-11-09T00:00:00");
+        r.put("FCustomerId.FName", "健鼎（湖北）电子有限公司");
+        r.put("FMaterialId.FNumber", "L.40");
+        r.put("FMaterialId.FName", "铣刀");
+        r.put("FUnitId.FName", "支");
+        r.put("FRealQty", "26000");
+        return r;
+    }
+}
