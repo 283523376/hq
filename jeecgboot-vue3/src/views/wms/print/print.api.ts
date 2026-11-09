@@ -8,7 +8,12 @@ import { defHttp } from '/@/utils/http/axios';
 enum Api {
   data = '/wms/print/data',
   localBills = '/wms/print/local-bills',
+  bills = '/wms/print/bills',
 }
+
+/** 工作台单据列表：默认全部可打印单据，单号模糊，每页 20 条 */
+export const getBills = (params: { billType: string; keyword?: string; pageNo: number; pageSize: number }) =>
+  defHttp.get({ url: Api.bills, params });
 
 /** 取打印数据（分页已由后端切好；快照回退时 snapshotTime 非空） */
 export const getPrintData = (params: { billType: string; billNo: string }) =>

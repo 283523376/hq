@@ -4,6 +4,7 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.modules.wms.audit.WmsAudit;
 import org.jeecg.modules.wms.service.IWmsPrintService;
+import org.jeecg.modules.wms.vo.WmsPrintBillListVO;
 import org.jeecg.modules.wms.vo.WmsPrintDataVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,10 +42,11 @@ class WmsPrintControllerTest {
     /** 两个端点都挂 wms:print:list，且 data 带审计留痕（XT-002 口径：查询也留痕）。 */
     @Test
     void endpoints_requirePrintListPermission_andDataIsAudited() throws Exception {
-        for (String name : new String[]{"data", "localBills"}) {
-            Method m = WmsPrintController.class.getMethod(name,
-                    name.equals("data") ? new Class<?>[]{String.class, String.class}
-                            : new Class<?>[]{String.class, String.class});
+        for (String name : new String[]{"data", "localBills", "bills"}) {
+            Method m = "bills".equals(name)
+                    ? WmsPrintController.class.getMethod(name, String.class, String.class,
+                            Integer.class, Integer.class)
+                    : WmsPrintController.class.getMethod(name, String.class, String.class);
             RequiresPermissions p = m.getAnnotation(RequiresPermissions.class);
             assertNotNull(p, name + " 缺少 @RequiresPermissions");
             assertEquals("wms:print:list", p.value()[0]);
@@ -92,5 +94,18 @@ class WmsPrintControllerTest {
         assertTrue(result.isSuccess());
         assertEquals("PD202611090002", result.getResult().get(0).get("billNo"));
         verify(service).localBills(eq("PROFIT"), eq("PD2026"));
+    }
+
+    /** 列表端点：参数透传（模糊关键词 + 分页）。 */
+    @Test
+    void bills_passesKeywordAndPaging() {
+        WmsPrintBillListVO vo = new WmsPrintBillListVO().setPageNo(2).setPageSize(20).setTotal(41L);
+        when(service.bills("LOSS", "PD2026", 2, 20)).thenReturn(vo);
+
+        Result<WmsPrintBillListVO> result = controller.bills("LOSS", "PD2026", 2, 20);
+
+        assertTrue(result.isSuccess());
+        assertEquals(41L, result.getResult().getTotal());
+        verify(service).bills("LOSS", "PD2026", 2, 20);
     }
 }

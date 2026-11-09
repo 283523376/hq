@@ -15,6 +15,7 @@ import org.jeecg.modules.wms.service.print.WmsPrintDataAssembler;
 import org.jeecg.modules.wms.service.store.WmsPrintSnapshotStore;
 import org.jeecg.modules.wms.sync.IWmsKingdeePrintReader;
 import org.jeecg.modules.wms.sync.WmsKingdeePrintBill;
+import org.jeecg.modules.wms.vo.WmsPrintBillListVO;
 import org.jeecg.modules.wms.vo.WmsPrintDataVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -365,6 +366,39 @@ class WmsPrintServiceImplTest {
         RuntimeException e2 = assertThrows(RuntimeException.class,
                 () -> service.printData(WmsConstants.PRINT_BILL_LOSS, "PD-DRAFT-1"));
         assertTrue(e2.getMessage().contains("草稿"), e2.getMessage());
+    }
+
+    /**
+     * 工作台列表（2026-11-09）：本地类型分页 + 单号模糊；金蝶类型走 reader 分页并以 hasMore 判定。
+     */
+    @Test
+    void bills_localType_pagesWithKeyword_andKingdeeTypeUsesHasMore() {
+        // 本地：盘点单分页（mock selectPage 返回 1 条）
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<WmsStocktakeOrder> page =
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 20);
+        WmsStocktakeOrder st = new WmsStocktakeOrder().setStocktakeNo("PD202611060002")
+                .setStatus("已调整").setErpBillNo("QTCK10126110002");
+        page.setRecords(List.of(st));
+        page.setTotal(1);
+        when(stocktakeMapper.selectPage(any(), any())).thenReturn(page);
+
+        WmsPrintBillListVO local = service.bills(WmsConstants.PRINT_BILL_LOSS, "PD2026", 1, 20);
+        assertEquals(1, local.getTotal());
+        assertEquals("PD202611060002", local.getRecords().get(0).get("billNo"));
+        assertEquals("20", String.valueOf(local.getPageSize()));
+
+        // 金蝶：返回 21 条（多 1 条）→ 本页 20 条 + hasMore
+        List<Map<String, String>> kdRows = new java.util.ArrayList<>();
+        for (int i = 0; i < 21; i++) {
+            kdRows.add(Map.of("FBillNo", "QTCK" + i, "FDate", "2024-11-06T00:00:00"));
+        }
+        when(reader.queryApprovedPage(eq(WmsConstants.PRINT_BILL_MISC_DELIVERY), eq("QTCK"), eq(0), eq(20)))
+                .thenReturn(kdRows);
+
+        WmsPrintBillListVO kd = service.bills(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK", 1, 20);
+        assertEquals(20, kd.getRecords().size());
+        assertTrue(kd.getHasMore());
+        assertEquals(-1L, kd.getTotal());
     }
 
     /** 空参数拒绝。 */

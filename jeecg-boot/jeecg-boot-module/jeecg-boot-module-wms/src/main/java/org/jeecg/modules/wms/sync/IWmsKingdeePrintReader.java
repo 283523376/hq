@@ -1,5 +1,7 @@
 package org.jeecg.modules.wms.sync;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -24,4 +26,17 @@ public interface IWmsKingdeePrintReader {
      * @return 命中返回聚合单；查无返回 empty；金蝶调用失败抛 RuntimeException
      */
     Optional<WmsKingdeePrintBill> queryApproved(String billType, String erpBillNo);
+
+    /**
+     * 已审核单据列表（打印工作台默认列表 + 单号模糊查询）。
+     *
+     * @param billType 打印单据类型码
+     * @param keyword  单号模糊关键词（空则不筛选）
+     * @param startRow 起始行（0 起）
+     * @param limit    本页条数（实现内部多取 1 条判断是否还有下一页）
+     * @return 头字段行（FBillNo/FDate），最多 limit 条
+     * @throws RuntimeException 金蝶调用失败
+     */
+    List<Map<String, String>> queryApprovedPage(String billType, String keyword,
+                                                          int startRow, int limit);
 }

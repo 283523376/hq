@@ -8,6 +8,7 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.modules.wms.audit.WmsAudit;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.service.IWmsPrintService;
+import org.jeecg.modules.wms.vo.WmsPrintBillListVO;
 import org.jeecg.modules.wms.vo.WmsPrintDataVO;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -65,6 +66,22 @@ public class WmsPrintController {
             return Result.OK(printService.localBills(billType, keyword));
         } catch (RuntimeException e) {
             log.warn("单据打印下拉失败：类型={}，原因={}", billType, e.getMessage());
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @Operation(summary = "单据打印-工作台单据列表（默认全部可打印，单号模糊，每页 20 条）")
+    @GetMapping(value = "/bills")
+    @RequiresPermissions("wms:print:list")
+    public Result<WmsPrintBillListVO> bills(
+            @RequestParam(name = "billType") String billType,
+            @RequestParam(name = "keyword", required = false) String keyword,
+            @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
+            @RequestParam(name = "pageSize", defaultValue = "20") Integer pageSize) {
+        try {
+            return Result.OK(printService.bills(billType, keyword, pageNo, pageSize));
+        } catch (RuntimeException e) {
+            log.warn("单据打印列表失败：类型={}，原因={}", billType, e.getMessage());
             return Result.error(e.getMessage());
         }
     }

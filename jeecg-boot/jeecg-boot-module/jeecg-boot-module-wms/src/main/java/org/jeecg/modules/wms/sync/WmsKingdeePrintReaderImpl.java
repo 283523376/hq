@@ -88,6 +88,9 @@ public class WmsKingdeePrintReaderImpl implements IWmsKingdeePrintReader {
     /** 一张单的分录上限（打印场景单据分录远小于此）。 */
     private static final int QUERY_LIMIT = 500;
 
+    /** 列表查询字段（工作台只用单号与日期）。 */
+    private static final String LIST_FIELD_KEYS = "FBillNo,FDate,FDocumentStatus";
+
     private final WmsKingdeeFormClient formClient;
     private final WmsKingdeeProperties properties;
 
@@ -147,5 +150,43 @@ public class WmsKingdeePrintReaderImpl implements IWmsKingdeePrintReader {
                 .setFormId(formId)
                 .setBillNo(billNo)
                 .setRows(rows));
+    }
+
+    @Override
+    public List<Map<String, String>> queryApprovedPage(String billType, String keyword,
+                                                       int startRow, int limit) {
+        String type = billType == null ? "" : billType.trim();
+        String formId = FORM_ID_BY_TYPE.get(type);
+        if (formId == null) {
+            throw new IllegalArgumentException("不支持的打印单据类型：" + type);
+        }
+        String safeFilter = "FDocumentStatus='C'";
+        String kw = keyword == null ? "" : keyword.trim();
+        if (!kw.isEmpty()) {
+            safeFilter += " AND FBillNo like '%" + kw.replace("'", "''") + "%'";
+        }
+        // 多取 1 条供上层判断 hasMore；金蝶翻页必须 TopRowCount=0 + Limit（项目既有坑）
+        int safeLimit = Math.max(1, limit) + 1;
+        // 翻页必须给稳定排序，否则顺序不定会让同一行在两页重复、另一些行永远取不到
+        WmsKingdeeResult result = formClient.executeBillQuery(formId, LIST_FIELD_KEYS, safeFilter,
+                safeLimit, Math.max(0, startRow), "FDate DESC,FBillNo DESC");
+        if (!result.isSuccess()) {
+            throw new RuntimeException("金蝶单据列表查询失败：" + result.getMessage());
+        }
+        List<Map<String, String>> rows = new ArrayList<>();
+        if (result.getRows() != null) {
+            for (List<Object> raw : result.getRows()) {
+                if (raw == null || raw.isEmpty() || raw.get(0) == null) {
+                    continue;
+                }
+                Map<String, String> row = new LinkedHashMap<>();
+                row.put("FBillNo", String.valueOf(raw.get(0)));
+                row.put("FDate", raw.size() > 1 && raw.get(1) != null ? String.valueOf(raw.get(1)) : null);
+                row.put("FDocumentStatus", raw.size() > 2 && raw.get(2) != null
+                        ? String.valueOf(raw.get(2)) : null);
+                rows.add(row);
+            }
+        }
+        return rows;
     }
 }

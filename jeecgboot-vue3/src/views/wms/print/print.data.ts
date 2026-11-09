@@ -48,3 +48,14 @@ export const BILL_NO_HINTS: Record<string, string> = {
   SUB_PICK: '金蝶委外领料单号，如 WMLL00010491',
   SALES_RETURN: '金蝶销售退货单号，如 XSTHD10126110003',
 };
+
+/** 工作台搜索框提示（模糊匹配当前类型单据号） */
+export const SEARCH_PLACEHOLDERS: Record<string, string> = {
+  LOSS: '盘点单号模糊搜索，如 PD2026',
+  PROFIT: '盘点单号模糊搜索，如 PD2026',
+  SALES_OUTSTOCK: '销售出库单号模糊搜索，如 XS21 / XSCK',
+  MISC_DELIVERY: '金蝶其他出库单号模糊搜索，如 QTCK',
+  MISC_INSTOCK: '金蝶其他入库单号模糊搜索，如 QTRK',
+  SUB_PICK: '委外领料单号模糊搜索，如 WMLL',
+  SALES_RETURN: '销售退货单号模糊搜索，如 XSTHD',
+};

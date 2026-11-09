@@ -3,6 +3,7 @@ package org.jeecg.modules.wms.service.impl;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConfigKey;
@@ -21,6 +22,7 @@ import org.jeecg.modules.wms.service.print.WmsPrintDataAssembler;
 import org.jeecg.modules.wms.service.store.WmsPrintSnapshotStore;
 import org.jeecg.modules.wms.sync.IWmsKingdeePrintReader;
 import org.jeecg.modules.wms.sync.WmsKingdeePrintBill;
+import org.jeecg.modules.wms.vo.WmsPrintBillListVO;
 import org.jeecg.modules.wms.vo.WmsPrintDataVO;
 import org.springframework.stereotype.Service;
 
@@ -53,6 +55,9 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
     private static final TypeReference<List<Map<String, String>>> ROWS_TYPE =
             new TypeReference<List<Map<String, String>>>() {
             };
+
+    /** 工作台列表默认每页条数（2026-11-09 客户口径）。 */
+    private static final int DEFAULT_LIST_PAGE_SIZE = 20;
 
     /** 打印抬头默认公司名（与样单一致；系统配置 print.company.name 可覆盖）。 */
     private static final String DEFAULT_COMPANY_NAME = "宜昌永鑫精工科技股份有限公司";
@@ -373,6 +378,74 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
         return result;
     }
 
+    @Override
+    public WmsPrintBillListVO bills(String billType, String keyword, int pageNo, int pageSize) {
+        String type = trim(billType);
+        String kw = trim(keyword);
+        int size = pageSize <= 0 ? DEFAULT_LIST_PAGE_SIZE : Math.min(pageSize, 100);
+        int page = Math.max(pageNo, 1);
+        WmsPrintBillListVO result = new WmsPrintBillListVO().setPageNo(page).setPageSize(size);
+        if (WmsConstants.PRINT_BILL_PROFIT.equals(type) || WmsConstants.PRINT_BILL_LOSS.equals(type)) {
+            QueryWrapper<WmsStocktakeOrder> qw = new QueryWrapper<WmsStocktakeOrder>()
+                    .isNotNull("erp_bill_no").ne("erp_bill_no", "")
+                    .orderByDesc("create_time");
+            if (!kw.isEmpty()) {
+                qw.like("stocktake_no", kw);
+            }
+            Page<WmsStocktakeOrder> pageResult = stocktakeMapper.selectPage(new Page<>(page, size), qw);
+            List<Map<String, String>> records = new ArrayList<>();
+            for (WmsStocktakeOrder o : pageResult.getRecords()) {
+                Map<String, String> item = option(o.getStocktakeNo(),
+                        o.getStocktakeNo() + "（" + o.getStatus() + "）",
+                        !pickErpBillNo(o.getErpBillNo(), type).isEmpty());
+                item.put("date", "");
+                item.put("status", o.getStatus());
+                item.put("erpBillNo", o.getErpBillNo());
+                records.add(item);
+            }
+            return result.setRecords(records).setTotal(pageResult.getTotal())
+                    .setHasMore(page * (long) size < pageResult.getTotal());
+        }
+        if (WmsConstants.PRINT_BILL_SALES_OUTSTOCK.equals(type)) {
+            QueryWrapper<WmsOutboundOrder> qw = new QueryWrapper<WmsOutboundOrder>()
+                    .eq("outbound_type", WmsConstants.OUTBOUND_TYPE_SALES)
+                    .ne("status", WmsConstants.OUTBOUND_STATUS_DRAFT)
+                    .orderByDesc("create_time");
+            if (!kw.isEmpty()) {
+                qw.like("outbound_no", kw);
+            }
+            Page<WmsOutboundOrder> pageResult = outboundMapper.selectPage(new Page<>(page, size), qw);
+            List<Map<String, String>> records = new ArrayList<>();
+            for (WmsOutboundOrder o : pageResult.getRecords()) {
+                Map<String, String> item = option(o.getOutboundNo(),
+                        o.getOutboundNo() + "（" + o.getStatus() + "）", true);
+                item.put("date", "");
+                item.put("status", o.getStatus());
+                item.put("erpBillNo", o.getErpBillNo());
+                records.add(item);
+            }
+            return result.setRecords(records).setTotal(pageResult.getTotal())
+                    .setHasMore(page * (long) size < pageResult.getTotal());
+        }
+        if (!isSupported(type)) {
+            throw new RuntimeException("不支持的打印单据类型：" + type);
+        }
+        // 金蝶类型：分页靠多取 1 条判断 hasMore（ExecuteBillQuery 不返回总数）
+        List<Map<String, String>> rows = reader.queryApprovedPage(type, kw, (page - 1) * size, size);
+        boolean hasMore = rows.size() > size;
+        List<Map<String, String>> records = new ArrayList<>();
+        for (int i = 0; i < Math.min(size, rows.size()); i++) {
+            Map<String, String> row = rows.get(i);
+            Map<String, String> item = option(row.get("FBillNo"),
+                    row.get("FBillNo") + "（已审核）", true);
+            item.put("date", dateOnly(row.get("FDate")));
+            item.put("status", "已审核");
+            item.put("erpBillNo", row.get("FBillNo"));
+            records.add(item);
+        }
+        return result.setRecords(records).setTotal(-1L).setHasMore(hasMore);
+    }
+
     private Map<String, String> option(String billNo, String label, boolean printable) {
         Map<String, String> item = new LinkedHashMap<>();
         item.put("billNo", billNo);
@@ -388,6 +461,29 @@ public class WmsPrintServiceImpl implements IWmsPrintService {
                 WmsConstants.PRINT_BILL_SUB_PICK, WmsConstants.PRINT_BILL_SALES_RETURN,
                 WmsConstants.PRINT_BILL_SALES_OUTSTOCK, WmsConstants.PRINT_BILL_PROFIT,
                 WmsConstants.PRINT_BILL_LOSS).contains(type);
+    }
+
+    /** 金蝶日期 → 样单风格 2026/11/6。 */
+    private static String dateOnly(String value) {
+        if (value == null) {
+            return "";
+        }
+        String v = value.trim();
+        int t = v.indexOf('T');
+        String d = t > 0 ? v.substring(0, t) : v;
+        if (d.length() > 10) {
+            d = d.substring(0, 10);
+        }
+        String[] parts = d.split("-");
+        if (parts.length == 3) {
+            try {
+                return Integer.parseInt(parts[0]) + "/" + Integer.parseInt(parts[1]) + "/"
+                        + Integer.parseInt(parts[2]);
+            } catch (NumberFormatException e) {
+                return d;
+            }
+        }
+        return d;
     }
 
     private static String trim(String value) {

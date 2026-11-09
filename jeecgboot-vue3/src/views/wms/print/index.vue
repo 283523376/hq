@@ -13,25 +13,43 @@
       </a-tabs>
 
       <div class="toolbar">
-        <a-auto-complete
-          v-model:value="billNo"
-          :options="localOptions"
-          :placeholder="placeholder"
+        <a-input-search
+          v-model:value="keyword"
+          :placeholder="searchPlaceholder"
           allow-clear
           style="width: 360px"
-          @search="onSearch"
-          @select="onSelect"
+          @search="loadList(1)"
         />
-        <a-button type="primary" :loading="loading" @click="handleQuery">查询预览</a-button>
-        <a-button :disabled="!data" @click="handlePrint">打印</a-button>
+        <span class="count">共 {{ total > 0 ? total : '—' }} 条，第 {{ pageNo }} 页</span>
+        <a-button :disabled="pageNo <= 1" @click="loadList(pageNo - 1)">上一页</a-button>
+        <a-button :disabled="!hasMore" @click="loadList(pageNo + 1)">下一页</a-button>
+        <a-button type="primary" :disabled="!data" @click="handlePrint">打印</a-button>
       </div>
+
+      <a-table
+        :data-source="records"
+        :columns="listColumns"
+        :loading="listLoading"
+        :pagination="false"
+        row-key="billNo"
+        size="small"
+        :custom-row="customRow"
+        :row-class-name="(record: any) => (record.billNo === selectedNo ? 'row-selected' : '')"
+        :scroll="{ y: 280 }"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'action'">
+            <a @click.stop="handlePreview(record.billNo)">预览</a>
+          </template>
+        </template>
+      </a-table>
     </a-card>
 
-    <a-spin :spinning="loading">
+    <a-spin :spinning="previewLoading">
       <div v-if="data" class="preview-wrap">
         <PrintPreview :data="data" />
       </div>
-      <a-empty v-else description="选择单据类型与单号后查询预览" />
+      <a-empty v-else description="点击上方列表中的单据进行预览" />
     </a-spin>
   </div>
 </template>
@@ -39,75 +57,86 @@
 <script lang="ts" setup>
   import { computed, onMounted, ref } from 'vue';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import { PRINT_TABS, BILL_NO_HINTS, type WmsPrintDataVO } from './print.data';
-  import { getPrintData, getLocalBills } from './print.api';
+  import { PRINT_TABS, SEARCH_PLACEHOLDERS, type WmsPrintDataVO } from './print.data';
+  import { getBills, getPrintData } from './print.api';
   import PrintPreview from './PrintPreview.vue';
   import './print.css';
 
   const { createMessage } = useMessage();
 
+  const PAGE_SIZE = 20;
+
   const activeType = ref<string>(PRINT_TABS.find((t) => t.enabled)!.type);
-  const billNo = ref<string>('');
+  const keyword = ref('');
+  const pageNo = ref(1);
+  const total = ref(-1);
+  const hasMore = ref(false);
+  const records = ref<any[]>([]);
+  const listLoading = ref(false);
+  const previewLoading = ref(false);
   const data = ref<WmsPrintDataVO | null>(null);
-  const loading = ref(false);
-  const localOptions = ref<{ value: string; label: string }[]>([]);
+  const selectedNo = ref('');
 
-  const currentTab = computed(() => PRINT_TABS.find((t) => t.type === activeType.value)!);
-  const placeholder = computed(() => BILL_NO_HINTS[activeType.value] || '输入单据号');
+  const searchPlaceholder = computed(() => SEARCH_PLACEHOLDERS[activeType.value] || '按单号模糊搜索');
 
-  onMounted(() => {
-    loadLocalBills('');
-  });
+  const listColumns = [
+    { title: '单据号', dataIndex: 'billNo', key: 'billNo', width: 320 },
+    { title: '日期', dataIndex: 'date', key: 'date', width: 130 },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 130 },
+    { title: '操作', key: 'action', width: 90 },
+  ];
+
+  onMounted(() => loadList(1));
 
   function onTabChange() {
-    billNo.value = '';
+    keyword.value = '';
     data.value = null;
-    localOptions.value = [];
-    loadLocalBills('');
+    selectedNo.value = '';
+    loadList(1);
   }
 
-  /** 本地类型（盘盈亏/销售出库）才拉下拉；5 类金蝶单据直接手输单号 */
-  async function loadLocalBills(keyword: string) {
-    if (currentTab.value.source !== 'local') {
-      localOptions.value = [];
-      return;
-    }
+  async function loadList(page: number) {
+    const p = Math.max(1, page);
+    listLoading.value = true;
     try {
-      const list = (await getLocalBills({ billType: activeType.value, keyword })) || [];
-      localOptions.value = list.map((item: any) => ({
-        value: item.billNo,
-        label: item.printable === '1' ? item.label : `${item.label} — 未回写金蝶`,
-      }));
+      const res: any = await getBills({
+        billType: activeType.value,
+        keyword: (keyword.value || '').trim(),
+        pageNo: p,
+        pageSize: PAGE_SIZE,
+      });
+      records.value = res?.records || [];
+      total.value = res?.total ?? -1;
+      hasMore.value = !!res?.hasMore;
+      pageNo.value = res?.pageNo || p;
     } catch (e: any) {
-      localOptions.value = [];
-      createMessage.warn(e?.message || '本地单号加载失败');
+      records.value = [];
+      total.value = 0;
+      hasMore.value = false;
+      createMessage.error(e?.message || '单据列表加载失败');
+    } finally {
+      listLoading.value = false;
     }
   }
 
-  let searchTimer: any = null;
-  function onSearch(value: string) {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => loadLocalBills(value), 300);
+  function customRow(record: any) {
+    return {
+      onClick: () => handlePreview(record.billNo),
+      style: { cursor: 'pointer' },
+    };
   }
 
-  function onSelect(value: string) {
-    billNo.value = value;
-  }
-
-  async function handleQuery() {
-    const no = (billNo.value || '').trim();
-    if (!no) {
-      createMessage.warning('请先选择或输入单据号');
-      return;
-    }
-    loading.value = true;
+  async function handlePreview(billNo: string) {
+    if (!billNo) return;
+    selectedNo.value = billNo;
+    previewLoading.value = true;
     try {
-      data.value = await getPrintData({ billType: activeType.value, billNo: no });
+      data.value = await getPrintData({ billType: activeType.value, billNo });
     } catch (e: any) {
       data.value = null;
       createMessage.error(e?.message || '查询失败');
     } finally {
-      loading.value = false;
+      previewLoading.value = false;
     }
   }
 
@@ -123,6 +152,12 @@
     gap: 12px;
     align-items: center;
     margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+
+  .count {
+    color: #666;
+    font-size: 12px;
   }
 
   .preview-wrap {
@@ -130,5 +165,9 @@
     padding: 16px;
     background: #fff;
     overflow-x: auto;
+  }
+
+  :deep(.row-selected) > td {
+    background: #e6f4ff !important;
   }
 </style>

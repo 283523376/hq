@@ -125,6 +125,60 @@ class WmsKingdeePrintReaderImplTest {
         assertTrue(reader.isEnabled());
     }
 
+    /** 列表查询：已审核过滤 + 单号 like 模糊 + 稳定排序 + 多取 1 条（供 hasMore 判定）。 */
+    @Test
+    void queryApprovedPage_buildsFilterWithLike_andUsesStableOrder() {
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt(),
+                anyString())).thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+
+        reader.queryApprovedPage(WmsConstants.PRINT_BILL_MISC_DELIVERY, "QTCK10", 0, 20);
+
+        ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Integer> start = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<Integer> limit = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<String> order = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(formClient).executeBillQuery(
+                eq("STK_MisDelivery"), anyString(), filter.capture(), limit.capture(),
+                start.capture(), order.capture());
+        assertEquals("FDocumentStatus='C' AND FBillNo like '%QTCK10%'", filter.getValue());
+        assertEquals(0, start.getValue());
+        assertEquals(21, limit.getValue(), "多取 1 条判断是否还有下一页");
+        assertTrue(order.getValue().contains("FBillNo"), order.getValue());
+    }
+
+    /** 无关键词时只带已审核门；关键词单引号转义。 */
+    @Test
+    void queryApprovedPage_noKeyword_andEscapesQuote() {
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt(),
+                anyString())).thenReturn(WmsKingdeeResult.ok("[]", List.of(), null, null));
+        reader.queryApprovedPage(WmsConstants.PRINT_BILL_SALES_RETURN, "", 20, 20);
+        ArgumentCaptor<String> filter = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(formClient).executeBillQuery(
+                anyString(), anyString(), filter.capture(), anyInt(), anyInt(), anyString());
+        assertEquals("FDocumentStatus='C'", filter.getValue());
+
+        reader.queryApprovedPage(WmsConstants.PRINT_BILL_SALES_RETURN, "a'b", 0, 20);
+        ArgumentCaptor<String> allFilters = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(formClient, org.mockito.Mockito.times(2)).executeBillQuery(
+                anyString(), anyString(), allFilters.capture(), anyInt(), anyInt(), anyString());
+        assertTrue(allFilters.getAllValues().get(1).contains("a''b"), allFilters.getAllValues().get(1));
+    }
+
+    /** 行映射：单号/日期/状态。 */
+    @Test
+    void queryApprovedPage_mapsRows() {
+        when(formClient.executeBillQuery(anyString(), anyString(), anyString(), anyInt(), anyInt(),
+                anyString())).thenReturn(WmsKingdeeResult.ok("[]",
+                List.of(List.of("QTCK000001", "2024-11-06T00:00:00", "C")), null, null));
+
+        List<Map<String, String>> rows = reader.queryApprovedPage(
+                WmsConstants.PRINT_BILL_MISC_DELIVERY, "", 0, 20);
+
+        assertEquals(1, rows.size());
+        assertEquals("QTCK000001", rows.get(0).get("FBillNo"));
+        assertEquals("2024-11-06T00:00:00", rows.get(0).get("FDate"));
+    }
+
     private static void verifyQuery(WmsKingdeeFormClient client, ArgumentCaptor<String> filterCaptor) {
         org.mockito.Mockito.verify(client).executeBillQuery(
                 anyString(), anyString(), filterCaptor.capture(), anyInt());

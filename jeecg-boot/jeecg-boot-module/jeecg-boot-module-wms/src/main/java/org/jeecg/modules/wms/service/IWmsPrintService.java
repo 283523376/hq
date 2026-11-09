@@ -1,5 +1,6 @@
 package org.jeecg.modules.wms.service;
 
+import org.jeecg.modules.wms.vo.WmsPrintBillListVO;
 import org.jeecg.modules.wms.vo.WmsPrintDataVO;
 
 import java.util.List;
@@ -29,4 +30,14 @@ public interface IWmsPrintService {
      * @return 每项 {billNo, label, printable}；该类型无本地单据时返回空列表
      */
     List<Map<String, String>> localBills(String billType, String keyword);
+
+    /**
+     * 工作台单据列表：默认列出该类型全部可打印单据，单号模糊搜索，每页默认 20 条。
+     *
+     * @param billType 打印单据类型码
+     * @param keyword  单号模糊关键词（本地类型匹配本地单号，金蝶类型匹配金蝶单号）
+     * @param pageNo   页码（1 起）
+     * @param pageSize 每页条数（默认 20，上限 100）
+     */
+    WmsPrintBillListVO bills(String billType, String keyword, int pageNo, int pageSize);
 }
