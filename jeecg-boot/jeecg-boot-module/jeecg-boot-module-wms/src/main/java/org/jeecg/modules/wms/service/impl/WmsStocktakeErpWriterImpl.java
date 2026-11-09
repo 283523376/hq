@@ -112,14 +112,14 @@ public class WmsStocktakeErpWriterImpl {
             if (StringUtils.hasText(detail.getBatchNo())) {
                 entry.put("FLot", mapByNumber(detail.getBatchNo()));
             }
-            // 盘盈（QTRK/STK_Miscellaneous）分录比盘亏多两个必填：收货仓库 FStockId 与库存状态
-            // FStockStatusId。缺了报「分录第1行字段"收货仓库"/"库存状态"是必填项」（2026-11-09 真账套实测，
-            // 开出 QTRK10126110002）；盘亏侧 STK_MisDelivery 不带这两项也能存，故只补盘盈侧。
-            if (gain) {
-                entry.put("FStockId", mapByNumber(properties.getStocktake().getStockCode()));
-                if (StringUtils.hasText(properties.getStockStatusId())) {
-                    entry.put("FStockStatusId", mapByNumber(properties.getStockStatusId()));
-                }
+            // 分录仓库两侧都要显式传（2026-11-09 二次实测更正）：
+            // - 盘盈缺 FStockId 直接报「收货仓库是必填项」；
+            // - 盘亏缺 FStockId 虽能存，但金蝶按**物料默认仓库**落库（实测写成 Y.05 而非盘点的 D.02），
+            //   审核时按错仓扣库存必报负库存——所以盘亏也必须传。
+            entry.put("FStockId", mapByNumber(properties.getStocktake().getStockCode()));
+            // 库存状态只有盘盈侧需要
+            if (gain && StringUtils.hasText(properties.getStockStatusId())) {
+                entry.put("FStockStatusId", mapByNumber(properties.getStockStatusId()));
             }
             entries.add(entry);
         }
@@ -147,6 +147,12 @@ public class WmsStocktakeErpWriterImpl {
                     + order.getStocktakeNo() + "）");
         }
         persistErpBillNo(order, result.getNumber());
+        // 保存后提交（A→B）：不提交单据停在 A，金蝶前台无法直接审核（2026-11-09 实测）
+        WmsKingdeeResult submitted = formClient.submit(formId, List.of(result.getNumber()));
+        if (submitted == null || !submitted.isSuccess()) {
+            return WmsOrderSyncResult.fail("盘点回写[" + formId + "]已保存 " + result.getNumber()
+                    + " 但提交失败：" + (submitted == null ? "无返回" : submitted.getMessage()));
+        }
         return WmsOrderSyncResult.ok();
     }
 

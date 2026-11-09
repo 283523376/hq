@@ -51,6 +51,9 @@ class WmsStocktakeErpWriterTest {
         orderMapper = mock(WmsStocktakeOrderMapper.class);
         materialMapper = mock(org.jeecg.modules.wms.mapper.WmsMaterialMapper.class);
         writer = new WmsStocktakeErpWriterImpl(properties, formClient, detailMapper, orderMapper, materialMapper);
+        // 公共桩：保存成功后要 Submit（不提交单据停在 A），默认成功
+        when(formClient.submit(anyString(), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", List.of(), null, null));
     }
 
     private WmsStocktakeOrder order() {
@@ -126,8 +129,10 @@ class WmsStocktakeErpWriterTest {
     }
 
     /**
-     * 盘盈分录必须带收货仓库与库存状态（2026-11-09 真账套：缺这两项报「分录第1行字段"收货仓库"/"库存状态"是必填项」，
-     * 开出 QTRK10126110002）；盘亏侧 STK_MisDelivery 不带也能存，别顺手加过去改坏了既有报文。
+     * 盘盈/盘亏分录都要带仓库（2026-11-09 二次实测更正）：盘盈缺 FStockId 报「必填项」；
+     * 盘亏缺 FStockId 虽能存，但金蝶会按**物料默认仓库**落库（实测写成 Y.05 而非盘点的 D.02），
+     * 审核时按错仓扣库存必报负库存——所以盘亏侧也必须显式传。
+     * 库存状态 FStockStatusId 仍只盘盈需要。
      */
     @Test
     void gainEntryCarriesStockAndStatusRequiredByQtrk() {
@@ -152,8 +157,9 @@ class WmsStocktakeErpWriterTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> lossEntries =
                 (List<Map<String, Object>>) modelCaptor.getAllValues().get(1).get("FEntity");
-        assertFalse(lossEntries.get(0).containsKey("FStockId"), "盘亏侧不要加 FStockId");
-        assertFalse(lossEntries.get(0).containsKey("FStockStatusId"), "盘亏侧不要加 FStockStatusId");
+        assertEquals(Map.of("FNumber", "D.01"), lossEntries.get(0).get("FStockId"),
+                "盘亏侧必须显式传仓库，否则金蝶按物料默认仓落库");
+        assertFalse(lossEntries.get(0).containsKey("FStockStatusId"), "盘亏侧不需要库存状态");
     }
 
     @Test
@@ -176,5 +182,20 @@ class WmsStocktakeErpWriterTest {
             List<Map<String, Object>> entries = (List<Map<String, Object>>) model.get("FEntity");
             assertEquals(1, entries.size(), "零差异行不得出现在任何一侧：" + entries);
         }
+    }
+
+    /** 保存成功后必须 Submit（A→B）——不提交单据停在 A，金蝶前台无法直接审核。 */
+    @Test
+    void savedBillIsSubmitted() {
+        properties.setAllowHttp(true);
+        properties.getStocktake().setStockCode("D.02");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("loc-2", "m2", "10", "7")));
+        when(formClient.save(anyString(), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", List.of(), "QTCK000001", "1"));
+        when(formClient.submit(anyString(), any())).thenReturn(WmsKingdeeResult.ok("{}", List.of(), "QTCK000001", "1"));
+
+        writer.writeLoss(order());
+
+        verify(formClient).submit("STK_MisDelivery", List.of("QTCK000001"));
     }
 }
