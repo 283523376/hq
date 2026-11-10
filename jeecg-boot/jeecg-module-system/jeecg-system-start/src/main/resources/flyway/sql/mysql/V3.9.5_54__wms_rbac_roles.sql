@@ -85,6 +85,8 @@ WHERE p.del_flag = 0 AND p.perms IN (
 --    manager=全部 12 目录；operator=基础/入库/出库/库存/预警/批次/查询/不良品/打印；
 --    stocktake=库存/盘点/批次/查询/打印；viewer=出库/库存/盘点/预警/批次/查询/审计。
 --    演示菜单一个不挂 → 业务角色登录只见 WMS（spec §3.2 菜单可见性）。
+--    子树只授 menu_type IN (0,1) 的菜单行；按钮一律走上面按矩阵的精确码授权，防止子树把
+--    基础数据等目录的维护按钮泄漏给操作角色。
 INSERT IGNORE INTO sys_role_permission (id, role_id, permission_id)
 WITH RECURSIVE tree AS (
   SELECT id FROM sys_permission WHERE del_flag = 0 AND id IN (
@@ -93,7 +95,8 @@ WITH RECURSIVE tree AS (
     '1910000000000000801','1910000000000000901','1910000000000000951','1910000000000001001')
   UNION ALL
   SELECT c.id FROM sys_permission c JOIN tree t ON c.parent_id = t.id AND c.del_flag = 0
-) SELECT CONCAT('192', SUBSTRING(id, 4), '2'), '191000000000009002', id FROM tree;
+) SELECT CONCAT('192', SUBSTRING(m.id, 4), '2'), '191000000000009002', m.id FROM tree t
+  JOIN sys_permission m ON m.id = t.id AND m.menu_type IN (0, 1);
 
 INSERT IGNORE INTO sys_role_permission (id, role_id, permission_id)
 WITH RECURSIVE tree AS (
@@ -103,7 +106,8 @@ WITH RECURSIVE tree AS (
     '1910000000000000901','1910000000000001001')
   UNION ALL
   SELECT c.id FROM sys_permission c JOIN tree t ON c.parent_id = t.id AND c.del_flag = 0
-) SELECT CONCAT('192', SUBSTRING(id, 4), '3'), '191000000000009003', id FROM tree;
+) SELECT CONCAT('192', SUBSTRING(m.id, 4), '3'), '191000000000009003', m.id FROM tree t
+  JOIN sys_permission m ON m.id = t.id AND m.menu_type IN (0, 1);
 
 INSERT IGNORE INTO sys_role_permission (id, role_id, permission_id)
 WITH RECURSIVE tree AS (
@@ -112,7 +116,8 @@ WITH RECURSIVE tree AS (
     '1910000000000000701','1910000000000001001')
   UNION ALL
   SELECT c.id FROM sys_permission c JOIN tree t ON c.parent_id = t.id AND c.del_flag = 0
-) SELECT CONCAT('192', SUBSTRING(id, 4), '4'), '191000000000009004', id FROM tree;
+) SELECT CONCAT('192', SUBSTRING(m.id, 4), '4'), '191000000000009004', m.id FROM tree t
+  JOIN sys_permission m ON m.id = t.id AND m.menu_type IN (0, 1);
 
 INSERT IGNORE INTO sys_role_permission (id, role_id, permission_id)
 WITH RECURSIVE tree AS (
@@ -121,7 +126,8 @@ WITH RECURSIVE tree AS (
     '1910000000000000621','1910000000000000701','1910000000000000801')
   UNION ALL
   SELECT c.id FROM sys_permission c JOIN tree t ON c.parent_id = t.id AND c.del_flag = 0
-) SELECT CONCAT('192', SUBSTRING(id, 4), '5'), '191000000000009005', id FROM tree;
+) SELECT CONCAT('192', SUBSTRING(m.id, 4), '5'), '191000000000009005', m.id FROM tree t
+  JOIN sys_permission m ON m.id = t.id AND m.menu_type IN (0, 1);
 
 -- ------------------------------------------------ 9) 租户治理（spec §3.1）
 -- admin 登录租户从演示租户 1000（北京国炬）回到默认租户 0
@@ -136,6 +142,12 @@ WHERE u.username = 'admin'
 DELETE pu FROM sys_tenant_pack_user pu
 LEFT JOIN sys_tenant_pack p ON p.id = pu.pack_id
 WHERE p.id IS NULL;
+-- 角色授权行去重（历史迁移曾用随机 id 重复插入同一 (role, permission)，如 admin 的
+-- wms:location:add/edit 各 2 行；运行时 DISTINCT 不受影响，但会误导审计计数）。
+-- 确定性保留字典序最小 id，可重复执行。
+DELETE r1 FROM sys_role_permission r1
+JOIN sys_role_permission r2
+  ON r1.role_id = r2.role_id AND r1.permission_id = r2.permission_id AND r1.id > r2.id;
 -- 上游演示租户停用（保数据可回滚；若停用后登录页仍可选到它们，回退时再评估 del_flag）
 UPDATE sys_tenant SET status = 0 WHERE id IN (1000, 1001) AND status <> 0;
 
