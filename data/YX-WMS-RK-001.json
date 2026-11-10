@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "YX-WMS-RK-001",
   "name": "YX-WMS-RK-001 外购/受托原材料入库流程",
-  "updatedAt": "2026-11-09T10:33:12",
+  "updatedAt": "2026-11-10T11:59:26",
   "grid": {
     "headerHeight": 44,
     "stepColumnWidth": 64,
@@ -19,24 +19,18 @@
     },
     {
       "id": "lane-1",
-      "name": "车间",
+      "name": "WMS系统",
       "color": "orange",
       "width": 210
     },
     {
       "id": "lane-2",
-      "name": "WMS系统",
+      "name": "堆垛机",
       "color": "green",
       "width": 210
     },
     {
       "id": "lane-3",
-      "name": "堆垛机",
-      "color": "purple",
-      "width": 210
-    },
-    {
-      "id": "lane-4",
       "name": "异常处理",
       "color": "red",
       "width": 200
@@ -61,105 +55,91 @@
     {
       "id": "E03",
       "text": "校验采购/受托订单（来源：金蝶）",
-      "laneId": "lane-2",
+      "laneId": "lane-1",
       "step": 2,
       "kind": "process"
     },
     {
       "id": "E04",
       "text": "订单不存在→提示",
-      "laneId": "lane-4",
+      "laneId": "lane-3",
       "step": 2,
       "kind": "process"
     },
     {
       "id": "E05",
-      "text": "选择处理方式：大改小 或 直接入库（来源：来料属性）",
+      "text": "选择处理方式：改刀料 或 段差棒（来源：来料属性）",
       "laneId": "lane-0",
       "step": 3,
       "kind": "process"
     },
     {
       "id": "E06",
-      "text": "大改小加工，原材料变半成品（来源：ERP生产订单）",
+      "text": "分配半成品立库货位（两类处理方式一致，来源：WMS库存与库位规则）",
       "laneId": "lane-1",
       "step": 4,
       "kind": "process"
     },
     {
       "id": "E07",
-      "text": "生成改制单，按生产入库处理（来源：WMS+ERP）",
-      "laneId": "lane-2",
+      "text": "库位不足→告警",
+      "laneId": "lane-3",
       "step": 4,
       "kind": "process"
     },
     {
       "id": "E08",
-      "text": "投入不足→提示",
-      "laneId": "lane-4",
-      "step": 4,
+      "text": "下发入库任务（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 5,
       "kind": "process"
     },
     {
       "id": "E09",
-      "text": "分配半成品立库货位（来源：WMS库存与库位规则）",
+      "text": "堆垛机执行（来源：WCS/RMS）",
       "laneId": "lane-2",
       "step": 5,
       "kind": "process"
     },
     {
       "id": "E10",
-      "text": "库位不足→告警",
-      "laneId": "lane-4",
+      "text": "设备故障→告警并转人工",
+      "laneId": "lane-3",
       "step": 5,
       "kind": "process"
     },
     {
       "id": "E11",
-      "text": "下发入库任务（来源：WMS）",
-      "laneId": "lane-2",
+      "text": "接收回执，更新库存；受托材料记受托库存（来源：设备回执）",
+      "laneId": "lane-1",
       "step": 6,
       "kind": "process"
     },
     {
       "id": "E12",
-      "text": "堆垛机执行（来源：WCS/RMS）",
+      "text": "上架失败→重试",
       "laneId": "lane-3",
       "step": 6,
       "kind": "process"
     },
     {
       "id": "E13",
-      "text": "设备故障→告警并转人工",
-      "laneId": "lane-4",
-      "step": 6,
+      "text": "回写金蝶：外购走采购收料单，受托走受托材料入库单（来源：WMS单据）",
+      "laneId": "lane-1",
+      "step": 7,
       "kind": "process"
     },
     {
       "id": "E14",
-      "text": "接收回执，按新物料编码更新库存；受托材料记受托库存（来源：设备回执）",
-      "laneId": "lane-2",
+      "text": "同步失败→重试并告警",
+      "laneId": "lane-3",
       "step": 7,
       "kind": "process"
     },
     {
       "id": "E15",
-      "text": "上架失败→重试",
-      "laneId": "lane-4",
-      "step": 7,
-      "kind": "process"
-    },
-    {
-      "id": "E16",
-      "text": "回写金蝶：大改小走生产入库，段差棒走采购入库（来源：WMS单据）",
-      "laneId": "lane-2",
-      "step": 8,
-      "kind": "process"
-    },
-    {
-      "id": "E17",
-      "text": "同步失败→重试并告警",
-      "laneId": "lane-4",
+      "text": "记录批次信息与操作日志（来源：WMS）",
+      "laneId": "lane-1",
       "step": 8,
       "kind": "process"
     }
@@ -201,25 +181,25 @@
       "kind": "main"
     },
     {
-      "id": "e-E06-E07-5",
+      "id": "e-E06-E08-5",
       "source": "E06",
-      "target": "E07",
+      "target": "E08",
       "label": "",
       "kind": "main"
     },
     {
-      "id": "e-E07-E09-6",
-      "source": "E07",
+      "id": "e-E06-E07-6",
+      "source": "E06",
+      "target": "E07",
+      "label": "不足",
+      "kind": "exception"
+    },
+    {
+      "id": "e-E08-E09-7",
+      "source": "E08",
       "target": "E09",
       "label": "",
       "kind": "main"
-    },
-    {
-      "id": "e-E07-E08-7",
-      "source": "E07",
-      "target": "E08",
-      "label": "不足",
-      "kind": "exception"
     },
     {
       "id": "e-E09-E11-8",
@@ -232,48 +212,34 @@
       "id": "e-E09-E10-9",
       "source": "E09",
       "target": "E10",
-      "label": "不足",
-      "kind": "exception"
-    },
-    {
-      "id": "e-E11-E12-10",
-      "source": "E11",
-      "target": "E12",
-      "label": "",
-      "kind": "main"
-    },
-    {
-      "id": "e-E12-E14-11",
-      "source": "E12",
-      "target": "E14",
-      "label": "",
-      "kind": "main"
-    },
-    {
-      "id": "e-E12-E13-12",
-      "source": "E12",
-      "target": "E13",
       "label": "故障",
       "kind": "exception"
     },
     {
-      "id": "e-E14-E16-13",
-      "source": "E14",
-      "target": "E16",
+      "id": "e-E11-E13-10",
+      "source": "E11",
+      "target": "E13",
       "label": "",
       "kind": "main"
     },
     {
-      "id": "e-E14-E15-14",
-      "source": "E14",
-      "target": "E15",
+      "id": "e-E11-E12-11",
+      "source": "E11",
+      "target": "E12",
       "label": "失败",
       "kind": "exception"
     },
     {
-      "id": "e-E16-E17-15",
-      "source": "E16",
-      "target": "E17",
+      "id": "e-E13-E15-12",
+      "source": "E13",
+      "target": "E15",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E13-E14-13",
+      "source": "E13",
+      "target": "E14",
       "label": "失败",
       "kind": "exception"
     }
