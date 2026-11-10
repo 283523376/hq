@@ -9,9 +9,13 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.dto.WmsAuditEvent;
+import org.jeecg.modules.wms.entity.WmsConversionOrder;
+import org.jeecg.modules.wms.entity.WmsDefectRecord;
 import org.jeecg.modules.wms.entity.WmsOutboundOrder;
 import org.jeecg.modules.wms.entity.WmsTransferOrder;
+import org.jeecg.modules.wms.mapper.WmsDefectRecordMapper;
 import org.jeecg.modules.wms.service.IWmsAuditLogService;
+import org.jeecg.modules.wms.service.IWmsConversionService;
 import org.jeecg.modules.wms.service.IWmsOutboundService;
 import org.jeecg.modules.wms.service.IWmsTransferService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +65,13 @@ public class WmsAuditAspect {
 
     @Autowired(required = false)
     private IWmsTransferService transferService;
+
+    /** 技术债 §5-16：改制单/不良记录端点的 SpEL 同样只拿得到雪花 id，回查换成业务单号。 */
+    @Autowired(required = false)
+    private IWmsConversionService conversionService;
+
+    @Autowired(required = false)
+    private WmsDefectRecordMapper defectRecordMapper;
 
     public WmsAuditAspect(IWmsAuditLogService auditLogService) {
         this.auditLogService = auditLogService;
@@ -158,6 +169,18 @@ public class WmsAuditAspect {
                 WmsTransferOrder transfer = transferService.getById(bizNo);
                 if (transfer != null && oConvertUtils.isNotEmpty(transfer.getTransferNo())) {
                     return new ResolvedBiz(transfer.getTransferNo(), null);
+                }
+            } else if (WmsConstants.AUDIT_BIZ_CONVERSION.equals(bizType) && conversionService != null) {
+                WmsConversionOrder conversion = conversionService.getById(bizNo);
+                if (conversion != null && oConvertUtils.isNotEmpty(conversion.getConversionNo())) {
+                    // bizRef 放生产订单号：影响面时间线按工单串起来时能和工单动作对齐
+                    return new ResolvedBiz(conversion.getConversionNo(), conversion.getProductionOrderNo());
+                }
+            } else if (WmsConstants.AUDIT_BIZ_DEFECT_RECORD.equals(bizType) && defectRecordMapper != null) {
+                WmsDefectRecord record = defectRecordMapper.selectById(bizNo);
+                if (record != null && oConvertUtils.isNotEmpty(record.getSourceBillNo())) {
+                    // 不良记录本身没有业务单号，用来源单号（入库单/出库单）作 bizNo
+                    return new ResolvedBiz(record.getSourceBillNo(), record.getMaterialCode());
                 }
             }
         } catch (Exception e) {

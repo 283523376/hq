@@ -8,6 +8,7 @@ import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
+import org.jeecg.modules.wms.sync.IWmsKingdeeInventoryReader;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
@@ -51,17 +52,21 @@ public class WmsStocktakeErpWriterImpl {
     private final WmsStocktakeDetailMapper detailMapper;
     private final WmsStocktakeOrderMapper orderMapper;
     private final WmsMaterialMapper materialMapper;
+    /** 技术债 §5-15b：盘亏回写前查金蝶即时库存，避免金蝶无货可扣却开单（审核报负库存）。 */
+    private final IWmsKingdeeInventoryReader inventoryReader;
 
     public WmsStocktakeErpWriterImpl(WmsKingdeeProperties properties,
                                      WmsKingdeeFormClient formClient,
                                      WmsStocktakeDetailMapper detailMapper,
                                      WmsStocktakeOrderMapper orderMapper,
-                                     WmsMaterialMapper materialMapper) {
+                                     WmsMaterialMapper materialMapper,
+                                     IWmsKingdeeInventoryReader inventoryReader) {
         this.properties = properties;
         this.formClient = formClient;
         this.detailMapper = detailMapper;
         this.orderMapper = orderMapper;
         this.materialMapper = materialMapper;
+        this.inventoryReader = inventoryReader;
     }
 
     /** 盘盈 → 其他入库单 QTRK。 */
@@ -83,6 +88,7 @@ public class WmsStocktakeErpWriterImpl {
                 new LambdaQueryWrapper<WmsStocktakeDetail>()
                         .eq(WmsStocktakeDetail::getStocktakeId, order.getId()));
         List<Map<String, Object>> entries = new java.util.ArrayList<>();
+        List<LossLine> lossLines = new java.util.ArrayList<>();
         for (WmsStocktakeDetail detail : details) {
             if (detail.getActualQty() == null) {
                 continue;
@@ -122,11 +128,23 @@ public class WmsStocktakeErpWriterImpl {
                 entry.put("FStockStatusId", mapByNumber(properties.getStockStatusId()));
             }
             entries.add(entry);
+            if (isLoss) {
+                lossLines.add(new LossLine(materialCode, detail.getBatchNo(), diff.abs()));
+            }
         }
         if (entries.isEmpty()) {
             log.info("盘点单[{}]{}差异为空，跳过回写 {}", order.getStocktakeNo(),
                     gain ? "盘盈" : "盘亏", formId);
             return WmsOrderSyncResult.ok();
+        }
+        // 技术债 §5-15b：盘亏先确认金蝶目标仓有货。金蝶按 仓库+物料+批次 扣减，
+        // 本地账面与 ERP 不一致时会开出一张注定审核失败的 QTCK（实测报「出现负库存」）。
+        if (!gain) {
+            String shortage = findLossShortage(lossLines,
+                    properties.getStocktake().getStockCode());
+            if (shortage != null) {
+                return WmsOrderSyncResult.fail(shortage);
+            }
         }
         // WmsOrderSyncResult 无带参 ok()，成功结果统一用 ok() + 上层记日志
         // 单号以金蝶为准（2026-10-28 改造）：不传 FBillNo，由金蝶生成 QTRK…/QTCK…，保存后回存
@@ -180,6 +198,39 @@ public class WmsStocktakeErpWriterImpl {
         patch.setErpBillNo(joined);
         orderMapper.updateById(patch);
         order.setErpBillNo(joined);
+    }
+
+    /** 盘亏行（物料+批次+数量），用于回写前的金蝶库存校验。 */
+    private record LossLine(String materialCode, String batchNo, BigDecimal qty) {
+    }
+
+    /**
+     * 按「仓库|物料|批号」比对金蝶即时库存（STK_Inventory 的 FBaseQty 合计）；
+     * 不足返回可读文案，充足返回 null。查询本身失败只告警放行——
+     * 金蝶不可用时 Save 也会失败，交给原有失败链路，不要因查询故障阻断业务。
+     */
+    private String findLossShortage(List<LossLine> lines, String stockCode) {
+        Map<String, BigDecimal> inventory;
+        try {
+            inventory = inventoryReader.queryInventory(List.of(stockCode));
+        } catch (RuntimeException e) {
+            log.warn("盘点盘亏前置校验查询金蝶库存失败，跳过校验：{}", e.getMessage());
+            return null;
+        }
+        for (LossLine line : lines) {
+            String batch = line.batchNo() == null ? "" : line.batchNo();
+            BigDecimal available = inventory == null ? null
+                    : inventory.get(stockCode + "|" + line.materialCode() + "|" + batch);
+            BigDecimal actual = available == null ? BigDecimal.ZERO : available;
+            if (actual.compareTo(line.qty()) < 0) {
+                return "盘亏回写前置校验未通过：仓库[" + stockCode + "]物料[" + line.materialCode()
+                        + "]批次[" + batch + "]金蝶即时库存 "
+                        + actual.stripTrailingZeros().toPlainString() + "，本次盘亏 "
+                        + line.qty().stripTrailingZeros().toPlainString()
+                        + "。请先核对金蝶库存，避免开出必被审核拒绝（负库存）的单据";
+            }
+        }
+        return null;
     }
 
     /** 明细里的物料编码可能为空（历史数据/建单只写了 id），回写前按 id 兜底反查。 */

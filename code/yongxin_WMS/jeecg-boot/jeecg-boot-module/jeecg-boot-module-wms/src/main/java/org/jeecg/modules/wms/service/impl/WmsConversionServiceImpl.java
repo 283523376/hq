@@ -252,6 +252,9 @@ public class WmsConversionServiceImpl extends ServiceImpl<WmsConversionOrderMapp
         // 载具码借用改制单号：单号唯一 ⇒ 活跃载具唯一约束天然防重复；同时可溯源
         dto.setCarrierCode(order.getConversionNo());
         dto.setRemark(SUBMIT_REMARK_PREFIX + order.getConversionNo());
+        // 技术债 §5-23：结构化关联（此前只有 remark 字符串，反查只能模糊匹配）
+        dto.setConversionOrderId(order.getId());
+        dto.setSourceMaterialCode(order.getInputMaterialCode());
         productionInboundService.submit(dto);
     }
 

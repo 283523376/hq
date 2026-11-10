@@ -289,6 +289,28 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
     }
 
     /** 只允许报废废品仓的货——防止误伤正常库存。 */
+    /** 废品仓下的全部库位 id（技术债 §5-21 用；没配废品仓返回空集）。 */
+    private Set<String> scrapLocationIds() {
+        List<WmsWarehouse> scraps = warehouseMapper.selectList(new LambdaQueryWrapper<WmsWarehouse>()
+                .eq(WmsWarehouse::getWarehouseType, WmsConstants.WAREHOUSE_TYPE_SCRAP));
+        Set<String> ids = new HashSet<>();
+        if (scraps == null || scraps.isEmpty()) {
+            return ids;
+        }
+        List<String> warehouseIds = new ArrayList<>();
+        for (WmsWarehouse warehouse : scraps) {
+            warehouseIds.add(warehouse.getId());
+        }
+        List<WmsLocation> locations = locationMapper.selectList(new LambdaQueryWrapper<WmsLocation>()
+                .in(WmsLocation::getWarehouseId, warehouseIds));
+        if (locations != null) {
+            for (WmsLocation location : locations) {
+                ids.add(location.getId());
+            }
+        }
+        return ids;
+    }
+
     private void assertScrapWarehouse(String locationId) {
         WmsLocation location = oConvertUtils.isEmpty(locationId) ? null : locationMapper.selectById(locationId);
         if (location == null) {
@@ -444,9 +466,15 @@ public class WmsDefectServiceImpl implements IWmsDefectService {
                 .eq("ownership_type", WmsConstants.OWNERSHIP_CONSIGNED)
                 .eq("consignor_id", consignor.getId())
                 .gt("quantity", BigDecimal.ZERO));
+        // 技术债 §5-21：废品仓里的受托货已经判废，不能拿来抵扣正常退货/处置的数量，
+        // 否则会出现「总量对、好货与废品仓数量错配」。
+        Set<String> scrapLocations = scrapLocationIds();
         List<WmsInventory> availableRows = new ArrayList<>();
         BigDecimal totalAvailable = BigDecimal.ZERO;
         for (WmsInventory row : rows) {
+            if (row.getLocationId() != null && scrapLocations.contains(row.getLocationId())) {
+                continue;
+            }
             BigDecimal available = nvl(row.getQuantity()).subtract(nvl(row.getLockedQty()));
             if (available.signum() > 0) {
                 availableRows.add(row);

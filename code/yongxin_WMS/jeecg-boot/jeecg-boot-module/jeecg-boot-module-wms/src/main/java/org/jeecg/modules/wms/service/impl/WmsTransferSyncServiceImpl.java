@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.dto.message.MessageDTO;
 import org.jeecg.common.system.api.ISysBaseAPI;
@@ -111,6 +112,10 @@ public class WmsTransferSyncServiceImpl implements IWmsTransferSyncService {
                     .setLastSyncError(result.isMocked() ? "金蝶未启用（模拟提交）" : null)
                     .setSyncFailCount(0);
             orderMapper.updateById(patch);
+            if (!result.isMocked()) {
+                // 技术债 §5-20：实体更新忽略 null，真实提交成功必须显式清掉上一次的失败原因
+                clearLastSyncError(order.getId());
+            }
             log.info("调拨单[{}]已提交金蝶（{}）", order.getTransferNo(),
                     result.isMocked() ? "模拟" : "真实");
             return;
@@ -129,6 +134,13 @@ public class WmsTransferSyncServiceImpl implements IWmsTransferSyncService {
                     "调拨单 " + order.getTransferNo() + " 连续 " + failCount + " 次提交金蝶失败："
                             + result.getErrorMessage());
         }
+    }
+
+    /** 技术债 §5-20：显式清空失败原因——实体更新走 NOT_NULL 策略，set null 不会落库。 */
+    private void clearLastSyncError(String id) {
+        orderMapper.update(null, new UpdateWrapper<WmsTransferOrder>()
+                .set("last_sync_error", null)
+                .eq("id", id));
     }
 
     // ==================== 回读 ====================
@@ -160,6 +172,8 @@ public class WmsTransferSyncServiceImpl implements IWmsTransferSyncService {
                     .setSyncFailCount(0);
             statusResolver.assertTransition(order.getStatus(), WmsConstants.TRANSFER_STATUS_COMPLETED);
             orderMapper.updateById(patch);
+            // 技术债 §5-20：patch.setLastSyncError(null) 因 NOT_NULL 策略不会落库，需显式清空
+            clearLastSyncError(order.getId());
             log.info("调拨单[{}]金蝶已审核（C），置为已完成", order.getTransferNo());
             return;
         }

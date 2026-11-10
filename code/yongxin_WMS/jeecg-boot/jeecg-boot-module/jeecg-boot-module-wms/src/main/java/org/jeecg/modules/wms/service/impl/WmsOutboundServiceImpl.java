@@ -417,14 +417,6 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
         if (!isPickCancellable(order.getStatus())) {
             throw new RuntimeException("当前状态不允许取消");
         }
-        if (taskService != null) {
-            try {
-                taskService.cancel(id);
-            } catch (RuntimeException e) {
-                log.warn("领料单[{}]取消前撤销设备任务失败（继续取消）：{}", id, e.getMessage());
-            }
-        }
-        releaseAllocations(id, order);
         String cancelBy = oConvertUtils.isEmpty(operator) ? WmsUtils.currentUsername() : operator.trim();
         WmsOutboundOrder patch = new WmsOutboundOrder()
                 .setStatus(WmsConstants.OUTBOUND_STATUS_CLOSED)
@@ -441,6 +433,16 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                         WmsConstants.OUTBOUND_STATUS_EXCEPTION));
         if (rows == 0) {
             throw new RuntimeException("单据状态已变化，请刷新后重试");
+        }
+        // 2026-11-10（技术债 §5-19）：先认领状态、再撤任务/释放分配。
+        // 反过来会留下「任务已撤但单据没取消」的回滚窗口——并发取消/分配时尤其明显。
+        releaseAllocations(id, order);
+        if (taskService != null) {
+            try {
+                taskService.cancel(id);
+            } catch (RuntimeException e) {
+                log.warn("领料单[{}]已取消，撤销设备任务失败（任务残留需人工核对）：{}", id, e.getMessage());
+            }
         }
         notifyPickCancelled(order, cancelReason, cancelBy);
         log.info("领料单[{}]取消：工单={}，原因={}，操作人={}",
@@ -732,20 +734,34 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
     }
 
     private void patchOrderStatus(String id, String status, String lastSyncError) {
-        WmsOutboundOrder patch = new WmsOutboundOrder().setStatus(status).setLastSyncError(lastSyncError);
+        WmsOutboundOrder patch = new WmsOutboundOrder().setStatus(status);
         patch.setUpdateTime(new Date());
-        baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>().eq("id", id));
+        UpdateWrapper<WmsOutboundOrder> wrapper = new UpdateWrapper<WmsOutboundOrder>().eq("id", id);
+        if (lastSyncError == null) {
+            // 技术债 §5-20：实体更新走 NOT_NULL 策略，setLastSyncError(null) 等于「不改」，
+            // 同步成功后旧的失败原因会一直挂着——必须用 wrapper 显式写 null。
+            wrapper.set("last_sync_error", null);
+        } else {
+            patch.setLastSyncError(lastSyncError);
+        }
+        baseMapper.update(patch, wrapper);
     }
 
     /**
      * 设备回执回写状态：只允许从白名单状态迁移，迟到的 RUNNING/FAILED 不能把已完成/已关闭的单据拉回。
      */
     private boolean patchOrderStatusFrom(String id, String status, String lastSyncError, String... allowedFrom) {
-        WmsOutboundOrder patch = new WmsOutboundOrder().setStatus(status).setLastSyncError(lastSyncError);
+        WmsOutboundOrder patch = new WmsOutboundOrder().setStatus(status);
         patch.setUpdateTime(new Date());
-        int rows = baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>()
+        UpdateWrapper<WmsOutboundOrder> wrapper = new UpdateWrapper<WmsOutboundOrder>()
                 .eq("id", id)
-                .in("status", allowedFrom));
+                .in("status", allowedFrom);
+        if (lastSyncError == null) {
+            wrapper.set("last_sync_error", null);
+        } else {
+            patch.setLastSyncError(lastSyncError);
+        }
+        int rows = baseMapper.update(patch, wrapper);
         if (rows == 0) {
             log.info("出库单[{}]当前状态不在 {} 内，忽略回执状态 {}", id,
                     String.join("/", allowedFrom), status);
@@ -755,12 +771,18 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
 
     /** 条件回写状态：只有仍处于分配中/异常状态的行才更新，避免覆盖并发结果。 */
     private void updateStatus(String id, String status, String lastSyncError) {
-        WmsOutboundOrder patch = new WmsOutboundOrder().setStatus(status).setLastSyncError(lastSyncError);
+        WmsOutboundOrder patch = new WmsOutboundOrder().setStatus(status);
         patch.setUpdateTime(new Date());
-        baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>()
+        UpdateWrapper<WmsOutboundOrder> wrapper = new UpdateWrapper<WmsOutboundOrder>()
                 .eq("id", id)
                 .in("status", WmsConstants.OUTBOUND_STATUS_ALLOCATED,
-                        WmsConstants.OUTBOUND_STATUS_EXCEPTION));
+                        WmsConstants.OUTBOUND_STATUS_EXCEPTION);
+        if (lastSyncError == null) {
+            wrapper.set("last_sync_error", null);
+        } else {
+            patch.setLastSyncError(lastSyncError);
+        }
+        baseMapper.update(patch, wrapper);
     }
 
     private void alert(String title, String content) {

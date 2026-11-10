@@ -1,6 +1,7 @@
 package org.jeecg.modules.wms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -274,6 +275,10 @@ public class WmsTransferServiceImpl extends ServiceImpl<WmsTransferOrderMapper, 
         applyExecStatus(order, WmsConstants.TRANSFER_EXEC_RUNNING);
         order.setOperator(currentOperator());
         updateById(order);
+        // 技术债 §5-20：下发成功后显式清空上一次的失败原因（实体更新忽略 null）
+        baseMapper.update(null, new UpdateWrapper<WmsTransferOrder>()
+                .set("last_sync_error", null)
+                .eq("id", order.getId()));
         return order;
     }
 

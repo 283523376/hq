@@ -271,13 +271,20 @@ public class WmsOutboundTaskServiceImpl extends ServiceImpl<WmsOutboundOrderMapp
     }
 
     private void updateOrderStatus(String id, String status, String lastSyncError) {
-        WmsOutboundOrder patch = new WmsOutboundOrder().setStatus(status).setLastSyncError(lastSyncError);
+        WmsOutboundOrder patch = new WmsOutboundOrder().setStatus(status);
         patch.setUpdateTime(new Date());
-        baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>()
+        UpdateWrapper<WmsOutboundOrder> wrapper = new UpdateWrapper<WmsOutboundOrder>()
                 .eq("id", id)
                 .in("status", WmsConstants.OUTBOUND_STATUS_ALLOCATED,
                         WmsConstants.OUTBOUND_STATUS_EXCEPTION,
-                        WmsConstants.OUTBOUND_STATUS_EXECUTING));
+                        WmsConstants.OUTBOUND_STATUS_EXECUTING);
+        if (lastSyncError == null) {
+            // 技术债 §5-20：实体更新忽略 null，成功回执必须显式写 null 才能清掉旧失败原因
+            wrapper.set("last_sync_error", null);
+        } else {
+            patch.setLastSyncError(lastSyncError);
+        }
+        baseMapper.update(patch, wrapper);
     }
 
     private void alert(String title, String content) {

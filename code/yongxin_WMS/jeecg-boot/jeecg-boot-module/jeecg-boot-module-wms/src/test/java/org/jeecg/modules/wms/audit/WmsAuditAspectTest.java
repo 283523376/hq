@@ -144,6 +144,16 @@ class WmsAuditAspectTest {
         public org.jeecg.common.api.vo.Result<?> softOk(String id) {
             return org.jeecg.common.api.vo.Result.OK("分配成功");
         }
+
+        @WmsAudit(bizType = "改制单", action = "完成", bizNoSpEL = "#id")
+        public void conversion(String id) {
+            // 业务本体
+        }
+
+        @WmsAudit(bizType = "不良品记录", action = "登记", bizNoSpEL = "#id")
+        public void defect(String id) {
+            // 业务本体
+        }
     }
 
     /** 控制器吞异常返回 Result.error：审计必须记失败，不能因为方法正常返回就记成功。 */
@@ -206,6 +216,46 @@ class WmsAuditAspectTest {
         proxy(new Target()).confirm("1234567890123456789");
 
         assertEquals("1234567890123456789", capture().getBizNo());
+    }
+
+    /** 技术债 §5-16：改制单要把雪花 id 换成改制单号，生产订单号进 biz_ref。 */
+    @Test
+    void aspect_resolvesConversionBusinessNo() throws Exception {
+        org.jeecg.modules.wms.entity.WmsConversionOrder conversion =
+                new org.jeecg.modules.wms.entity.WmsConversionOrder()
+                        .setConversionNo("GZ001").setProductionOrderNo("MO1");
+        org.jeecg.modules.wms.service.IWmsConversionService conversionService =
+                mock(org.jeecg.modules.wms.service.IWmsConversionService.class);
+        when(conversionService.getById("1234567890123456789")).thenReturn(conversion);
+        java.lang.reflect.Field convField = WmsAuditAspect.class.getDeclaredField("conversionService");
+        convField.setAccessible(true);
+        convField.set(aspect, conversionService);
+
+        proxy(new Target()).conversion("1234567890123456789");
+
+        WmsAuditEvent event = capture();
+        assertEquals("GZ001", event.getBizNo());
+        assertEquals("MO1", event.getBizRef());
+    }
+
+    /** 技术债 §5-16：不良记录本身没有业务单号，用来源单号作 bizNo、物料编码进 biz_ref。 */
+    @Test
+    void aspect_resolvesDefectRecordBusinessNo() throws Exception {
+        org.jeecg.modules.wms.entity.WmsDefectRecord record =
+                new org.jeecg.modules.wms.entity.WmsDefectRecord()
+                        .setSourceBillNo("SL001").setMaterialCode("M1");
+        org.jeecg.modules.wms.mapper.WmsDefectRecordMapper recordMapper =
+                mock(org.jeecg.modules.wms.mapper.WmsDefectRecordMapper.class);
+        when(recordMapper.selectById("1234567890123456788")).thenReturn(record);
+        java.lang.reflect.Field defectField = WmsAuditAspect.class.getDeclaredField("defectRecordMapper");
+        defectField.setAccessible(true);
+        defectField.set(aspect, recordMapper);
+
+        proxy(new Target()).defect("1234567890123456788");
+
+        WmsAuditEvent event = capture();
+        assertEquals("SL001", event.getBizNo());
+        assertEquals("M1", event.getBizRef());
     }
 
     /** 普通单号（非纯数字长串）不做解析，省一次回查。 */
