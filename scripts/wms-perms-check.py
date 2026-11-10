@@ -45,7 +45,8 @@ WMS_ADMIN_ROLE_ID = "191000000000009001"
 # 这些注解码**没有**对应权限点是预期状态；恢复该域时应同时删除这里的豁免。
 DEACTIVATED_PREFIXES = ("wms:inbound:", "wms:order:")
 
-ANNOTATION = re.compile(r'@RequiresPermissions\(\s*("?)([\w.:-]+)\1\s*[,)]')
+ANNOTATION = re.compile(r'@RequiresPermissions\(([^)]*)\)')
+QUOTED = re.compile(r'"([\w.:-]+)"')
 CONST_DEF = re.compile(r'String\s+([A-Z_][A-Z_0-9]*)\s*=\s*"([^"]+)"')
 
 
@@ -78,13 +79,17 @@ def code_annotations() -> tuple[set[str], list[str]]:
         text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
         text = re.sub(r"^\s*//.*$", "", text, flags=re.M)
         for m in ANNOTATION.finditer(text):
-            quoted, arg = m.group(1), m.group(2)
-            if quoted == '"':
-                codes.add(arg)
-            elif arg in consts:
-                codes.add(consts[arg])
-            else:
-                warns.append(f"{path.name}: 常量 {arg} 解析不到字符串值")
+            args = m.group(1)
+            # 数组 value={"a","b"}、logical=OR、单值、常量引用全部兼容：先提全部带引号串
+            codes.update(QUOTED.findall(args))
+            # 裸标识符（常量引用）→ 查常量表
+            for tok in re.findall(r'(?<!["\w])([A-Z_][A-Z_0-9]*)(?!["\w])', args):
+                if tok in ('VALUE', 'LOGICAL', 'OR'):  # 注解属性名/枚举值，非法权限码
+                    continue
+                if tok in consts:
+                    codes.add(consts[tok])
+                else:
+                    warns.append(f"{path.name}: 常量 {tok} 解析不到字符串值")
     return codes, warns
 
 
