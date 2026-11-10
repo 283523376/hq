@@ -1,0 +1,692 @@
+server:
+  port: 8080
+  tomcat:
+    max-swallow-size: -1
+  servlet:
+    context-path: /jeecg-boot
+  compression:
+    enabled: true
+    min-response-size: 1024
+    mime-types: application/javascript,application/json,application/xml,text/html,text/xml,text/plain,text/css,image/*
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: metrics,httpexchanges,jeecghttptrace
+
+spring:
+  flyway:
+    # 是否启用flyway
+    enabled: true
+    # 迁移sql脚本存放路径
+    locations: classpath:flyway/sql/mysql
+    # 是否关闭要清除已有库下的表功能,生产环境必须为true,否则会删库，非常重要！！！
+    clean-disabled: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  mail:
+    # 定时任务发送邮件
+    timeJobSend: false
+    host: smtp.163.com
+    username: jeecgos@163.com
+    password: ??
+    properties:
+      mail.smtp.timeout: 10000  # 连接超时（毫秒）
+      mail.smtp.connectiontimeout: 10000  # 连接超时（毫秒）
+      mail.smtp.writetimeout: 10000  # 写入超时（毫秒）
+      mail.smtp.auth: true
+      smtp.ssl.enable: true
+#      mail.debug: true  # 启用调试模式(查看详细日志)
+  ## quartz定时任务,采用数据库方式
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: embedded
+    #定时任务启动开关，true-开  false-关
+    auto-startup: true
+    #延迟1秒启动定时任务
+    startup-delay: 1s
+    #启动时更新己存在的Job
+    overwrite-existing-jobs: true
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: MyScheduler
+            instanceId: AUTO
+          jobStore:
+            class: org.springframework.scheduling.quartz.LocalDataSourceJobStore
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+            tablePrefix: QRTZ_
+            isClustered: true
+            misfireThreshold: 12000
+            clusterCheckinInterval: 15000
+          threadPool:
+            class: org.quartz.simpl.SimpleThreadPool
+            threadCount: 10
+            threadPriority: 5
+            threadsInheritContextClassLoaderOfInitializingThread: true
+  #json 时间戳统一转换
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+  jpa:
+    open-in-view: false
+  aop:
+    proxy-target-class: true
+  #配置freemarker
+  freemarker:
+    # 设置模板后缀名
+    suffix: .ftl
+    # 设置文档类型
+    content-type: text/html
+    # 设置页面编码格式
+    charset: UTF-8
+    # 设置页面缓存
+    cache: false
+    prefer-file-system-access: false
+    # 设置ftl文件路径
+    template-loader-path:
+      - classpath:/templates
+    template_update_delay: 0
+  # 设置静态文件路径，js,css等
+  mvc:
+    static-path-pattern: /**
+    #Spring Boot 2.6+后映射匹配的默认策略已从AntPathMatcher更改为PathPatternParser,需要手动指定为ant-path-matcher
+    pathmatch:
+      matching-strategy: ant_path_matcher
+  resource:
+    static-locations: classpath:/static/,classpath:/public/
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+  datasource:
+    druid:
+      stat-view-servlet:
+        enabled: true
+        loginUsername: admin
+        # 默认弱口令，部署前务必修改
+        loginPassword: 123456
+        allow:
+      web-stat-filter:
+        enabled: true
+    dynamic:
+      druid:
+        # 连接池的配置信息
+        # 初始化大小，最小，最大
+        initial-size: 5
+        min-idle: 5
+        maxActive: 1000
+        # 配置获取连接等待超时的时间
+        maxWait: 60000
+        # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
+        timeBetweenEvictionRunsMillis: 60000
+        # 配置一个连接在池中最小生存的时间，单位是毫秒
+        minEvictableIdleTimeMillis: 300000
+        validationQuery: SELECT 1
+        testWhileIdle: true
+        testOnBorrow: false
+        testOnReturn: false
+        # 打开PSCache，并且指定每个连接上PSCache的大小
+        poolPreparedStatements: true
+        maxPoolPreparedStatementPerConnectionSize: 20
+        # 配置监控统计拦截的filters，去掉后监控界面sql无法统计，'wall'用于防火墙
+        filters: stat,slf4j
+        # 允许SELECT语句的WHERE子句是一个永真条件
+        wall:
+          selectWhereAlwayTrueCheck: false
+        # 打开mergeSql功能；慢SQL记录
+        stat:
+          merge-sql: false
+          slow-sql-millis: 5000
+      datasource:
+        master:
+          url: jdbc:mysql://127.0.0.1:3306/yongxin_wms?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+          username: root
+          password: root
+          driver-class-name: com.mysql.cj.jdbc.Driver
+#        # shardingjdbc数据源
+#        sharding-db:
+#          driver-class-name: org.apache.shardingsphere.driver.ShardingSphereDriver
+#          url: jdbc:shardingsphere:classpath:sharding.yaml
+  #redis 配置
+  data:
+    redis:
+      database: 0
+      host: 127.0.0.1
+      port: 6379
+      password:
+#mybatis plus 设置
+mybatis-plus:
+  mapper-locations: classpath*:org/jeecg/**/xml/*Mapper.xml
+  global-config:
+    # 关闭MP3.0自带的banner
+    banner: false
+    db-config:
+      #主键类型  0:"数据库ID自增",1:"该类型为未设置主键类型", 2:"用户输入ID",3:"全局唯一ID (数字类型唯一ID)", 4:"全局唯一ID UUID",5:"字符串全局唯一ID (idWorker 的字符串表示)";
+      id-type: ASSIGN_ID
+      # 默认数据库表下划线命名
+      table-underline: true
+  configuration:
+    # 这个配置会将执行的sql打印出来，在开发或测试的时候可以用
+    #log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 返回类型为Map,显示null对应的字段
+    call-setters-on-nulls: true
+#jeecg专用配置
+minidao:
+  base-package: org.jeecg.modules.jmreport.*,org.jeecg.modules.drag.*,org.jeecg.modules.chat2bi.*
+jeecg:
+  # 自定义资源请求前缀（js、css等解决nginx转发问题）
+  custom-resource-prefix-path:
+  # AI集成
+  ai-chat:
+    enabled: true
+    model: deepseek-v4-pro
+    apiKey: ??
+    apiHost: https://api.deepseek.com/v1
+    timeout: 60
+    skills-dir:
+    skills-shell-dir:
+    # AI聊天助手访问限流配置
+    rate-limit:
+      # 单 session 每分钟上限
+      send-per-session-per-minute: 10
+      # 单 IP 每分钟上限
+      send-per-ip-per-minute: 20
+      # 单 session 每小时上限
+      upload-per-session-per-hour: 20
+    # AI文生图绘画
+    ai-model-draw:
+      # 提供商 OPENAI/ZHIPU/QWEN
+      provider: QWEN
+      model: wan2.2-t2i-flash
+      apiKey: sk-??
+      apiHost: https://dashscope.aliyuncs.com/api/v1/
+      timeout: 60
+    # AI图生图绘画
+    ai-model-pic-draw:
+      # 提供商 QWEN
+      provider: QWEN
+      # 目前只支持 wan2.5-i2i-preview和wanx2.1-imageedit模型
+      model: wan2.5-i2i-preview
+      apiKey: sk-??
+      apiHost: https://dashscope.aliyuncs.com/api/v1/
+      timeout: 60
+    # AI语音 目前只支持智普 glm-tts
+    ai-model-voice:
+      provider: ZHIPU
+      model: glm-tts
+      apiKey: sk-??
+      apiHost: https://open.bigmodel.cn/api/paas/v4
+      timeout: 60
+      # tongtong、chuichui、xiaochen、jam、kazi、douji、luodo
+      voice: tongtong
+      speed: 1.0
+      volume: 0.0
+    # AI视频目前只支持智普 支持模型 cogvideox-3（支持自动生成语音）;viduq1-text、vidu2-reference(不支持自动生成语音，还贵)
+    ai-model-video:
+      provider: ZHIPU
+      model: cogvideox-3
+      apiKey: sk-??
+      apiHost: https://open.bigmodel.cn/api/paas/v4
+      timeout: 60
+      ffmpeg-path:
+      edge-tts-path:
+    # 默认向量模型
+    ai-model-embed:
+      provider: QWEN
+      model: text-embedding-v1
+      apiKey: sk-??
+      apiHost: https://dashscope.aliyuncs.com/api/v1/services/
+      timeout: 60
+  # AIRag向量库
+  ai-rag:
+    # AI流程敏感节点(stdio=命令行节点, sql=SQL节点, code=代码节点/脚本执行,高危存在RCE风险默认禁用)
+    allow-sensitive-nodes: sql,stdio,code
+    embed-store:
+      host: 127.0.0.1
+      port: 5432
+      database: vector_db
+      user: postgres
+      password: postgres
+      table: embeddings
+    # Brave Search 联网检索（AI Agent 工具）
+    brave-search:
+      api-key: ??
+      endpoint: https://api.search.brave.com/res/v1/web/search
+      count: 10
+      timeout: 15
+  #  Unipush配置 云函数调用 URL 化地址
+  unicloud:
+    pushUrl:
+  # 平台上线安全配置
+  firewall:
+    # 数据源安全 (开启后，Online报表和图表的数据源为必填)
+    dataSourceSafe: false
+    # 低代码模式（dev:开发模式，prod:发布模式——关闭所有在线开发配置能力）
+    lowCodeMode: dev
+    # 是否允许同一账号多地同时登录 （为 true 时允许一起登录, 为 false 时新登录挤掉旧登录）
+    is-concurrent: true
+    # 登录是否启用验证码
+    enableLoginCaptcha: false
+    # 是否开启三级等保强密码校验（true 开启强密码模式，false 使用简单密码规则）
+    enableStrongPwd: false
+  # 签名密钥串(前后端要一致，正式发布请自行修改)
+  signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
+  #签名拦截接口
+  signUrls: /sys/dict/getDictItems/*,/sys/dict/loadDict/*,/sys/dict/loadDictOrderByValue/*,/sys/dict/loadDictItem/*,/sys/dict/loadTreeData,/sys/api/queryTableDictItemsByCode,/sys/api/queryFilterTableDictInfo,/sys/api/queryTableDictByKeys,/sys/api/translateDictFromTable,/sys/api/translateDictFromTableByKeys,/sys/sendChangePwdSms,/sys/user/sendChangePhoneSms,/sys/sms,/desform/api/sendVerifyCode
+  # 上传类型：local（本地存储）| minio（MinIO对象存储）| alioss（阿里云OSS）
+  uploadType: local
+  # 前端访问地址
+  domainUrl:
+    pc: http://localhost:3100
+    app: http://localhost:8051
+  path:
+    #文件上传根目录 设置
+    upload: /opt/upFiles
+    #webapp文件路径
+    webapp: /opt/webapp
+  shiro:
+    excludeUrls: /test/jeecgDemo/demo3,/test/jeecgDemo/redisDemo/**,/bigscreen/category/**,/bigscreen/visual/**,/bigscreen/map/**,/jmreport/bigscreen2/**
+  # 短信发送方式 aliyun阿里云短信 tencent腾讯云短信
+  smsSendType: aliyun
+  #阿里云oss存储和大鱼短信秘钥配置
+  oss:
+    accessKey: ??
+    secretKey: ??
+    endpoint: oss-cn-beijing.aliyuncs.com
+    bucketName: jeecgdev
+    # 短信模板
+    sms-template:
+      # 签名
+      signature:
+      # 模板code
+      templateCode:
+        # 登录短信、忘记密码模板编码
+        SMS_175435174:
+        # 修改密码短信模板编码
+        SMS_465391221:
+        # 注册账号短信模板编码
+        SMS_175430166:
+  #腾讯短信秘钥配置
+  tencent:
+    # 接入域名
+    endpoint: sms.tencentcloudapi.com
+    secretId: ??
+    secretKey: ??
+    # 应用ID
+    sdkAppId: ??
+    # 地域信息
+    region: ap-beijing
+  # 在线预览文件服务器地址配置
+  file-view-domain: http://fileview.jeecg.com
+  # minio文件上传
+  minio:
+    minio_url: http://minio.jeecg.com
+    minio_name: ??
+    minio_pass: ??
+    bucketName: otatest
+  #大屏报表参数设置
+  jmreport:
+    #多租户模式，默认值为空(created:按照创建人隔离、tenant:按照租户隔离)
+    saasMode: 
+    # 签名密钥串(前后端要一致，正式发布请自行修改)
+    signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
+    ai:
+      # OpenAI 兼容 base 地址（必填）
+      base-url: https://api.deepseek.com
+      # API Key（必填，留空则 AI 不可用）
+      api-key: 
+      # 模型名
+      model: deepseek-v4-pro
+      #确定性输出，默认temperature=0
+      temperature: 0
+      # 单次生成最大 token 数(传给大模型的 max_tokens)，DeepSeek 合法范围[1,393216]
+      max-tokens: 393216
+      # AI自动建表功（安全警告: 此功能会直接操作数据库DDL/DML，生产环境请勿启用）
+      autoTableEnabled: true
+    # 平台上线安全配置
+    firewall:
+      # 数据源安全 (开启后，不允许使用平台数据源、SQL解析加签并且不允许查询数据库)
+      dataSourceSafe: false
+      # SQL解析安全 false: 数据库解析(默认,稳定性好) true: jsqlparser解析(不走数据库,安全级别高) v2.2.1+新增
+      sqlParseSafe: true
+      # 低代码开发模式（dev:开发模式，prod:发布模式—关闭在线报表设计功能，分配角色admin、lowdeveloper可放开限制）
+      lowCodeMode: dev
+      # sql注入检查级别（strict:严格, basic:简单校验, none:不校验）
+      sqlInjectionLevel: basic
+      # 数据源重试连接的次数，默认10，空或者0不限制次数(2.3.1+)
+      numberOfRetries: 10
+    # 高德地图Api配置
+    gao-de-api:
+      # 应用key
+      api-key: ??
+      # 应用秘钥
+      secret-key: ??
+  #xxl-job配置
+  xxljob:
+    enabled: false
+    adminAddresses: http://127.0.0.1:9080/xxl-job-admin
+    appname: ${spring.application.name}
+    accessToken: ''
+    address: 127.0.0.1:30007
+    ip: 127.0.0.1
+    port: 30007
+    logPath: logs/jeecg/job/jobhandler/
+    logRetentionDays: 30
+  #分布式锁配置
+  redisson:
+    address: 127.0.0.1:6379
+    password:
+    type: STANDALONE
+    enabled: true
+  # 百度开放API配置
+  baidu-api:
+    app-id: ??
+    api-key: ??
+    secret-key: ??
+#cas单点登录
+cas:
+  prefixUrl: http://cas.example.org:8443/cas
+#Mybatis输出sql日志
+logging:
+  level:
+    org.springframework.context.support.PostProcessorRegistrationDelegate: error
+    org.flywaydb: debug
+    org.jeecg.modules.system.mapper: info
+    org.jeecg.modules.demo.test.mapper: info
+    org.jeecg.modules.wms.mapper: info
+#swagger
+knife4j:
+  #开启增强配置
+  enable: true
+  #开启生产环境屏蔽
+  production: false
+  basic:
+    enable: false
+    username: jeecg
+    password: jeecg1314
+#第三方登录
+justauth:
+  enabled: true
+  type:
+    GITHUB:
+      client-id: ??
+      client-secret: ??
+      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/github/callback
+    WECHAT_ENTERPRISE:
+      client-id: ??
+      client-secret: ??
+      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/wechat_enterprise/callback
+      agent-id: ??
+    DINGTALK:
+      client-id: ??
+      client-secret: ??
+      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/dingtalk/callback
+    WECHAT_OPEN:
+      client-id: ??
+      client-secret: ??
+      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/wechat_open/callback
+    FEISHU:
+      client-id: ??
+      client-secret: ??
+      redirect-uri: http://sso.test.com:8080/jeecg-boot/sys/thirdLogin/feishu/callback
+  cache:
+    type: default
+    prefix: 'demo::'
+    timeout: 1h
+# ============================================================================
+# 永鑫WMS 外部系统对接占位（YX-WMS-RK-002 生产入库）
+# 说明：
+#   1) 地址为空时各网关走「模拟受理/模拟成功」，保证无外部系统时流程可闭环演示；
+#   2) 拿到 MES/ERP 地址、报文最终版与测试账号后，只改本段配置，不改业务代码；
+#   3) 开发令牌仅用于本机联调，生产环境必须替换。
+# ============================================================================
+wms:
+  transfer:
+    # CK-004 库存调拨：跨仓在途暂存库位（必须在调入仓内）；为空时建跨仓单会被拒绝
+    transit-location-id: "${WMS_TRANSFER_TRANSIT_LOCATION_ID:}"
+    # 是否启用「出发/到达」两段式确认（false = 出发即落暂存库位）
+    enable-transit: "${WMS_TRANSFER_ENABLE_TRANSIT:true}"
+    # 跨库调拨开关：业务已确认跨库由金蝶 ERP 实现，WMS 只做同库区移库（默认 false）
+    enable-cross-warehouse: "${WMS_TRANSFER_ENABLE_CROSS:false}"
+    # 【仅测试】将金蝶调拨单状态模拟为指定值（A/B/C/D），用于验证「C 才算完成」；生产留空
+    simulate-erp-status: "${WMS_TRANSFER_SIMULATE_ERP_STATUS:}"
+    # 金蝶调拨单库存组织编码
+    org-code: "${KINGDEE_TRANSFER_ORG_CODE:101}"
+  sync:
+    mes:
+      # MES 工单查询地址（占位）；未配置时只查本地 wms_work_order
+      work-order-url: ""
+      # MES 测试账号（占位）
+      username: ""
+      password: ""
+      # MES 推送工单到 WMS 的令牌（开发占位，生产必须替换）
+      push-token: "dev-mes-token"
+      # 生产入库同步 MES 地址（占位）
+      production-inbound-url: ""
+      # 出库同步 MES 地址（占位）；未配置且金蝶未启用时走 mock
+      outbound-url: ""
+    rms:
+      # 米塔 RMS 根地址（占位），例如 http://192.168.x.x:8080；未配置走模拟受理
+      url: ""
+      # 入库工作站编码（占位）
+      station-code: ""
+      warehouse: "MITA"
+      priority: 1
+      # 连接/读取超时（毫秒）：需求方口径 30 秒
+      timeout-ms: 30000
+      # RMS 回调令牌（开发占位，生产必须替换）
+      callback-token: "dev-rms-token"
+      # 出库工作站编码，逗号分隔（如 OUT_01,OUT_02）；为空则由 RMS 决定
+      outbound-stations: ""
+      # 出库任务优先级 1~5
+      outbound-priority: 1
+      # CK-004 调拨：同仓搬运默认目标区域（米塔 zoneCode）；调拨不要求精准到库位
+      transfer-default-zone: "${WMS_RMS_TRANSFER_DEFAULT_ZONE:PRE_ORDER}"
+    wcs:
+      # 堆垛机 WCS 入库下发地址（占位，协议待对方提供）
+      inbound-url: ""
+      # 堆垛机 WCS 任务取消地址（占位）
+      cancel-url: ""
+      # 堆垛机 WCS 出库下发地址（占位）
+      outbound-url: ""
+      # 堆垛机 WCS 出库任务取消地址（占位）
+      cancel-outbound-url: ""
+      username: ""
+      password: ""
+      # WCS 回执令牌（开发占位，生产必须替换）
+      callback-token: "dev-wcs-token"
+    erp:
+      # 生产入库同步 ERP 地址（占位）
+      production-inbound-url: ""
+      username: ""
+      password: ""
+      # 金蝶云星空第三方系统登录授权（LoginByAppSecret）
+      # 凭据只从环境变量读取，禁止写入仓库；启动前设置：
+      #   KINGDEE_ERP_BASE_URL / KINGDEE_ERP_ACCT_ID / KINGDEE_ERP_USERNAME
+      #   KINGDEE_ERP_APP_ID / KINGDEE_ERP_APP_SECRET
+      kingdee:
+        # 启用后 ERP 目标改为 PRD_INSTOCK Save/Submit（未启用时走通用 HTTP 地址/模拟）
+        enabled: "${KINGDEE_ERP_ENABLED:false}"
+        base-url: "${KINGDEE_ERP_BASE_URL:}"
+        acct-id: "${KINGDEE_ERP_ACCT_ID:}"
+        username: "${KINGDEE_ERP_USERNAME:}"
+        app-id: "${KINGDEE_ERP_APP_ID:}"
+        app-secret: "${KINGDEE_ERP_APP_SECRET:}"
+        lcid: 2052
+        # 仅测试环境可显式允许 HTTP；生产必须 HTTPS（默认 false）
+        allow-http: "${KINGDEE_ERP_ALLOW_HTTP:false}"
+        timeout-ms: 30000
+        # 以下默认值来自测试环境实测（PRD_INSTOCK 样本），生产按金蝶顾问值覆盖
+        # ORG_Organizations.FOrgID（测试环境：101 宜昌永鑫精工科技股份有限公司）
+        default-org-id: "209624"
+        # ORG_Organizations.FNumber
+        default-org-number: "101"
+        # 生产工单（PRD_MO）同步的组织过滤：FPrdOrgId.FNumber。留空=不过滤（仅排查用）
+        # 不限定组织会把 100 江西兆鑫的工单也拉进来，其物料不在 101 物料集，全部跳过
+        work-order-org-number: "${KINGDEE_WORK_ORDER_ORG:101}"
+        # ---- 主数据同步 ----
+        master-data:
+          # 仅控制「定时任务是否跑」，手工同步接口不受此开关限制
+          enabled: false
+          org-id: "101"
+          # 仓库编码与金蝶 1:1（用户 2026-10-28 决策），不再维护「金蝶仓 → WMS 仓」映射：
+          # WMS 的 warehouse_code 直接等于 BD_STOCK.FNumber，按编码 upsert 即可。
+          # 外部仓（VMI/供应商仓）：同步进来但标「外部仓」，不同步库存、不作入库目标
+          external-stock-codes:
+            - "CK007"
+          # 工序汇报 → 半成品入库草稿（阶段 C）。
+          # 不做游标表：金蝶允许补录/迟交，改用「滚动窗口 + 幂等 upsert」，每轮回看 lookback-days 天
+          operation-report:
+            enabled: true
+            # 增量口径（2026-10-29）：按金蝶 FModifyDate 过滤，水位线=上次成功同步时间
+            # 起点 = 水位线 − backfill-days，最多回溯 max-window-days；无水位线时回看 initial-days
+            backfill-days: 1
+            max-window-days: 30
+            initial-days: 7
+            # 一天几千条：单轮上限要能覆盖初始窗口的量级
+            max-rows: 20000
+        # BOS_BillType.FNumber（测试环境：SCRKD01_SYS 汇报入库）
+        bill-type: "SCRKD01_SYS"
+        owner-type: "BD_OwnerOrg"
+        owner-id: "209624"
+        keeper-type: "BD_KeeperOrg"
+        keeper-id: "209624"
+        # BD_StockStatus.FNumber（测试环境：KCZT01_SYS 可用）
+        stock-status-id: "KCZT01_SYS"
+        in-stock-type: "1"
+        # 测试组织 101 下没有 02.002/02.001；以下为 101 的仓编码（待金蝶顾问确认生产用仓）
+        # 2026-11-05 用户拍板（方案 A）：WMS 立库/敏捷仓**继续沿用 D.02 / D.01** 这两个金蝶仓，
+        # 先按现状跑通；后续客户在金蝶新建「专用立体仓/敏捷仓」后，只改这两行、不改代码。
+        # 注意 D.02/D.01 目前是「PCB呆滞」仓，真实生产半成品散在 W.02/W.10/W.11/W.19/W.26，
+        # 因此 CK-001 的 WMS↔ERP 库存对账口径会偏窄（只对呆滞料），换仓后才与生产口径一致。
+        stock-code:
+          stereo: "D.02"     # PCB呆滞半成品专仓（方案 A 沿用）
+          agile: "D.01"      # PCB呆滞成品专仓（方案 A 沿用）
+          scrap: "F.03"      # 非标一部刀具废品仓（暂用，待确认）
+        # 仓库是组织级基础资料：按生产订单组织覆盖仓库编码（键=组织编码），命中优先于上面通用值
+        stock-code-by-org:
+          "100":             # 江西兆鑫（历史生产订单都在 100）
+            stereo: "02.002" # 自制半成品仓（启用仓位管理，回写需带 FStockLocId 或换仓，见 spec）
+            agile: "02.001"  # 产成品仓（同上，实测报「仓位不能为空」）
+            scrap: "02.005"  # 废品仓（纯不良品其他入库单用；101 的 F.03 在 100 无效）
+          "101":             # 宜昌永鑫（新造测试数据默认组织；以下仓库均未启用仓位）
+            stereo: "D.02"
+            agile: "D.01"
+            # 不良品（其他入库单 QTRK）用；混合入库单的不良品也走这里。
+            # 不配会让不良品回写报「组织[101]未配置不良品仓库」——通用 stock-code.scrap
+            # 虽然也是 F.03，但按组织覆盖表存在时必须显式声明（2026-11-02 实测）
+            scrap: "F.03"
+            # CK-004 调拨按 WMS 库区编码取值（调拨单只到库区级）
+            # 2026-10-28 起 WMS 仓库编码与金蝶 1:1，键即金蝶编码（LB/MJ 已迁到 D.02/D.01）
+            "D.02": "D.02"  # 半成品立库
+            "D.01": "D.01"  # 成品敏捷仓
+        # 启用仓位管理的仓库：仓库编码 → 仓位编号（BD_FLEXVALUES 分录编号），回写时解析为内码传 FStockLocId
+        stock-loc:
+          "02.001": "01"     # 产成品仓-仓位A
+          "02.002": "01"     # 自制半成品仓-仓位A
+        # 批号主档保障（2026-10-28 自动化优先）：批号主档无 Submit/Audit/Delete 接口，只能 Save
+        # auto-create：批号缺失时自动创建为可用；auto-repair：已存在但不可用时是否自动改为可用
+        # （改写金蝶主数据，默认关；质量部门有意停用的批号不应被系统擅自启用）
+        batch:
+          auto-create-enabled: "${KINGDEE_BATCH_AUTO_CREATE:true}"
+          auto-repair-enabled: "${KINGDEE_BATCH_AUTO_REPAIR:false}"
+        # 金蝶仓位属性同步的组织范围（金蝶仓位是逻辑库位/分类，不是物理货位）
+        # 101 尚无启用仓位的仓库；暂以 100 的仓位数据做测试同步，且**只读**，不改动 100 的任何内容
+        bin-org-numbers:
+          - "100"
+        # 销售出库待办：金蝶发货通知单（SAL_DELIVERYNOTICE，仅已审核 C 且未出库量>0）→ WMS 销售出库单
+        # stock-map = 金蝶出货仓库编码 → WMS 库区编码；未登记的仓库该行按「未配置映射」跳过（不猜、不回落）。
+        sales-delivery:
+          # 不填则用上面的 default-org-number（101）
+          # org-number: "101"
+          batch-size: 100
+          # 2026-11-05 按用户口径配置（测试环境）：
+          #   实际的成品仓尚未建立，先把「发货通知单上真实出现、且属于成品口径」的仓库统一记到
+          #   WMS 成品敏捷仓 D.01；ERP 出库仓仍由发货通知单决定，WMS 库区只用于自家记账。
+          #   取值依据：查测试账套 101 组织已审核且未出库量>0 的发货通知单（74 行 / 60 张），
+          #   仓库分布 W.17(24)、空(15)、Y.13(9)、F.05(7)、Y.41(5)、S.09(5)、H.01(4)、Y.05(2)、F.02(2)、CK007(1)。
+          #   只登记名称含「成品/产成品」的仓；未登记的：
+          #     - 空仓（单据本身没填仓库）：永远无法映射，只能跳过；
+          #     - Y.13「Y原材料废品仓」：废料销售不在 WMS 范围（只做半成品/成品）；
+          #     - S.09「S涂层仓」：仓库性质待业务确认（半成品还是原材料），确认后加一行即可。
+          #   待专用仓建好，把这里的值改成新仓编码，无需改代码。
+          stock-map:
+            "W.17": "D.01"    # EA/SD槽刀研发产成品仓
+            "F.02": "D.01"    # F非标一部刀具成品仓
+            "F.05": "D.01"    # F非标二部刀具成品仓
+            "H.01": "D.01"    # H涂层刀具成品仓
+            "Y.05": "D.01"    # Y成品仓（38.2）
+            "Y.41": "D.01"    # Y产成品受托仓
+            "CK007": "D.01"   # Y成品仓2（38.2，外部仓）
+        # 纯不良品自动开单：金蝶其他入库单（STK_Miscellaneous，spec 2026-10-28-yx-wms-defect-outbound-erp-design）
+        # 入库仓用上面 stock-code.scrap（F.03 暂配待顾问确认）；部门留空则用工单车间编号
+        defect:
+          bill-type: "QTRKD01_SYS"
+          # dept-number: "10.10.14.11"
+        # material-map / material-product-type 已于 2026-10-30 清空（B2′ 解绑）：
+        # 原来把 WMS 自建的测试物料 FG001（成品电路板/PCS）硬映射到金蝶真实物料
+        # WA.2205.2200.03000550.B003（铜带/zhi），名称、规格、单位全都对不上，
+        # 导致「物料双身份」与 PPBOM 待办解析到错误物料。
+        # 现在一律使用金蝶同步过来的真实物料编码（material_code = kingdee_code）。
+        # 如将来确有需要映射，在此重新登记；WmsMaterialCodeResolver 会优先读这里。
+        # material-map:
+        #   <WMS编码>: "<金蝶编码>"
+        # material-product-type:
+        #   <WMS编码>: "<半成品|成品>"
+        # 金蝶 FDocumentStatus → WMS 工单状态
+        status-map:
+          "A": "待生产"
+          "B": "待生产"
+          "C": "生产中"
+        # ---- RK-002 半成品生产入库：走「生产订单下推」带出 BOM 版本 ----
+        # 物料启用 BOM 版本管理时，PRD_INSTOCK 的 BOM 版本字段在 Save 时不可写，
+        # 必须从生产订单下推（Push）由转换规则带出；false = 退回旧的直接 Save 路径（回滚开关）
+        push-inbound-enabled: "${KINGDEE_PUSH_INBOUND:true}"
+        # 允许下推的「业务流程 → 目标单据类型」映射（列表结构：中文做 Map 的 key 时 Spring 会丢条目）
+        # flow 写 __empty__ 表示「业务流程为空」；不在表里的流程一律拒绝下推，
+        # 并把金蝶原文（含允许值清单）原样报给用户
+        push-flow-bill-types:
+          - flow: "__empty__"
+            bill-type: "SCRKD01_SYS"
+          - flow: "生产直接入库流程"
+            bill-type: "SCRKD01_SYS"
+        # 默认业务流程：现网是否统一尚未确认、后续可能扩展；仅用于提示与将来 WMS 建单
+        default-business-flow: "${KINGDEE_DEFAULT_BUSINESS_FLOW:生产直接入库流程}"
+        # ---- 盘点差异回写（盘盈 QTRK / 盘亏 QTCK，其他出入库单） ----
+        # stock-code 为空时回写**明确报错**（不静默成功）；2026-11-06 按方案 A 填立库 D.02
+        stocktake:
+          stock-code: "${KINGDEE_STOCKTAKE_STOCK_CODE:D.02}"
+          # 盘亏走其他出库单，金蝶要求「部门或客户」必填（2026-11-06 实测）；取 101 组织实际发货部门
+          dept-number: "${KINGDEE_STOCKTAKE_DEPT:10.10.11.11}"
+          # MIS = 其他出入库单（默认）；预留 STOCK_COUNT
+          writeback-mode: "MIS"
+        # ---- CK-001/CK-002 出库回写（单据类型均已实测存在） ----
+        pick-bill-type: "${KINGDEE_PICK_BILL_TYPE:SCLLD01_SYS}"
+        sale-order-bill-type: "${KINGDEE_SALE_ORDER_BILL_TYPE:XSDD01_SYS}"
+        out-stock-bill-type: "${KINGDEE_OUT_STOCK_BILL_TYPE:XSCKD01_SYS}"
+        sale-org-id: "${KINGDEE_SALE_ORG_ID:209624}"
+        sale-org-number: "${KINGDEE_SALE_ORG_NUMBER:101}"
+        # 测试环境 BD_Saler 样例（李传东）；生产按实际业务员覆盖
+        saler-id: "${KINGDEE_SALER_ID:2040411001_GW000005_1}"
+        settle-currency: "${KINGDEE_SETTLE_CURRENCY:PRE001}"
+        # 测试环境 BD_Department / BD_Empinfo 编码；生产按实际发货部门/仓管员覆盖。
+        # 原值 201012（品质组）属组织 100、1040401001 不是仓管员，101 组织的销售出库 Save 会报
+        # 「发货部门/仓管员是必填项」——2026-10-30 真账套实测，取值改为 101 单上的实际值。
+        delivery-dept-id: "${KINGDEE_DELIVERY_DEPT_ID:10.10.11.11}"
+        stocker-id: "${KINGDEE_STOCKER_ID:0136}"
+        # CK-004 库存调拨：标准直接调拨单 / 同组织调拨 / 普通方向
+        transfer-bill-type: "${KINGDEE_TRANSFER_BILL_TYPE:ZJDB01_SYS}"
+        transfer-biz-type: "${KINGDEE_TRANSFER_BIZ_TYPE:InnerOrgTransfer}"
+        transfer-direct: "${KINGDEE_TRANSFER_DIRECT:GENERAL}"
+        # 调拨单仓管员编码（BD_WAREHOUSEWORKERS，非员工编码；必须对组织 101 启用）
+        transfer-stocker-number: "${KINGDEE_STOCKER_NUMBER:0050}"
+        # 审批（B）超时告警阈值（小时），0 = 不告警
+        transfer-approval-timeout-hours: "${KINGDEE_TRANSFER_APPROVAL_TIMEOUT_HOURS:24}"
+    # 同步上级 WMS 地址（占位）
+    wms:
+      production-inbound-url: ""

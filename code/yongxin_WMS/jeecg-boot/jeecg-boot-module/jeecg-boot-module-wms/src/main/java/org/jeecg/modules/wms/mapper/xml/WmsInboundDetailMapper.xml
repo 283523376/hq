@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsInboundDetailMapper">
+
+    <!-- 引用该物料且单据未终结（待检验/待分配/待上架）的明细行数 -->
+    <select id="countActiveByMaterial" resultType="long">
+        SELECT COUNT(1)
+          FROM wms_inbound_detail d
+         INNER JOIN wms_inbound_order o
+            ON o.id = d.inbound_id
+           AND o.deleted_at = 0
+         WHERE d.deleted_at = 0
+           AND d.material_id = #{materialId}
+           AND o.inbound_status IN ('待检验', '待分配', '待上架')
+    </select>
+
+    <!-- 引用该库位且单据未终结的明细行数 -->
+    <select id="countActiveByLocation" resultType="long">
+        SELECT COUNT(1)
+          FROM wms_inbound_detail d
+         INNER JOIN wms_inbound_order o
+            ON o.id = d.inbound_id
+           AND o.deleted_at = 0
+         WHERE d.deleted_at = 0
+           AND d.location_id = #{locationId}
+           AND o.inbound_status IN ('待检验', '待分配', '待上架')
+    </select>
+
+</mapper>

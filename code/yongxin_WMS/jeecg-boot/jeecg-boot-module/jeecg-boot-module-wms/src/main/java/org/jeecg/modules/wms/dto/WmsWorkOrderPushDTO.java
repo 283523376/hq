@@ -1,0 +1,50 @@
+package org.jeecg.modules.wms.dto;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+
+import java.math.BigDecimal;
+
+/**
+ * @Description: MES 推送工单入参（占位契约，MES 侧确认后调整）。
+ *
+ * @Author: 永鑫WMS
+ * @Date: 2026-10-19
+ */
+@Data
+@Schema(description = "MES 推送工单入参")
+public class WmsWorkOrderPushDTO {
+
+    @Schema(description = "工单号")
+    private String workOrderNo;
+
+    @Schema(description = "物料编码")
+    private String materialCode;
+
+    @Schema(description = "产品类型：半成品/成品")
+    private String productType;
+
+    /** 工单类型：客户订单/备库订单/委外订单/受托订单（ERP 同步，缺省空）。 */
+    private String orderType;
+
+    @Schema(description = "计划数量")
+    private BigDecimal planQty;
+
+    @Schema(description = "批次号")
+    private String batchNo;
+
+    @Schema(description = "工单状态：待生产/已下达/生产中/已完成/已关闭")
+    private String workOrderStatus;
+
+    @Schema(description = "来源：ERP/MES（ERP=金蝶同步，MES=推送；空则按 MES 兼容处理）")
+    private String source;
+
+    @Schema(description = "金蝶 FDocumentStatus 原始值（ERP 同步时携带）")
+    private String erpDocumentStatus;
+
+    @Schema(description = "MES 侧单号")
+    private String mesOrderNo;
+
+    @Schema(description = "备注")
+    private String remark;
+}

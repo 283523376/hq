@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsInventoryWarningMapper">
+
+    <!--
+      按物料汇总可用量（quantity - locked_qty）；作用域参数为空即不限定。
+      只算自有（OWNED）库存：受托材料不属于企业，混进来会让自有库存下限预警长期误报（spec 2026-11-04 §3.1）。
+      正向匹配 'OWNED'，不写 <> 'CONSIGNED'（NULL 存量行会被负向匹配漏掉）。
+    -->
+    <select id="selectAvailableByMaterial" resultType="org.jeecg.modules.wms.vo.WmsMaterialAvailableVO">
+        SELECT i.material_id,
+               m.material_code,
+               m.material_name,
+               SUM(i.quantity - i.locked_qty) AS available_qty
+          FROM wms_inventory i
+          JOIN wms_location l ON l.id = i.location_id AND l.deleted_at = 0
+          JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
+          LEFT JOIN wms_material m ON m.id = i.material_id
+         WHERE i.ownership_type = 'OWNED'
+        <if test="materialId != null and materialId != ''">
+           AND i.material_id = #{materialId}
+        </if>
+        <if test="categoryId != null and categoryId != ''">
+           AND m.category_id = #{categoryId}
+        </if>
+        <if test="warehouseId != null and warehouseId != ''">
+           AND l.warehouse_id = #{warehouseId}
+        </if>
+         GROUP BY i.material_id, m.material_code, m.material_name
+    </select>
+
+    <!-- 库存为 0 也要能报下限预警，此时聚合查询没有行可返回 -->
+    <select id="selectMaterialSnapshot" resultType="org.jeecg.modules.wms.vo.WmsMaterialAvailableVO">
+        SELECT m.id AS material_id,
+               m.material_code,
+               m.material_name,
+               0 AS available_qty
+          FROM wms_material m
+         WHERE m.id = #{materialId}
+           AND m.deleted_at = 0
+    </select>
+
+    <!-- 超期库存行：quantity > 0 且首次入库时间早于 N 天前。只算自有（OWNED）库存。 -->
+    <select id="selectOverdueRows" resultType="org.jeecg.modules.wms.vo.WmsInventoryStockRowVO">
+        SELECT i.id,
+               i.material_id,
+               m.material_code,
+               m.material_name,
+               w.id AS warehouse_id,
+               w.warehouse_code,
+               w.warehouse_name,
+               l.id AS location_id,
+               l.location_code,
+               i.batch_no,
+               i.container_code,
+               i.quantity,
+               i.locked_qty,
+               (i.quantity - i.locked_qty) AS available_qty,
+               i.first_inbound_time
+          FROM wms_inventory i
+          JOIN wms_location l ON l.id = i.location_id AND l.deleted_at = 0
+          JOIN wms_warehouse w ON w.id = l.warehouse_id AND w.deleted_at = 0
+          LEFT JOIN wms_material m ON m.id = i.material_id
+         WHERE i.ownership_type = 'OWNED'
+           AND i.quantity &gt; 0
+           AND i.first_inbound_time IS NOT NULL
+           AND i.first_inbound_time &lt;= DATE_SUB(NOW(), INTERVAL #{overdueDays} DAY)
+        <if test="materialId != null and materialId != ''">
+           AND i.material_id = #{materialId}
+        </if>
+        <if test="categoryId != null and categoryId != ''">
+           AND m.category_id = #{categoryId}
+        </if>
+        <if test="warehouseId != null and warehouseId != ''">
+           AND l.warehouse_id = #{warehouseId}
+        </if>
+         ORDER BY i.first_inbound_time ASC
+         LIMIT #{limit}
+    </select>
+
+</mapper>

@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsSyncFlowMapper">
+
+    <!-- ============================================================
+         SB-001 同步流水原始行（spec 2026-11-03 §2.3「流水（仅展示）」）。
+         四条查询共用一套口径：
+           仓库列 = COALESCE(NULLIF(w.erp_stock_code,''), w.warehouse_code)（与库存聚合同构）；
+           物料列 = COALESCE(NULLIF(m.kingdee_code,''), m.material_code)（ERP匹配键，B2′）；
+           物料名/单位取 WMS 原值；数量一律正数，方向由 direction 表达；
+           时间取单据 update_time（盘点取 adjust_time）；窗口两端都必传。
+         采购入库（wms_inbound_order）已随范围收窄停用，有意不纳入。
+         master 数据（仓库/库位/物料）不过滤 deleted_at：流水要还原「当时的账」，
+         主数据事后删除不应让历史单据从对账流水里消失。
+         ============================================================ -->
+
+    <!--
+      生产入库：良品/不良品拆两段 UNION ALL。
+      良品仓库走 location_id；不良品走 scrap_location_id（废品仓）——废品库位可能为空，
+      必须 LEFT JOIN 并把空兜成 ''，否则纯良品单会被 INNER JOIN 悄悄滤掉。
+    -->
+    <select id="selectProductionInboundRows" resultType="org.jeecg.modules.wms.vo.WmsSyncFlowRowVO">
+        SELECT '生产入库' AS flow_type,
+               'IN' AS direction,
+               p.inbound_no AS bill_no,
+               COALESCE(NULLIF(w.erp_stock_code, ''), w.warehouse_code) AS warehouse_code,
+               COALESCE(NULLIF(m.kingdee_code, ''), m.material_code) AS material_code,
+               m.material_name AS material_name,
+               COALESCE(p.batch_no, '') AS batch_no,
+               p.good_qty AS qty,
+               p.update_time AS biz_time
+          FROM wms_production_inbound p
+          JOIN wms_location l ON l.id = p.location_id
+          JOIN wms_warehouse w ON w.id = l.warehouse_id
+          JOIN wms_material m ON m.id = p.material_id
+         WHERE p.status = '已入库'
+           <!-- 状态字面量 = WmsConstants.PROD_STATUS_INBOUND -->
+           AND p.good_qty &gt; 0
+           AND p.update_time BETWEEN #{windowStart} AND #{windowEnd}
+        UNION ALL
+        SELECT '生产入库' AS flow_type,
+               'IN' AS direction,
+               p.inbound_no AS bill_no,
+               COALESCE(NULLIF(sw.erp_stock_code, ''), sw.warehouse_code, '') AS warehouse_code,
+               COALESCE(NULLIF(m.kingdee_code, ''), m.material_code) AS material_code,
+               m.material_name AS material_name,
+               COALESCE(p.batch_no, '') AS batch_no,
+               p.bad_qty AS qty,
+               p.update_time AS biz_time
+          FROM wms_production_inbound p
+          LEFT JOIN wms_location sl ON sl.id = p.scrap_location_id
+          LEFT JOIN wms_warehouse sw ON sw.id = sl.warehouse_id
+          JOIN wms_material m ON m.id = p.material_id
+         WHERE p.status = '已入库'
+           <!-- 状态字面量 = WmsConstants.PROD_STATUS_INBOUND -->
+           AND p.bad_qty &gt; 0
+           AND p.update_time BETWEEN #{windowStart} AND #{windowEnd}
+    </select>
+
+    <!--
+      出库（销售/领料/报废/样品/外协统一走 wms_outbound_order）。
+      出库单头没有仓库字段，仓库只能从分配行 wms_outbound_allocation.location_id 回溯；
+      数量也取分配行的复核确认数 actual_qty（一行分配=一个库存行=一个仓库）。
+    -->
+    <select id="selectOutboundRows" resultType="org.jeecg.modules.wms.vo.WmsSyncFlowRowVO">
+        SELECT '出库' AS flow_type,
+               'OUT' AS direction,
+               o.outbound_no AS bill_no,
+               COALESCE(NULLIF(w.erp_stock_code, ''), w.warehouse_code) AS warehouse_code,
+               COALESCE(NULLIF(m.kingdee_code, ''), m.material_code) AS material_code,
+               m.material_name AS material_name,
+               COALESCE(d.batch_no, '') AS batch_no,
+               a.actual_qty AS qty,
+               o.update_time AS biz_time
+          FROM wms_outbound_order o
+          JOIN wms_outbound_detail d ON d.outbound_id = o.id
+          JOIN wms_outbound_allocation a ON a.detail_id = d.id
+          JOIN wms_location l ON l.id = a.location_id
+          JOIN wms_warehouse w ON w.id = l.warehouse_id
+          JOIN wms_material m ON m.id = d.material_id
+         WHERE o.status = '已完成'
+           <!-- 状态字面量 = WmsConstants.OUTBOUND_STATUS_COMPLETED -->
+           AND a.actual_qty &gt; 0
+           AND o.update_time BETWEEN #{windowStart} AND #{windowEnd}
+    </select>
+
+    <!--
+      调拨：按调出/调入拆两行。单据只记仓库编码（out_/in_warehouse_code），
+      按编码回查 wms_warehouse 取 ERP 匹配键；deleted_at = 0 是必须的——
+      唯一索引是 (warehouse_code, deleted_at)，同码「删除→重建」后不过滤会把一行调拨翻倍。
+    -->
+    <select id="selectTransferRows" resultType="org.jeecg.modules.wms.vo.WmsSyncFlowRowVO">
+        SELECT '调拨' AS flow_type,
+               'OUT' AS direction,
+               t.transfer_no AS bill_no,
+               COALESCE(NULLIF(wout.erp_stock_code, ''), wout.warehouse_code) AS warehouse_code,
+               COALESCE(NULLIF(m.kingdee_code, ''), m.material_code) AS material_code,
+               m.material_name AS material_name,
+               COALESCE(d.batch_no, '') AS batch_no,
+               d.actual_qty AS qty,
+               t.update_time AS biz_time
+          FROM wms_transfer_order t
+          JOIN wms_transfer_detail d ON d.transfer_id = t.id
+          JOIN wms_warehouse wout ON wout.warehouse_code = t.out_warehouse_code AND wout.deleted_at = 0
+          JOIN wms_material m ON m.id = d.material_id
+         WHERE t.status IN ('已完成', '已调整')
+           <!-- 状态字面量 = WmsConstants.TRANSFER_STATUS_COMPLETED；'已调整' 为 spec §2.3 流水口径原文（调拨状态机实际不产生该值，见任务报告自审） -->
+           AND t.update_time BETWEEN #{windowStart} AND #{windowEnd}
+        UNION ALL
+        SELECT '调拨' AS flow_type,
+               'IN' AS direction,
+               t.transfer_no AS bill_no,
+               COALESCE(NULLIF(win.erp_stock_code, ''), win.warehouse_code) AS warehouse_code,
+               COALESCE(NULLIF(m.kingdee_code, ''), m.material_code) AS material_code,
+               m.material_name AS material_name,
+               COALESCE(d.batch_no, '') AS batch_no,
+               d.actual_qty AS qty,
+               t.update_time AS biz_time
+          FROM wms_transfer_order t
+          JOIN wms_transfer_detail d ON d.transfer_id = t.id
+          JOIN wms_warehouse win ON win.warehouse_code = t.in_warehouse_code AND win.deleted_at = 0
+          JOIN wms_material m ON m.id = d.material_id
+         WHERE t.status IN ('已完成', '已调整')
+           <!-- 同上：WmsConstants.TRANSFER_STATUS_COMPLETED + spec §2.3 口径 -->
+           AND t.update_time BETWEEN #{windowStart} AND #{windowEnd}
+    </select>
+
+    <!--
+      盘点：盘盈 IN（diff_qty &gt; 0）/ 盘亏 OUT（diff_qty &lt; 0），数量取绝对值。
+      业务时间取 wms_stocktake_order.adjust_time（调整落账时刻），不用 update_time。
+    -->
+    <select id="selectStocktakeRows" resultType="org.jeecg.modules.wms.vo.WmsSyncFlowRowVO">
+        SELECT '盘点' AS flow_type,
+               'IN' AS direction,
+               o.stocktake_no AS bill_no,
+               COALESCE(NULLIF(w.erp_stock_code, ''), w.warehouse_code) AS warehouse_code,
+               COALESCE(NULLIF(m.kingdee_code, ''), m.material_code) AS material_code,
+               m.material_name AS material_name,
+               COALESCE(d.batch_no, '') AS batch_no,
+               ABS(d.diff_qty) AS qty,
+               o.adjust_time AS biz_time
+          FROM wms_stocktake_order o
+          JOIN wms_stocktake_detail d ON d.stocktake_id = o.id
+          JOIN wms_location l ON l.id = d.location_id
+          JOIN wms_warehouse w ON w.id = l.warehouse_id
+          JOIN wms_material m ON m.id = d.material_id
+         WHERE o.status = '已调整'
+           <!-- 状态字面量 = WmsConstants.STOCKTAKE_STATUS_ADJUSTED -->
+           AND d.diff_qty &gt; 0
+           AND o.adjust_time BETWEEN #{windowStart} AND #{windowEnd}
+        UNION ALL
+        SELECT '盘点' AS flow_type,
+               'OUT' AS direction,
+               o.stocktake_no AS bill_no,
+               COALESCE(NULLIF(w.erp_stock_code, ''), w.warehouse_code) AS warehouse_code,
+               COALESCE(NULLIF(m.kingdee_code, ''), m.material_code) AS material_code,
+               m.material_name AS material_name,
+               COALESCE(d.batch_no, '') AS batch_no,
+               ABS(d.diff_qty) AS qty,
+               o.adjust_time AS biz_time
+          FROM wms_stocktake_order o
+          JOIN wms_stocktake_detail d ON d.stocktake_id = o.id
+          JOIN wms_location l ON l.id = d.location_id
+          JOIN wms_warehouse w ON w.id = l.warehouse_id
+          JOIN wms_material m ON m.id = d.material_id
+         WHERE o.status = '已调整'
+           <!-- 状态字面量 = WmsConstants.STOCKTAKE_STATUS_ADJUSTED -->
+           AND d.diff_qty &lt; 0
+           AND o.adjust_time BETWEEN #{windowStart} AND #{windowEnd}
+    </select>
+
+</mapper>

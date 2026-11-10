@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsInspectionTaskMapper">
+
+    <!--
+      检验任务分页（联查入库单）：
+        - 排除已作废/已拒收单据的任务（终态不再需要检验，且避免「点合格后被后端拒绝」）；
+        - 按检验状态筛选（可选）。
+    -->
+    <select id="selectPageWithOrder" resultType="org.jeecg.modules.wms.entity.WmsInspectionTask">
+        SELECT t.*
+          FROM wms_inspection_task t
+         INNER JOIN wms_inbound_order o
+            ON o.id = t.inbound_id
+           AND o.deleted_at = 0
+         WHERE t.deleted_at = 0
+           AND o.inbound_status NOT IN ('作废', '已拒收')
+        <if test="inspectStatus != null and inspectStatus != ''">
+           AND t.inspect_status = #{inspectStatus}
+        </if>
+         ORDER BY t.create_time DESC
+    </select>
+
+</mapper>

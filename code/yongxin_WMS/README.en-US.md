@@ -1,0 +1,501 @@
+[中文](./README.md) | English | [日本語](./README.ja-JP.md)
+
+![JEECG](https://jeecgos.oss-cn-beijing.aliyuncs.com/files/logov3.png "JeecgBoot低代码开发平台")
+
+
+
+JEECG BOOT AI Low Code Platform
+===============
+
+Current version: 3.9.5 (2026-08-27)
+
+
+[![AUR](https://img.shields.io/badge/license-Apache%20License%202.0-blue.svg)](https://github.com/zhangdaiscott/jeecg-boot/blob/master/LICENSE)
+[![](https://img.shields.io/badge/Author-guojusoft-orange.svg)](http://www.jeecg.com)
+[![](https://img.shields.io/badge/blog-Tech%20Blog-orange.svg)](https://www.toutiao.com/c/user/token/CiZtC9Gn_yl2qDcTF9Kqhh9LV7tW1cJsdRn2rfFUU5lZy4RJaD4hdBpJCjwAAAAAAAAAAAAAUFvsvy4j57fg5tqwVmxukKxGEhbMl7pE14lY9_YSDq-A26V7xrG3hYuq_Z9y6F3W01oQkIKQDhjDxYPqBCIBA2iiHh0=)
+[![](https://img.shields.io/badge/version-3.9.5-brightgreen.svg)](https://github.com/jeecgboot/JeecgBoot)
+[![GitHub stars](https://img.shields.io/github/stars/zhangdaiscott/jeecg-boot.svg?style=social&label=Stars)](https://github.com/zhangdaiscott/jeecg-boot)
+[![GitHub forks](https://img.shields.io/github/forks/zhangdaiscott/jeecg-boot.svg?style=social&label=Fork)](https://github.com/zhangdaiscott/jeecg-boot)
+[![Skills](https://img.shields.io/badge/AI%20Skills-Natural%20Language%20Coding-ff4d4f.svg)](https://jeecg.com/skills)
+
+
+> 🔥 **AI Skills — Natural Language Programming**: paired with Claude Code, generate full-stack code, BPMN flows, forms, reports and dashboards from a single sentence. Covering every JeecgBoot low-code scenario.
+>
+> - 📦 Skills repo: **https://github.com/jeecgboot/skills**
+> - 🌐 Skills site: **https://jeecg.com/skills**
+> - 📺 Demo: [JeecgBoot + Skills Natural Language Coding](https://www.bilibili.com/video/BV1KKwTzJEbX/) ｜ 📖 Docs: [Skill Comparison](https://help.jeecg.com/java/ai/skills/skill-comparison/)
+>
+> **What can Skills do?** One sentence to: generate full CRUD code (frontend + backend + SQL + menu permissions) · create Online Form / Online Report / Designer Form · draw BPMN flows · build big-screen dashboards · generate JimuReport, portals, mini-flows and more.
+
+
+Project introduction
+-----------------------------------
+
+<h3 align="center">Enterprise AI Low-Code Development Platform</h3>
+
+JeecgBoot is an AI-powered low-code development platform built around **low-code development, an AI application platform, and an AI knowledge base**. With the release of AI Skills for natural-language programming, the platform enters the Low-Code v2.0 era: developers can generate an entire system or business module from a single request, while AI automatically produces the frontend and backend code, database DDL, and menu permissions, ready to run and extend. Teams can also rapidly build enterprise AI applications and intelligent knowledge bases while focusing more of their effort on core business logic.
+
+The platform provides complete AI application development capabilities, including AI chat assistants, knowledge bases, visual workflow orchestration, MCP, and plugins, with support for mainstream models such as ChatGPT, DeepSeek, and Ollama.
+
+JeecgBoot promotes an AI low-code workflow of **“AI Generation → Online Configuration → Code Generation → Manual Merge.”** This approach helps eliminate 80% of repetitive work in Java projects while retaining source-level extensibility, combining delivery efficiency with the flexibility required for complex business systems.
+
+The platform uses a modern frontend/backend separation architecture. The frontend is based on Ant Design Vue, Vue 3, TypeScript, and Vite, while the backend uses Spring Boot 4, Spring Cloud Alibaba, and MyBatis-Plus. Fine-grained access control covers buttons and data permissions, and the platform includes online forms, form and workflow designers, portals, reports and dashboards, OA, AI applications, AI knowledge bases, model management, AI workflow orchestration, and AI chat.
+
+### Core Capabilities
+
+- **Generate a complete system from one sentence:** Describe the requirement in natural language, and AI automates database modeling, full-stack CRUD code, menu permissions, and page rendering from end to end.
+- **No-code mode:** Build a complete business application online in as little as five minutes without writing code, enabling business users to participate directly in digital delivery.
+- **AI application platform:** Manage AI applications and models, build intelligent chat and visual workflows, and connect MCP and plugins across multiple mainstream models.
+- **Powerful code generator:** Generate runnable frontend and backend code, database DDL, and menu permissions for single-table, tree, one-to-one, and one-to-many data models, with full support for further customization.
+- **Rich AI Skills:** Package intelligent Skills for real business scenarios and work with Claude Code to create BPMN workflows, forms, reports, dashboards, and portals from a single sentence.
+- **Rich low-code components:** Cover form design, workflow design, portal design, reports, dashboards, OA, AI applications, and AI knowledge bases for rapid enterprise application assembly.
+- **Modern technology stack:** Combine Spring Boot, Spring Cloud Alibaba, and MyBatis-Plus on the backend with Vue 3, TypeScript, Vite, and Ant Design Vue on the frontend for approachable development and long-term maintainability.
+- **AI knowledge-base Q&A:** Use large language models and RAG to deliver rich knowledge bases and intelligent chat, with document parsing, vector database integration, and accurate retrieval for enterprise knowledge.
+
+JeecgBoot also includes enterprise foundations such as users, roles, organizations, menus, dictionaries, messaging, and scheduled tasks. It provides fine-grained button, data, and form-field permissions; integrates BPM workflows, JimuReport, and JimuBI; and supports both monolithic and microservice deployments for OA, ERP, CRM, MIS, SaaS, multi-tenant, and industry-specific systems.
+
+Technical support
+-----------------------------------
+
+Problems or bugs in use can be found in [Making on the Issues](https://github.com/jeecgboot/JeecgBoot/issues/new?template=bug_report.md)
+
+
+##### Project description
+
+| Project                | description                     | 
+|--------------------|------------------------|
+| `jeecg-boot`    | SpringBoot background source code (support microservices)      |
+| `jeecgboot-vue3` | Vue3+TS new front-end source code|
+| `jeecg-uniapp` | [APP development framework, a code multi terminal adaptation, and support APP, small program, H5](https://github.com/jeecgboot/jeecg-uniapp) |
+
+
+### Video Introduction
+
+[![](https://upload.jeecg.com/jeecg/qiaoqiaoyunsite/jeecgvideo02.png)](https://www.bilibili.com/video/BV1Nk4y1o7Qc)
+
+
+
+Download other source code
+-----------------------------------
+- APP SourceCode：https://github.com/jeecgboot/jeecg-uniapp
+
+
+
+For the project
+-----------------------------------
+Jeecg-Boot AI low code platform can be applied in the development of any J2EE project, especially for SAAS projects, enterprise information management system (MIS), internal office system (OA), enterprise resource planning system (ERP), customer relationship management system (CRM), etc. Its semi-intelligent manual Merge development method, Can significantly improve the development efficiency of more than 70%, greatly reduce the development cost.
+
+
+Starts the project
+-----------------------------------
+
+> Default account password： admin/123456
+
+- [Development Environment setup](https://help.jeecg.com/java/setup/tools)
+- [IDEA Quick start(single model)](https://help.jeecg.com/java/setup/idea/startup)
+- [Docker Quick start(single model)](https://help.jeecg.com/java/docker/quick)
+- [IDEA Quick start(microservices model)](https://help.jeecg.com/java/springcloud/switchcloud/monomer)
+- [Docker Quick start(microservices model)](https://help.jeecg.com/java/docker/quickcloud)
+
+
+Technical documentation
+-----------------------------------
+
+- Website：  [http://www.jeecg.com](http://www.jeecg.com)
+- Demo ： [OnlineDemo](http://boot3.jeecg.com) | [APP](http://jeecg.com/appIndex)
+- Doc：  [DocumentCenter](http://help.jeecg.com) | [AI Config](https://help.jeecg.com/java/ai/aichat)
+- Newbie guide： [Quick start](http://www.jeecg.com/doc/quickstart) |   [Q&A ](http://www.jeecg.com/doc/qa)  |  [1 minute experience](https://my.oschina.net/jeecg/blog/3083313)
+- QQ group ： 716913034、964611995(满)、⑩716488839(满)、⑨808791225(满)
+
+
+
+
+
+
+Star charts
+-----------------------------------
+
+[![Star History Chart](https://api.star-history.com/svg?repos=jeecgboot/jeecg-boot&type=Date)](https://star-history.com/#jeecgboot/jeecg-boot)
+
+
+
+
+Background directory Structure
+-----------------------------------
+```
+project structure
+├─jeecg-boot-parent
+│  ├─jeecg-boot-base-core
+│  ├─jeecg-module-demo    
+│  ├─jeecg-module-system 
+│  │  ├─jeecg-system-biz   
+│  │  ├─jeecg-system-start system (8080）
+│  │  ├─jeecg-system-api   
+│  │  │  ├─jeecg-system-cloud-api  
+│  │  │  ├─jeecg-system-local-api   
+│  ├─jeecg-server-cloud           
+     ├─jeecg-cloud-gateway       (9999)
+     ├─jeecg-cloud-nacos       --Nacos(8848)
+     ├─jeecg-system-cloud-start  --System(7001)
+     ├─jeecg-demo-cloud-start    --Demo(7002)
+     ├─jeecg-visual
+        ├─jeecg-cloud-monitor       -- (9111)
+        ├─jeecg-cloud-xxljob        -- (9080)
+        ├─jeecg-cloud-sentinel     --sentinel (9000)
+        ├─jeecg-cloud-test           
+           ├─jeecg-cloud-test-more        
+           ├─jeecg-cloud-test-rabbitmq     
+           ├─jeecg-cloud-test-seata         
+           ├─jeecg-cloud-test-shardingsphere    
+
+```
+
+
+
+
+Why JeecgBoot?
+-----------------------------------
+* Adopt the latest mainstream front and back separation framework (Springboot+Mybatis+antd), easy to use; Code generator has low dependency, flexible expansion ability, and can quickly realize secondary development;
+* Support microservices SpringCloud Alibaba(Nacos, Gateway, Sentinel, Skywalking), and provide switching mechanism to support free switching between single and microservices
+* High development efficiency, using code generator, single table, tree list, one-to-many, one-to-one and other data models, add, delete, change and search function one-key generation, menu configuration directly use;
+* Code generator provides powerful template mechanism, support custom template, currently provide four sets of style template (single table two sets, tree model one set, one to many three sets)
+* Code generator is very intelligent, online business modeling, online configuration, WYSIWYG support 23 kinds of controls, a key to generate front and back end code, greatly improve the development efficiency, no longer worry about repeated work.
+* Low code ability: Online online form (without coding, through online configuration of the form, to achieve the addition, deletion, change and check of the form, support single table, tree, one-to-many, one-to-one model, to achieve everyone can code)
+* Low code ability: Online online report (without coding, through online configuration, to achieve data report, can quickly extract data, reduce development pressure, to achieve everyone can code)
+* Low code ability: Online online chart (without coding, through online configuration, to achieve graphs, bar graphs, data reports, etc., support custom layout, to achieve everyone can code)
+* Complete encapsulation of user, role, menu, organization, data dictionary, online scheduled tasks and other basic functions, support access authorization, button permission, data permission and other functions
+* Commonly used common package, various tools (scheduled task, SMS interface, email sending,Excel import and export, etc.), basically meeting 80% of project requirements
+* Easy Excel import and export, support single table export and one-to-many table mode export, generated code with import and export function
+* Integrated simple report tools, image report and data export is very convenient, can be extremely convenient to generate graphical reports, pdf, excel, word and other reports;
+* Before and after the separation technology, the page UI style is exquisite, for the commonly used components to do the encapsulation: time, row table control, interception display control, report component, editor and so on
+* Query filter: query function automatically generated, the background dynamic spell SQL additional query conditions; Supports multiple matching modes (full matching, fuzzy query, included query, and unmatched query).
+* Data permission (fine data permission control, control to row level, list level, form field level, realize different people see different data, different people operate different fields on the same page
+* Page verification automatically generated (must be input, digital verification, amount verification, time and space, etc.);
+* Support SAAS service model and provide SaaS multi-tenant architecture solution.
+* Distributed file service, integration of minio, Ali OSS and other excellent third parties, to provide convenient file upload and management, but also support local storage.
+* Mainstream database compatibility, a set of code is fully compatible with Mysql, Postgresql, Oracle, Sqlserver, MariaDB, dream and other mainstream databases.
+* Integrate workflow flowable and realize only the configuration of flow direction in the page, which can greatly simplify the development of bpm workflow; Using bpm's process designer to draw the flow direction, a workflow is basically complete with a small amount of java code;
+* Low code ability: online process design, using open source Activiti process engine, to achieve online drawing process, custom form, form attachment, business flow
+* Multi-data source: its simple way of use, online configuration of data source configuration, convenient to grab data from other data;
+* Provide single sign-on CAS integration solution, and complete docking code has been provided in the project
+* Low code ability: form designer, support user custom form layout, support single table, one to many forms, support select, radio, checkbox, textarea, date, popup, list, macro and other controls
+* Professional interface docking mechanism, unified using restful interface, integrated swagger-ui online interface documentation, Jwt token security verification, convenient client docking
+* Interface security mechanism, can be refined control interface authorization, very simple to realize different clients only see their own data control
+* Advanced combination query function, online configuration support primary and sub-table associated query, can save the query history
+* Provide a variety of system monitoring, real-time tracking system running conditions (monitoring Redis, Tomcat, jvm, server information, request tracking, SQL monitoring)
+* Message center (support SMS, email, wechat push, etc.)
+* Integrate Websocket message notification mechanism
+* Excellent mobile adaptive effect, providing APP release scheme:
+* Support multiple languages and provide internationalization solutions;
+* Data change record log, can record each change of data content, through the version comparison function to view historical changes
+* The platform UI is powerful and mobile adaptation is implemented
+* Platform home page style, provide a variety of combination mode, support custom style
+* Provide easy to use print plug-in, support Google, Firefox, IE11+ and other browsers
+* Rich sample code, provide a lot of learning case reference
+* Using maven module development method
+* Support dynamic menu routing
+* RBAC (Role-Based Access Control) is used for permission control.
+* Provide new row edit table JVXETable, easily meet a variety of complex ERP layout, with higher performance, more flexible extension, more powerful functions
+
+ 
+ 
+ 
+Technical Architecture:
+-----------------------------------
+
+#### Development Environment
+
+- Language: Java Default Jdk17(support jdk21、jdk24)
+
+- IDE(JAVA) : IDEA (lombok plug-in must be installed)
+
+- IDE(front-end) : Vscode, WebStorm, IDEA
+
+- Dependency management: Maven
+
+- Cache: Redis
+
+- Database: MySQL5.7 + [More Databases](https://my.oschina.net/jeecg/blog/4905722)
+
+
+#### backend
+
+- Basic framework: Spring Boot 4.1.0
+
+- Microservice framework: Spring Cloud Alibaba 2025.1.0.0
+
+- Persistence layer framework: MybatisPlus 3.5.16
+
+- Report tool: JimuReport 2.5.1
+
+- Big screen design: JimuBI v2.5.0
+
+- Security framework: Apache Shiro 3.0.0, Jwt 4.5.0
+
+- Microservice technology stack: Spring Cloud Alibaba, Nacos, Gateway, Sentinel, Skywalking
+
+- Database connection pool: Alibaba Druid 1.2.28
+
+- Log printing: logback
+
+- Others: autopoi, fastjson, poi, Swagger-ui, quartz, lombok (simplified code), etc.
+
+
+#### The front end
+
+- TechnologyStack：`Vue3.0+TypeScript+Vite8+AntDesignVue4+pinia+echarts`
+
+#### Front-end environment requirements
+
+*    `Node.js 、npm 、pnpm`
+*   pnpm `v9+` is now required.
+*   Node.js Version suggestion: `v20.19.0`
+ ` ( Since Vite 8, the EOL Node.js 18 is no longer supported. Node.js 20.19+ or 22.12+ is required )`
+ 
+
+#### Support library
+
+|  database   |  support   |
+| --- | --- |
+|   MySQL   |  √   |
+|  Oracle11g   |  √   |
+|  Sqlserver2017   |  √   |
+|   PostgreSQL   |  √   |
+|   MariaDB   |  √   |
+|   达梦   |  √   |
+|   人大金仓   |  √   |
+|   TiDB   |  √   |
+
+
+#### AI Support
+
+| AI Model | Supported |
+| --- | --- |
+| DeepSeek | √ |
+| ChatGPT | √ |
+| Qwq | √ |
+| 智库 | √ |
+| Ollama本地搭建大模型 | √ |
+| 等等。。 | √ |
+
+
+AI Config： https://help.jeecg.com/java/ai/aichat
+
+AI APP: https://help.jeecg.com/aigc
+
+
+## Microservice solutions
+
+- 1. Service registration and discovery Nacos √
+- 2. Nacos √
+- 3. Route gateway gateway(Three loading modes) √
+- 4. Distributed http feign √
+- 5. fuse degrade current limiting Sentinel √
+- 6. Distributed files Minio and Alioss √
+- 7. Unified permission control
+- 8. Service monitoring SpringBootAdmin√
+- 9. link tracking Skywalking  [reference document](https://help.jeecg.com/java/springcloud/super/skywarking)
+- 10. Messaging middleware RabbitMQ √
+- 11. Distributed task xxl-job √
+- 12. Distributed Transaction Seata
+- 13. Distributed log Loki+grafana
+- 14. Support docker-compose, k8s, jenkins
+- 15. CAS SSO √
+- 16. Route traffic limiting √
+
+   
+#### Microservice architecture diagram
+![微服务架构图](https://jeecgos.oss-cn-beijing.aliyuncs.com/files/jeecgboot_springcloud2022.png "在这里输入图片标题")
+
+### Jeecg Boot product functionality blueprint
+![功能蓝图](https://jeecgos.oss-cn-beijing.aliyuncs.com/upload/test/Jeecg-Boot-lantu202005_1590912449914.jpg "在这里输入图片标题")
+
+### quick start
+- Microservice Development：  [Monomer upgrade to microservice](https://help.jeecg.com/java/springcloud/switchcloud/monomer)
+- [Docker starts the micro-service background](https://help.jeecg.com/java/docker/springcloud)
+
+
+### Effect of system
+
+##### ChatGPT AI Dialog
+> Go to the JeecgBoot background home page and click "AI Assistant" in the middle of the right side of the home page. The AI Assistant dialog screen is displayed.
+![](https://oscimg.oschina.net/oscnet/up-7c6405641a40f56638999d52da0cb5b4343.png)
+
+
+##### PC
+
+##### AI Model and Application Management
+
+![](https://oscimg.oschina.net/oscnet/up-0b1779e923566ccebb2d5a9cc9220c78b4a.png)
+
+![](https://oscimg.oschina.net/oscnet/up-c8956df1d37d66b2d40136afaeca677628b.png)
+
+![](https://oscimg.oschina.net/oscnet/up-8c348eeafd89673ca8cd1a2705014e3ac04.png)
+
+AI Workflow Orchestration
+
+![](https://oscimg.oschina.net/oscnet/up-2343657de2c7ac8010bc471470d084075ae.png)
+
+MCP and Tool Management
+
+![](https://oscimg.oschina.net/oscnet/up-8119d5dbc72e534236a3d042e11534c52ad.png)
+
+AI Knowledge Base (Supports various document formats, with excellent markdown compatibility)
+
+![](https://oscimg.oschina.net/oscnet/up-e2e9c118982ea366ed7f2b9827d4bb46c5d.png)
+
+AI Toolbox
+
+![](https://oscimg.oschina.net/oscnet/up-bf2a808d22a11fd83e577ad74741d97884b.png)
+
+AI Chat Assistant
+
+![](https://oscimg.oschina.net/oscnet/up-2a51accc2ff0b647e0ee058a58d291fe811.png)
+
+![](https://oscimg.oschina.net/oscnet/up-ea1069c2a92a3ab2963d88763016cb037c2.png)
+
+![](https://oscimg.oschina.net/oscnet//65298d5710b4e6039a5f802b5f8505c5.png)
+
+
+
+![](https://oscimg.oschina.net/oscnet/up-000530d95df337b43089ac77e562494f454.png)
+
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14155402_AmlV.png "在这里输入图片标题")
+
+![](https://oscimg.oschina.net/oscnet/up-9d6f36f251e71a0b515a01323474b03004c.png)
+
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14160813_KmXS.png "在这里输入图片标题")
+
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14160935_Nibs.png "在这里输入图片标题")
+
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14161004_bxQ4.png "在这里输入图片标题")
+
+#####  interactive
+![](https://oscimg.oschina.net/oscnet/up-78b151fc888d4319377bf1cc311fe826871.png)
+
+![](https://oscimg.oschina.net/oscnet/up-16c07e000278329b69b228ae3189814b8e9.png)
+
+
+##### process Designer
+![](https://oscimg.oschina.net/oscnet/up-981ce174e4fbb48c8a2ce4ccfd7372e2994.png)
+
+![输入图片说明](https://static.oschina.net/uploads/img/201907/05165142_yyQ7.png "在这里输入图片标题")
+
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14160917_9Ftz.png "在这里输入图片标题")
+
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14160633_u59G.png "在这里输入图片标题")
+
+##### min process
+
+![](https://oscimg.oschina.net/oscnet/up-1dc0d052149ec675f3e4fad632b82b48add.png)
+
+![](https://oscimg.oschina.net/oscnet/up-de31bc2f9d9b8332c554b0954cc73d79593.png)
+
+![](https://oscimg.oschina.net/oscnet/up-7f83b25159663686d67ed080eb16068c3b4.png)
+
+#####  dashboard Designer
+
+
+![](https://jeecgos.oss-cn-beijing.aliyuncs.com/files/darg20240726105556.png)
+
+![](https://jeecgos.oss-cn-beijing.aliyuncs.com/files/drag20240724135626.png)
+
+![](https://jeecgos.oss-cn-beijing.aliyuncs.com/files/drag20240724135619.png)
+
+![](https://jeecgos.oss-cn-beijing.aliyuncs.com/files/drag20240724135630.png)
+
+![](https://jeecgos.oss-cn-beijing.aliyuncs.com/files/drag20240726105547.png)
+
+![](https://oscimg.oschina.net/oscnet/up-fad98d42b2cf92f92a903c9cff7579f18ec.png)
+
+
+
+##### report Designer
+![](https://oscimg.oschina.net/oscnet/up-64648de000851f15f6c7b9573d107ebb5f8.png)
+
+![](https://oscimg.oschina.net/oscnet/up-fa52b44445db281c51d3f267dce7450d21b.gif)
+
+![](https://oscimg.oschina.net/oscnet/up-68a19149d640f1646c8ed89ed4375e3326c.png)
+
+![](https://oscimg.oschina.net/oscnet/up-f7e9cb2e3740f2d19ff63b40ec2dd554f96.png)
+
+##### form Designer
+![](https://oscimg.oschina.net/oscnet/up-5f8cb657615714b02190b355e59f60c5937.png)
+
+![](https://oscimg.oschina.net/oscnet/up-d9659b2f324e33218476ec98c9b400e6508.png)
+
+![](https://oscimg.oschina.net/oscnet/up-4868615395272d3206dbb960ade02dbc291.png)
+
+##### bigscreen Designer
+![](https://oscimg.oschina.net/oscnet/up-402a6034124474bfef8dfc5b4b2bac1ce5c.png)
+
+![](https://oscimg.oschina.net/oscnet/up-6f7ba2e2ebbeea0d203db8d69fd87644c9f.png)
+
+![](https://oscimg.oschina.net/oscnet/up-ee8d34f318da466b8a6070a6e3111d12ce7.png)
+
+![](https://oscimg.oschina.net/oscnet/up-6b81781b43086819049c4421206810667c5.png)
+
+##### uniapp
+![](https://oscimg.oschina.net/oscnet/up-aac943fbd26561879c57a41f7a406edf274.png)
+
+![](https://oscimg.oschina.net/oscnet/up-9a44ba2e82b09c750629d12fafd7f60f553.png)
+
+##### low app
+![](https://oscimg.oschina.net/oscnet/up-4be29ae761b2615c8c54b3f668cd8432d9b.png)
+
+![](https://oscimg.oschina.net/oscnet/up-787e76bc24b38ecc7ed19f338808d128255.png)
+
+![](https://oscimg.oschina.net/oscnet/up-99d24a236c483362868523ad0d90f611487.png)
+
+![](https://oscimg.oschina.net/oscnet/up-339a0f29d10449abc7724e3bcda802761c1.png)
+
+![](https://oscimg.oschina.net/oscnet/up-b356670cdc14c609958c7619a537397c4b9.png)
+
+##### app
+![](https://oscimg.oschina.net/oscnet/da543c5d0d57baab0cecaa4670c8b68c521.jpg)
+![](https://oscimg.oschina.net/oscnet/fda4bd82cab9d682de1c1fbf2060bf14fa6.jpg)
+
+##### PAD
+![](https://oscimg.oschina.net/oscnet/e90fef970a8c33790ab03ffd6c4c7cec225.jpg)
+![](https://oscimg.oschina.net/oscnet/d78218803a9e856a0aa82b45efc49849a0c.jpg)
+![](https://oscimg.oschina.net/oscnet/59c23b230f52384e588ee16309b44fa20de.jpg)
+
+
+##### chart
+![](https://oscimg.oschina.net/oscnet/up-218bc6a1669496b241ebb23506440c0083e.png)
+
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14160834_Lo23.png "在这里输入图片标题")
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14160842_QK7B.png "在这里输入图片标题")
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14160849_GBm5.png "在这里输入图片标题")
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14160858_6RAM.png "在这里输入图片标题")
+
+##### swagger
+![输入图片说明](https://static.oschina.net/uploads/img/201908/27095258_M2Xq.png "在这里输入图片标题")
+![输入图片说明](https://static.oschina.net/uploads/img/201904/14160957_hN3X.png "在这里输入图片标题")
+
+
+## donation
+
+If so, buy the author a cup of coffee ☺
+
+![](https://static.oschina.net/uploads/img/201903/08155608_0EFX.png)
+
+
+## Disclaimer
+
+JeecgBoot is released under the [Apache License 2.0](./LICENSE). Please read the following disclaimer carefully before using this software:
+
+1. **Provided "AS IS"**  
+   This software and its related documentation are provided "AS IS", without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement.
+
+2. **Use at Your Own Risk**  
+   Users shall evaluate whether this software meets their own business scenarios, and shall bear all risks arising from downloading, installing, using, modifying, or further developing this software, including but not limited to data loss, business interruption, loss of revenue, or any other form of damage.
+
+3. **Limitation of Liability**  
+   To the maximum extent permitted by applicable law, the authors, contributors, and copyright holders of JeecgBoot shall not be liable for any direct, indirect, incidental, special, punitive, or consequential damages suffered by users or any third party arising from the use of this software.
+
+4. **Community Request**  
+   While the Apache License 2.0 grants full rights to use, modify, and redistribute this software, we kindly request that derivative works refrain from directly replicating, misrepresenting themselves as official JeecgBoot releases, or using names/branding highly similar to JeecgBoot.
+
+By downloading, copying, installing, or otherwise using this software, you are deemed to have read, understood, and agreed to the foregoing disclaimer.
+

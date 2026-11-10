@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.wms.mapper.WmsWorkOrderMapper">
+
+    <!-- 提交事务内锁行：同一工单的并发提交串行化，避免两条同时越过计划量 -->
+    <select id="selectByNoForUpdate" resultType="org.jeecg.modules.wms.entity.WmsWorkOrder">
+        SELECT *
+          FROM wms_work_order
+         WHERE work_order_no = #{workOrderNo}
+           AND deleted_at = 0
+         FOR UPDATE
+    </select>
+
+</mapper>

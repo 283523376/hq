@@ -1,0 +1,214 @@
+# CLAUDE.md
+
+> You should always answer questions in Simplified Chinese first, unless the user explicitly requests another language.
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+JeecgBoot 3.9.5 — a Java low-code development platform built on **Spring Boot 4.1.0**, **Java 17** (also supports 21, 24). It runs as a monolithic app by default, with an optional Spring Cloud microservices mode. Uses `jakarta` namespace (not `javax`) throughout.
+
+## Build & Run Commands
+
+```bash
+# Monolith build. ALWAYS pass -P dev: the root pom marks BOTH `dev` and `SpringCloud`
+# as activeByDefault, so a bare `mvn` pulls jeecg-server-cloud into the reactor and
+# leaves @profile.name@ unresolved. `-P dev` activates dev and deactivates the defaults.
+mvn -P dev clean package
+
+# Build with tests
+mvn -P dev clean package -DskipTests=false
+
+# Run the standalone application (port 8080, context-path: /jeecg-boot)
+cd jeecg-module-system/jeecg-system-start
+mvn spring-boot:run
+
+# Build a specific module (with dependencies)
+mvn clean package -pl jeecg-boot-base-core -am
+
+# Run a single test class
+mvn test -DskipTests=false -pl <module> -Dtest=<TestClassName>
+
+# Build with microservices modules included
+mvn clean package -P SpringCloud
+
+# Docker startup
+./start-docker-compose.sh   # or start-docker-compose.bat on Windows
+```
+
+## Module Architecture
+
+```
+jeecg-boot-parent (root pom)
+├── jeecg-boot-base-core          # Core framework: Shiro/JWT auth, MyBatis-Plus config,
+│                                  # common utilities, AOP aspects, base controllers
+├── jeecg-module-system            # System management (users, roles, permissions, dicts, menus)
+│   ├── jeecg-system-api           # API interfaces (local-api vs cloud-api for mono/micro switch)
+│   │   ├── jeecg-system-local-api # Direct method calls (monolithic)
+│   │   └── jeecg-system-cloud-api # Feign clients (microservices)
+│   ├── jeecg-system-biz           # Business logic, entities, mappers, services
+│   └── jeecg-system-start         # Main entry point (JeecgSystemApplication), all configs
+├── jeecg-boot-module              # Business feature modules
+│   ├── jeecg-module-demo          # Demo/example code
+│   ├── jeecg-boot-module-airag    # AI/RAG integration
+│   ├── jeecg-boot-module-wms      # 永鑫WMS 业务模块（半成品立体仓 / 成品敏捷仓；线边柜已停用）
+│   ├── jeecg-boot-module-easyoa   # Simple OA module
+│   ├── jeecg-boot-module-joa-flowable  # OA + Flowable workflow
+│   ├── jeecg-boot-module-pay      # Payment module
+│   └── jeecg-boot-module-wps      # WPS document integration
+└── jeecg-boot-platform            # Low-code platform modules
+    ├── jeecg-boot-module-bpm-flowable       # BPM workflow engine
+    ├── jeecg-boot-module-airag-flow         # AI RAG flow
+    ├── jeecg-boot-module-bigscreen          # Big screen/dashboard designer
+    ├── jeecg-boot-module-desform            # Form designer
+    ├── jeecg-boot-module-drag               # Drag-and-drop report designer
+    ├── jeecg-boot-module-lowapp             # Low-code application engine
+    ├── jeecg-boot-module-mindesflow-flowable # Simple flow designer
+    └── jeecg-boot-module-online             # Online code generator & forms
+```
+
+Optional microservices modules (activated via `-P SpringCloud`):
+- `jeecg-server-cloud/` — Gateway (port 9999), Nacos (8848/18080), cloud service starters, monitoring (9111), XXL-Job (9080), Sentinel (9000)
+
+## Key Technology Stack
+
+| Layer | Technology |
+|-------|-----------|
+| ORM | MyBatis-Plus 3.5.16 (`BaseMapper<T>`, `ServiceImpl<M,T>`) |
+| Auth | Apache Shiro 3.0.0 + JWT 4.5.0, Redis-backed sessions |
+| DB Pool | Druid 1.2.28 with dynamic datasource support |
+| DB Migration | Flyway (scripts in `jeecg-system-start/src/main/resources/flyway/sql/mysql/`) |
+| JSON | FastJSON 2 |
+| Excel | AutoPoi (`autopoi-spring-boot-3-starter`) |
+| API Docs | Knife4j 4.5.0 (OpenAPI v3, `@Schema` annotations) |
+| Scheduled Jobs | Quartz (JDBC store, clustered) |
+| File Storage | MinIO / Aliyun OSS / Qiniu (controlled by `jeecg.uploadType` config) |
+| Microservices | Spring Cloud 2025.1.0.0 + Alibaba (Nacos, Gateway, Sentinel) |
+
+## Code Conventions & Patterns
+
+**Package structure:** `org.jeecg.modules.<module-name>.{controller,entity,mapper,mapper.xml,service,service.impl,vo}`
+
+**Naming conventions:**
+- Entities: `Sys` prefix for system entities (e.g., `SysUser`, `SysRole`). Use `@TableName`, `@TableId(type = IdType.ASSIGN_ID)`
+- Controllers: `<Entity>Controller extends JeecgController<Entity, IService>` — base class provides standard CRUD + Excel import/export
+- Services: Interface `I<Entity>Service extends IService<Entity>`, impl `<Entity>ServiceImpl extends ServiceImpl<Mapper, Entity>`
+- Mappers: `<Entity>Mapper extends BaseMapper<Entity>`, with XML in `mapper/xml/`
+
+**Common annotations on entities:** `@Data`, `@EqualsAndHashCode(callSuper = false)`, `@Accessors(chain = true)`, `@TableName`
+
+**API response wrapper:** `Result<T>` (from `org.jeecg.common.api.vo.Result`) — use `Result.OK(data)`, `Result.OK(msg, data)`, `Result.error(msg)`. The `result` field holds data, `success`/`code`/`message` hold status.
+
+**Auto query building:** `QueryGenerator.initQueryWrapper(entity, request.getParameterMap())` auto-builds `QueryWrapper` from HTTP request params, supporting fuzzy match, range queries, etc.
+
+**Monolithic ↔ Microservices switch:** The `jeecg-system-api` module has two implementations (`local-api` for direct calls, `cloud-api` for Feign). Switching is done by changing the dependency in the startup module, not by modifying business code.
+
+## Database
+
+**Supported:** MySQL 8.0+ (default), PostgreSQL, Oracle 11g+, SQL Server 2017+, MariaDB, DM8 (达梦), KingBase ES. Database-specific configs are in `application-{dbtype}.yml` profiles.
+
+**Initial setup:** Import `db/jeecgboot-mysql-5.7.sql` for the base schema. Flyway handles incremental migrations (scripts organized by date folders like `202512/`).
+
+**This project (永鑫WMS):** the dev datasource is `yongxin_wms` @ `127.0.0.1:3306` (see `application-dev.yml`). The dump hardcodes `CREATE DATABASE` / `USE jeecg-boot`, so strip those lines before importing. The base schema seeds `flyway_schema_history`, and the incremental Flyway scripts assume it already exists — an empty DB makes them fail. WMS business tables use the `wms_` prefix.
+
+**Flyway note:** In dev mode, `spring.main.lazy-initialization=true` is enabled for startup speed, which can interfere with Flyway auto-config. Flyway auto-config is explicitly excluded and managed separately.
+
+## Configuration
+
+Main config files are in `jeecg-module-system/jeecg-system-start/src/main/resources/`:
+- `application.yml` — profile selector (active profile set by Maven: dev/test/prod/docker)
+- `application-dev.yml` — development config (port 8080, lazy-init enabled)
+- Dev environment requires: MySQL, Redis. Optional: MongoDB, RabbitMQ
+
+Key config namespace: `jeecg.*` in YAML controls platform features (upload type, firewall settings, AI config, MinIO, shiro excludes, etc.).
+
+## Docker Services (docker-compose.yml)
+
+MySQL (port 13306), Redis, PostgreSQL+pgvector, MongoDB, and the application container (port 8080).
+
+## Online 低代码模块 (jeecg-boot-module-online)
+
+Online 模块采用**元数据驱动**架构，通过数据库配置表（`onl_cgform_*`）实现运行时 CRUD，无需生成代码。配置存在数据库中而非文件系统，Claude Code 无法直接读取具体表单配置，需用户提供 JSON 导出或截图。
+
+**完整的配置 Schema、控件类型、默认值语法、增强机制等详见: [online-form-schema.md](online-form-schema.md)**
+
+## 永鑫WMS 业务模块 (jeecg-boot-module-wms)
+
+### 项目概述
+
+永鑫WMS（Yongxin WMS）当前范围覆盖两类仓储场景：**半成品立体仓**、**成品敏捷仓**。
+原材料线边柜 / 焊接线边仓（方案 A）已于 2026-10-19 移出项目范围：相关菜单与入口已收回，
+采购入库/检验/供应商/订单代码与历史数据保留、标记停用、可回滚。详见
+`docs/superpowers/specs/2026-10-19-yx-wms-scope-reduction-line-side-design.md`。
+需求来源为工作区 `wms-blueprint/`（《永鑫WMS软件蓝图》中的 `YX-WMS-*` 流程即本模块要实现的需求集合；
+速查见 `wms-blueprint/WMS蓝图关键信息.md`）。业务代码统一写在 `org.jeecg.modules.wms` 包下。
+
+### 技术栈
+
+JeecgBoot 3.9.5 / Spring Boot 4.1.0 / Java 17 / MyBatis-Plus（`JeecgEntity` + `JeecgService` + `BaseMapper`）/
+Shiro + JWT / Druid 动态数据源 / MySQL / Redis / Knife4j 4.5.0（`@Tag` / `@Operation` / `@Schema`）/ AutoPoi（`@Excel`）。
+
+### 包结构
+
+```
+org.jeecg.modules.wms
+├── constant     # 常量（表前缀等，禁止魔法值）
+├── controller   # 接口，统一返回 Result<T>
+├── service      # 服务接口（extends JeecgService<T>）
+│   └── impl     # 服务实现（extends ServiceImpl<Mapper, Entity>）
+├── mapper       # 数据访问（extends BaseMapper<T>，无需 @Mapper 注解）
+│   └── xml      # Mapper XML，必须放这里（src/main/java 下，不是 resources）
+├── entity       # 实体（继承 JeecgEntity），表名 wms_ 前缀
+├── dto          # 入参对象
+└── vo           # 出参对象
+```
+
+### 约定
+
+- **业务表统一以 `wms_` 为前缀**（常量 `WmsConstants.TABLE_PREFIX`）。
+- **所有接口统一返回 `Result<T>`**（`org.jeecg.common.api.vo.Result`，用 `Result.OK(...)` / `Result.error(...)`）。
+- 新增业务模块必须**同时**改两处，否则不生效：`jeecg-boot-module/pom.xml` 的 `<modules>`（进反应堆）
+  与 `jeecg-module-system/jeecg-system-start/pom.xml` 的依赖（进运行时 classpath）。
+  只做前者是 airag 那种状态：能编译，但运行时不会加载。
+- 免登录接口用方法级 `@IgnoreAuth`（`org.jeecg.config.shiro.IgnoreAuth`）——**该注解只支持方法级，不能标在类上**。
+
+### 删除守卫与引用完整性（强制约定）
+
+**凡有父子引用关系的表，删除「被引用方」一律走统一守卫，不得裸 `removeById`。**
+2026-10-16 已对全部 6 个资源落地（供应商/物料/分类/库区/库位/设备），
+spec 见 `docs/superpowers/specs/2026-10-16-yx-wms-引用完整性与删除守卫-design.md`。
+
+- **不建物理外键**：遵循《阿里巴巴Java开发手册》「一切外键概念在应用层解决」；且删除语义是
+  `deleted_at` 时间戳（逻辑删除，行不物理移除），物理 FK 挡不住「引用已逻辑删除的父行」。
+- **守卫方法成对**：`checkDelete(id) → WmsDeleteCheckVO{deletable, blockers[]}`（只读、一次报全）+
+  `checkDeleteBatch(ids) → WmsBatchDeleteCheckVO`；`removeXxx` 先调 `checkDelete`，不可删即抛
+  `RuntimeException(文案)`；`removeBatch` 必须 `@Transactional(rollbackFor = Exception.class)`
+  并**循环复用单条守卫**（循环写在 controller 里无事务 → 部分成功）。
+- **预检接口 + 后端兜底**：`GET /checkDelete`、`/checkDeleteBatch`（沿用既有 `:delete` 权限）；
+  前端点删除先调预检（`useWmsDeleteCheck` composable）——可删弹确认框、不可删弹禁止框列原因；
+  后端守卫仍在删除时兜底（预检与删除之间有并发窗口）。
+- **拒绝文案逐字透出**：delete 端点自带 `try/catch → Result.error(e.getMessage())`，
+  **不要依赖全局异常处理器**（`JeecgBootExceptionHandler` 会给未捕获异常加前缀）。
+- **计数只算未删除的引用行**：靠 `@TableLogic` 自动追加 `deleted_at = 0`，
+  **不要手写 `deleted_at` 条件**；查不到的 id 预检返回「可删」。
+- **新增引用关系时**：在父表 `checkDelete` 里追加一条 blocker 即可（物料已预留空白框架，等库存表接入）。
+  批量单测命令注意加 `-Dsurefire.failIfNoSpecifiedTests=false`，否则 `-am` 会被上游无匹配测试类打断。
+
+### 会话压缩指令 (Compaction)
+
+压缩 / 总结本会话时，**必须原样保留**以下内容，不得概括为"已完成若干功能"这类模糊表述：
+
+1. **代码改动**：文件路径 + 改动要点。
+2. **测试与构建结果**：执行的命令 + 实际输出 / 退出码（成功与失败都要留）。
+3. **接口定义**：URL、HTTP 方法、请求 / 响应体，以及 `Result<T>` 的结构。
+4. **数据库结构变更**：`wms_*` 建表 / 改表 DDL、Flyway 脚本文件名。
+
+> 说明：这是写在 CLAUDE.md 里的**约定**，用于引导摘要行为，不是 harness 层面的强制钩子。
+
+### 编码规范
+
+遵循《阿里巴巴Java开发手册》：类名 UpperCamelCase、方法与变量 lowerCamelCase、常量全大写下划线；
+禁止魔法值（提取到 `WmsConstants`）；禁止拼音与英文混用命名；POJO 布尔字段不加 `is` 前缀
+（避免 Lombok 生成的 `isXxx()` 与序列化字段名不一致）；金额与数量用 `BigDecimal`；
+日志用 SLF4J 占位符 `log.info("...{}", arg)`，禁止字符串拼接；事务保持短小。
+MySQL 表名 / 字段名小写，索引命名 `pk_` / `uk_` / `idx_`。

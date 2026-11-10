@@ -1,0 +1,297 @@
+package org.jeecg.modules.wms.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
+import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.constant.WmsConfigKey;
+import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsDeviceBindDTO;
+import org.jeecg.modules.wms.dto.WmsDeviceStatusDTO;
+import org.jeecg.modules.wms.entity.WmsDevice;
+import org.jeecg.modules.wms.entity.WmsWarehouse;
+import org.jeecg.modules.wms.mapper.WmsDeviceMapper;
+import org.jeecg.modules.wms.service.IWmsDeviceAlertService;
+import org.jeecg.modules.wms.service.IWmsDeviceService;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.service.IWmsWarehouseService;
+import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeviceBindResultVO;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * @Description: 设备
+ * @Author: 永鑫WMS
+ * @Date: 2026-10-15
+ */
+@Slf4j
+@Service
+public class WmsDeviceServiceImpl extends ServiceImpl<WmsDeviceMapper, WmsDevice>
+        implements IWmsDeviceService {
+
+    @Autowired
+    private IWmsWarehouseService wmsWarehouseService;
+
+    @Autowired
+    private IWmsSystemConfigService wmsSystemConfigService;
+
+    @Autowired
+    private IWmsDeviceAlertService wmsDeviceAlertService;
+
+    @Override
+    public boolean checkCodeExists(String code, String id) {
+        if (oConvertUtils.isEmpty(code)) {
+            return false;
+        }
+        QueryWrapper<WmsDevice> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("device_code", code);
+        if (oConvertUtils.isNotEmpty(id)) {
+            queryWrapper.ne("id", id);
+        }
+        return this.count(queryWrapper) > 0;
+    }
+
+    @Override
+    public void addDevice(WmsDevice device) {
+        if (checkCodeExists(device.getDeviceCode(), null)) {
+            throw new RuntimeException("设备编码已存在，请重新输入");
+        }
+        if (oConvertUtils.isEmpty(device.getStatus())) {
+            // 没收到任何心跳前不应被当成在线设备投用
+            device.setStatus(WmsConstants.DEVICE_STATUS_OFFLINE);
+        }
+        stampHeartbeatIfOnline(device);
+        WmsUtils.fillCreate(device);
+        this.save(device);
+    }
+
+    @Override
+    public void editDevice(WmsDevice device) {
+        if (checkCodeExists(device.getDeviceCode(), device.getId())) {
+            throw new RuntimeException("设备编码已存在，请重新输入");
+        }
+        stampHeartbeatIfOnline(device);
+        WmsUtils.fillUpdate(device);
+        this.updateById(device);
+    }
+
+    @Override
+    public void removeDevice(String id) {
+        WmsDeleteCheckVO check = checkDelete(id);
+        if (!check.isDeletable()) {
+            throw new RuntimeException("设备已绑定库区，不允许删除，请先解绑");
+        }
+        this.removeById(id);
+    }
+
+    @Override
+    public WmsDeleteCheckVO checkDelete(String id) {
+        WmsDeleteCheckVO vo = new WmsDeleteCheckVO();
+        if (oConvertUtils.isEmpty(id)) {
+            return vo;
+        }
+        WmsDevice device = this.getById(id);
+        if (device == null || oConvertUtils.isEmpty(device.getWarehouseId())) {
+            return vo;
+        }
+        // 库区可能已被逻辑删除（getById 走 @TableLogic 查不到）——守卫不受影响，样本退化为 id
+        WmsWarehouse warehouse = wmsWarehouseService.getById(device.getWarehouseId());
+        String warehouseName = warehouse == null ? null : warehouse.getWarehouseName();
+        // 库区名只进 samples：message 里再含一次，前端会渲染成「…「半成品立库」（1）：半成品立库」
+        vo.addBlocker("设备已绑定库区", 1,
+                Collections.singletonList(warehouseName == null ? device.getWarehouseId() : warehouseName));
+        return vo;
+    }
+
+    @Override
+    public WmsBatchDeleteCheckVO checkDeleteBatch(List<String> ids) {
+        WmsBatchDeleteCheckVO vo = new WmsBatchDeleteCheckVO();
+        if (ids == null || ids.isEmpty()) {
+            return vo;
+        }
+        for (String id : ids) {
+            WmsDeleteCheckVO check = checkDelete(id);
+            if (!check.isDeletable()) {
+                WmsDevice device = this.getById(id);
+                vo.addBlocked(id,
+                        device == null ? id : device.getDeviceCode(),
+                        check.getBlockers().stream()
+                                .map(WmsDeleteCheckVO.Blocker::getMessage)
+                                .collect(Collectors.joining("；")));
+            }
+        }
+        return vo;
+    }
+
+    /** 批量删除整体在一个事务里；controller 的循环下沉到此处（原 controller 逐条调、无事务）。 */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void removeBatch(List<String> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            for (String id : ids) {
+                removeDevice(id);
+            }
+        }
+    }
+
+    /**
+     * 绑定设备到库区。
+     *
+     * <p>**必须在一个事务里**：本方法是多写操作（逐台 {@code updateById}）。不加事务时，
+     * 第 2 台失败会让第 1 台已落库而接口返回「绑定失败」—— 用户据此认为没绑上，
+     * 实际有一台真绑上了，属**错误的状态结论**（代码审查发现）。
+     *
+     * <p>告警写入（{@code last_alert_time} 与站内消息）也在同一事务内：绑定回滚时
+     * 告警一并回滚，语义一致（没绑成就不该报「已绑定且离线」）。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public WmsDeviceBindResultVO bind(WmsDeviceBindDTO dto) {
+        if (dto == null || oConvertUtils.isEmpty(dto.getWarehouseId())) {
+            throw new RuntimeException("库区不存在或已停用");
+        }
+        if (dto.getDeviceIds() == null || dto.getDeviceIds().isEmpty()) {
+            throw new RuntimeException("请至少选择一台设备");
+        }
+        WmsWarehouse warehouse = wmsWarehouseService.requireEnabledWarehouse(dto.getWarehouseId());
+        List<WmsDevice> devices = this.listByIds(dto.getDeviceIds());
+        if (devices.isEmpty()) {
+            throw new RuntimeException("所选设备不存在");
+        }
+        List<String> moved = new ArrayList<>();
+        List<WmsDevice> offline = new ArrayList<>();
+        for (WmsDevice device : devices) {
+            if (oConvertUtils.isNotEmpty(device.getWarehouseId())
+                    && !device.getWarehouseId().equals(dto.getWarehouseId())) {
+                moved.add(device.getDeviceCode());
+                log.warn("设备[{}]由库区[{}]搬迁到库区[{}]",
+                        device.getDeviceCode(), device.getWarehouseId(), dto.getWarehouseId());
+            }
+            WmsDevice update = new WmsDevice();
+            update.setId(device.getId());
+            update.setWarehouseId(dto.getWarehouseId());
+            WmsUtils.fillUpdate(update);
+            this.updateById(update);
+            if (WmsConstants.DEVICE_STATUS_OFFLINE.equals(device.getStatus())) {
+                offline.add(device);
+            }
+        }
+        List<String> offlineCodes = offline.stream()
+                .map(WmsDevice::getDeviceCode).collect(Collectors.toList());
+        String warning = null;
+        if (!offlineCodes.isEmpty()) {
+            // 绑定是人的即时操作 → 不节流，要即时反馈
+            List<String> alerted = wmsDeviceAlertService.alertOffline(offline, false);
+            if (!alerted.isEmpty()) {
+                warning = "已绑定到库区[" + warehouse.getWarehouseName() + "]，但以下 "
+                        + alerted.size() + " 台设备当前离线，已发出告警：" + String.join("、", alerted);
+            }
+        }
+        log.info("库区[{}]绑定设备 {} 台，其中离线 {} 台，搬迁 {} 台",
+                warehouse.getWarehouseCode(), devices.size(), offlineCodes.size(), moved.size());
+        return new WmsDeviceBindResultVO(devices.size(), moved, offlineCodes, warning);
+    }
+
+    @Override
+    public void unbind(List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new RuntimeException("请至少选择一台设备");
+        }
+        // 必须用 UpdateWrapper：updateById 默认忽略 null 字段，
+        // 用它「解绑」会返回成功而 warehouse_id 纹丝不动 —— 典型的「看起来已解绑」的静默故障。
+        UpdateWrapper<WmsDevice> wrapper = new UpdateWrapper<>();
+        wrapper.in("id", ids)
+                .set("warehouse_id", null)
+                .set("update_time", new Date())
+                .set("update_by", WmsUtils.currentUsername());
+        this.update(null, wrapper);
+    }
+
+    @Override
+    public void reportStatus(WmsDeviceStatusDTO dto) {
+        if (dto == null || oConvertUtils.isEmpty(dto.getDeviceCode())) {
+            throw new RuntimeException("设备编码不能为空");
+        }
+        if (oConvertUtils.isEmpty(dto.getStatus())) {
+            throw new RuntimeException("设备状态不能为空");
+        }
+        WmsDevice device = this.getOne(new QueryWrapper<WmsDevice>()
+                .eq("device_code", dto.getDeviceCode()).last("limit 1"), false);
+        if (device == null) {
+            throw new RuntimeException("设备不存在：" + dto.getDeviceCode());
+        }
+        Date now = new Date();
+        WmsDevice update = new WmsDevice();
+        update.setId(device.getId());
+        update.setStatus(dto.getStatus());
+        update.setLastHeartbeat(now);
+        WmsUtils.fillUpdate(update);
+        this.updateById(update);
+
+        boolean online = WmsConstants.DEVICE_STATUS_ONLINE.equals(dto.getStatus());
+        if (online) {
+            // 恢复在线 → 清空节流，使后续再次离线能立即告警
+            wmsDeviceAlertService.clearThrottle(device.getId());
+        } else {
+            device.setStatus(dto.getStatus());
+            device.setLastHeartbeat(now);
+            wmsDeviceAlertService.alertOffline(Collections.singletonList(device), true);
+        }
+    }
+
+    @Override
+    public List<WmsDevice> scanOfflineDevices() {
+        // 阈值优先取系统配置（BD-004 §6）；读不到/非法时 getInt 内部回落常量 ——
+        // 监控链路不能因配置损坏而失效，那比阈值不准严重得多。
+        int thresholdSeconds = wmsSystemConfigService.getInt(
+                WmsConfigKey.DEVICE_OFFLINE_THRESHOLD_SECONDS.getKey(),
+                WmsConstants.DEVICE_OFFLINE_THRESHOLD_SECONDS);
+        Date threshold = new Date(System.currentTimeMillis() - thresholdSeconds * 1000L);
+        List<WmsDevice> candidates = this.list(new QueryWrapper<WmsDevice>()
+                // 只捕捉跃迁：已经是离线的设备不再重复处理
+                .ne("status", WmsConstants.DEVICE_STATUS_OFFLINE)
+                // 关键：从未上报过心跳的设备不参与。它们从未上线，判离线是误报，
+                // 且会让新建设备集体变离线、淹没真实告警。
+                .isNotNull("last_heartbeat")
+                .lt("last_heartbeat", threshold)
+                .orderByAsc("last_heartbeat")
+                .last("limit " + WmsConstants.DEVICE_SCAN_BATCH));
+        List<WmsDevice> turned = new ArrayList<>();
+        for (WmsDevice device : candidates) {
+            try {
+                WmsDevice update = new WmsDevice();
+                update.setId(device.getId());
+                update.setStatus(WmsConstants.DEVICE_STATUS_OFFLINE);
+                WmsUtils.fillUpdate(update);
+                this.updateById(update);
+                device.setStatus(WmsConstants.DEVICE_STATUS_OFFLINE);
+                log.warn("设备[{}]心跳静默超过 {} 秒，已置为离线（最近心跳：{}）",
+                        device.getDeviceCode(), thresholdSeconds,
+                        device.getLastHeartbeat());
+                turned.add(device);
+            } catch (Exception e) {
+                // 单条失败不中断整轮
+                log.error("设备[{}]转离线失败：{}", device.getDeviceCode(), e.getMessage(), e);
+            }
+        }
+        return turned;
+    }
+
+    /** 显式把状态置为「在线」时必须同时打心跳，否则扫描任务下一轮会把它判成离线。 */
+    private void stampHeartbeatIfOnline(WmsDevice device) {
+        if (WmsConstants.DEVICE_STATUS_ONLINE.equals(device.getStatus())) {
+            device.setLastHeartbeat(new Date());
+        }
+    }
+}

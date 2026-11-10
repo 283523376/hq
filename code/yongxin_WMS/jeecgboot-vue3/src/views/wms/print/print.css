@@ -1,0 +1,240 @@
+/* 单据打印版式（DY-001）：样式类按客户样单（资料\需要打印的单据\）复刻 */
+
+.print-sheet {
+  font-family: 'SimSun', '宋体', serif;
+  color: #000;
+  background: #fff;
+}
+
+.print-page {
+  page-break-after: always;
+  padding: 4px 3% 8px;
+  font-size: 12px;
+}
+
+.print-page:last-child {
+  page-break-after: auto;
+}
+
+.sheet-company {
+  text-align: center;
+  font-size: 20px;
+  letter-spacing: 6px;
+  margin-bottom: 2px;
+}
+
+.sheet-title {
+  text-align: center;
+  font-size: 22px;
+  font-weight: bold;
+  letter-spacing: 6px;
+  margin: 4px 0 10px;
+}
+
+.sheet-meta {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  font-size: 12px;
+  margin-bottom: 6px;
+  gap: 12px;
+}
+
+.sheet-meta .meta-block {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+/* 三栏：左组贴左、日期居中、右组贴右（样单里日期落在页宽 45~50%） */
+.sheet-meta .meta-left {
+  justify-self: start;
+}
+
+.sheet-meta .meta-center {
+  justify-self: center;
+}
+
+.sheet-meta .meta-right {
+  justify-self: end;
+}
+
+.sheet-meta .meta-item {
+  white-space: nowrap;
+}
+
+.sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.sheet-table th,
+.sheet-table td {
+  border: 1px solid #000;
+  padding: 3px 4px;
+  font-size: 12px;
+  line-height: 1.35;
+  word-break: break-all;
+  vertical-align: middle;
+  /* 客户口径：所有单元格内容一律居中（2026-11-09） */
+  text-align: center;
+}
+
+/* 空行与数据行同高（样单整表行高一致）；内容多时自然撑高 */
+.sheet-table tbody td {
+  height: 30px;
+  box-sizing: border-box;
+}
+
+.sheet-table th {
+  font-weight: normal;
+  text-align: center;
+  background: #fff;
+}
+
+.sheet-table td.center {
+  text-align: center;
+}
+
+.sheet-table td.num {
+  text-align: center;
+}
+
+.sheet-table .total-row td {
+  font-weight: normal;
+  text-align: center;
+}
+
+
+
+/* 落款栏按纸样内缩（纸样：审核约 20% / 中间约 46% / 末项约 76%） */
+.sheet-footers {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 0 24% 0 18%;
+  font-size: 12px;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+/* 联次行：按纸样铺满整行（白色 3% / 红色 31% / 黄联 58% / 绿联 82%） */
+.sheet-copies {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  font-size: 11px;
+}
+
+.sheet-company-info {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sheet-logo {
+  height: 42px;
+}
+
+/* 标题下横线：纸样里线宽与标题相当（约 1/3 页宽居中），不是整行 */
+.sheet-title-rule {
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  height: 4px;
+  width: 34%;
+  margin: 0 auto 6px;
+}
+
+
+/* 标题比公司名小一号且常规字重的单据（委外领料单样单） */
+.sheet-title.small {
+  font-size: 18px;
+  letter-spacing: 2px;
+  font-weight: normal;
+}
+
+
+
+/* 批量打印的两种排版模式（2026-11-10 客户要求） */
+@media print {
+  /* 单据保持完整（客户口径 2026-11-10）：页边界只允许落在单据之间，
+     剩余空间不够就整张挪到下一页，不把同一张单据切成两页。
+     例外是本身就超过一页的单据（行数超过每页行数时分页由组装器决定），
+     故给多页单据打 .multi-page 标记并放行。 */
+  .print-item:not(.multi-page) {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 单个页块与表格行同样不允许被页边界切开（整块排不下时浏览器仍会回退为拆分） */
+  .print-page,
+  .sheet-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 每张单据自成一页：张与张之间强制分页 */
+  .print-area.mode-per-bill .print-item {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .print-area.mode-per-bill .print-item:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  /* 模板内部最后一页的分页交给外层 .print-item，避免重复空白页 */
+  .print-area.mode-per-bill .print-item .print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  /* 自动排版：不强制分页，内容连续排布，页满由浏览器自动分页 */
+  .print-area.mode-auto .print-page {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .print-area.mode-auto .print-item + .print-item {
+    margin-top: 8px;
+  }
+}
+
+/* 打印：只输出 .print-area，界面控件一律隐藏 */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  /* 抵消 src/design/index.less 的 html{overflow:hidden} 与 html,body{height:100%}：
+     根元素被裁到第一屏高度时，批量打印只会输出一页（2026-11-10 实测：只加这条即 1 页→3 页）。
+     加 !important 是因为 design/index.less 走全局入口、本文件在组件内 import，构建后顺序不保证。 */
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}

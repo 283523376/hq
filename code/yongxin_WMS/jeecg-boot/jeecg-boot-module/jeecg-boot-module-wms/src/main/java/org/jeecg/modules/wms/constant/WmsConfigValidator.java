@@ -1,0 +1,175 @@
+package org.jeecg.modules.wms.constant;
+
+import org.jeecg.modules.wms.vo.WmsConfigConflict;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 配置校验器（**纯函数**，不依赖 Spring、不碰数据库，故可穷举测试）。
+ *
+ * <p>校验三件事，缺一不可：
+ * <ol>
+ *   <li><b>归属</b>：提交的键必须属于所声明的分组（否则前端能把别的组的值写进来）；</li>
+ *   <li><b>类型与值域</b>：按 {@link WmsConfigKey#getType()} 解析，再按项判值域；</li>
+ *   <li><b>组内自洽</b>：库存三项必须满足 最低 ≤ 安全 ≤ 最高。</li>
+ * </ol>
+ *
+ * <p>只「报」不「抛」业务冲突（返回列表）；只有调用方传了未知分组这种**编程错误**才抛
+ * {@link IllegalArgumentException} —— 把它伪装成业务冲突会让真 bug 混在用户输入里。
+ *
+ * @author 永鑫WMS
+ */
+public final class WmsConfigValidator {
+
+    /** 不良品默认仓的编码长度上限，与库区编码同宽（location_code 列宽 64）。 */
+    public static final int CODE_MAX_LENGTH = 64;
+
+    private WmsConfigValidator() {
+    }
+
+    /**
+     * 校验某分组的全部配置值。
+     *
+     * @param groupCode 分组 code
+     * @param values    该分组的全部键值（**全组提交**，缺项即冲突）
+     * @return 冲突列表；空列表表示通过
+     */
+    public static List<WmsConfigConflict> validate(String groupCode, Map<String, String> values) {
+        WmsConfigGroup group = WmsConfigGroup.of(groupCode);
+        Map<String, String> safeValues = values == null ? Map.of() : values;
+        List<WmsConfigConflict> conflicts = new ArrayList<>();
+
+        // 1) 越组写入：提交里出现了不属于本组的键
+        Set<String> groupKeys = new HashSet<>();
+        for (WmsConfigKey item : WmsConfigKey.ofGroup(group)) {
+            groupKeys.add(item.getKey());
+        }
+        for (String submitted : safeValues.keySet()) {
+            if (!groupKeys.contains(submitted)) {
+                // 未知键也是**用户输入**（手工构造请求可达），必须报成冲突而不是抛异常 ——
+                // 抛异常会绕过「逐字冲突文案 + 明细」这条路径
+                WmsConfigKey known = findKeyOrNull(submitted);
+                conflicts.add(new WmsConfigConflict(submitted,
+                        known == null ? submitted : known.getLabel(),
+                        known == null ? "未知配置项" : "配置项不属于分组「" + group.getName() + "」"));
+            }
+        }
+
+        // 2) 逐项：缺项 / 类型 / 值域
+        for (WmsConfigKey item : WmsConfigKey.ofGroup(group)) {
+            if (!safeValues.containsKey(item.getKey())) {
+                conflicts.add(new WmsConfigConflict(item.getKey(), item.getLabel(), "配置项缺失，保存需提交整组"));
+                continue;
+            }
+            String reason = checkValue(item, safeValues.get(item.getKey()));
+            if (reason != null) {
+                conflicts.add(new WmsConfigConflict(item.getKey(), item.getLabel(), reason));
+            }
+        }
+
+        // 3) 组内自洽（只在逐项都过时才判，避免与类型错误重复报同一项）
+        if (group == WmsConfigGroup.INVENTORY && conflicts.isEmpty()) {
+            int min = parseInt(safeValues.get(WmsConfigKey.INV_STOCK_MIN.getKey()));
+            int safe = parseInt(safeValues.get(WmsConfigKey.INV_STOCK_SAFE.getKey()));
+            int max = parseInt(safeValues.get(WmsConfigKey.INV_STOCK_MAX.getKey()));
+            if (min > safe) {
+                conflicts.add(new WmsConfigConflict(WmsConfigKey.INV_STOCK_MIN.getKey(),
+                        WmsConfigKey.INV_STOCK_MIN.getLabel(),
+                        "最低库存(" + min + ") 不能大于 安全库存(" + safe + ")"));
+            } else if (safe > max) {
+                conflicts.add(new WmsConfigConflict(WmsConfigKey.INV_STOCK_SAFE.getKey(),
+                        WmsConfigKey.INV_STOCK_SAFE.getLabel(),
+                        "安全库存(" + safe + ") 不能大于 最高库存(" + max + ")"));
+            }
+        }
+        return conflicts;
+    }
+
+    /** 单值检查；返回 null 表示通过。 */
+    private static String checkValue(WmsConfigKey item, String raw) {
+        String value = raw == null ? "" : raw.trim();
+        switch (item.getType()) {
+            case INT: {
+                if (!value.matches("-?\\d+")) {
+                    return "必须为整数，实际：" + (raw == null ? "(空)" : raw);
+                }
+                long parsed;
+                try {
+                    parsed = Long.parseLong(value);
+                } catch (NumberFormatException e) {
+                    // 位数超过 long 也能通过正则（UI 的 a-input-number 没有上界，管理员可直接敲入）。
+                    // 必须报成普通冲突：校验器一旦抛异常，就会绕过「逐字冲突文案 + 明细」这条路径。
+                    return "数值过大，无法解析，实际：" + value;
+                }
+                if (parsed > Integer.MAX_VALUE) {
+                    // 校验用 long、一致性检查与 getInt 用 int：不设上界会出现「存得进、读不出」——
+                    // 自洽规则按 0 漏判，配置页显示 30 亿而运行时回落 600。
+                    return "数值超出上限 " + Integer.MAX_VALUE + "，实际：" + value;
+                }
+                if (item.getGroup() == WmsConfigGroup.INVENTORY && parsed < 0) {
+                    return "不能为负数，实际：" + value;
+                }
+                if (item.getGroup() == WmsConfigGroup.DEVICE && parsed <= 0) {
+                    return "必须大于 0，实际：" + value;
+                }
+                return null;
+            }
+            case BOOL:
+                return "true".equals(value) || "false".equals(value) ? null : "必须为 true 或 false，实际：" + value;
+            case MULTI: {
+                if (value.isEmpty()) {
+                    return "不能为空";
+                }
+                List<String> allowed = item.getOptions();
+                // split 用 -1：保留尾部空段，否则 ",,," 会被拆成空数组而静默通过
+                for (String part : value.split(",", -1)) {
+                    String option = part.trim();
+                    if (option.isEmpty()) {
+                        // 空段几乎总是多打了一个逗号。静默丢弃会让库里存下与页面所见不一致的值
+                        return "存在空选项（多为多打了逗号），实际：" + value;
+                    }
+                    if (allowed == null || !allowed.contains(option)) {
+                        return "取值不在候选范围（" + String.join("/", allowed == null ? List.<String>of() : allowed)
+                                + "），实际：" + option;
+                    }
+                }
+                return null;
+            }
+            case TEXT:
+                return null;
+            case SELECT: {
+                // 候选集可能是动态的（如不良品默认仓的库区表），纯函数里查不到；这里只挡列宽。
+                // 动态校验（库区是否存在/启用/有默认库位）与静态候选校验（元数据自带 options，
+                // 如 SB-001 的 sync.auto.scope）都由服务层保存时（validateSelectValues）做
+                if (value.length() > CODE_MAX_LENGTH) {
+                    return "长度不能超过 " + CODE_MAX_LENGTH + " 字符，实际：" + value.length();
+                }
+                return null;
+            }
+            default:
+                return null;
+        }
+    }
+
+    private static int parseInt(String raw) {
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** 按 key 找元数据；找不到返回 null（对外是「未知道具」这一业务事实，不是异常）。 */
+    private static WmsConfigKey findKeyOrNull(String key) {
+        for (WmsConfigKey item : WmsConfigKey.values()) {
+            if (item.getKey().equals(key)) {
+                return item;
+            }
+        }
+        return null;
+    }
+}

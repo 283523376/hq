@@ -1,0 +1,359 @@
+package org.jeecg.modules.wms.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.entity.WmsOrder;
+import org.jeecg.modules.wms.entity.WmsSupplier;
+import org.jeecg.modules.wms.mapper.WmsOrderMapper;
+import org.jeecg.modules.wms.support.WmsTestSupport;
+import org.jeecg.modules.wms.vo.WmsBatchDeleteCheckVO;
+import org.jeecg.modules.wms.vo.WmsDeleteCheckVO;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+
+/**
+ * @Description: 供应商业务单测（不启 Spring 上下文、不连库）
+ * @Author: 永鑫WMS
+ * @Date: 2026-10-14
+ */
+class WmsSupplierServiceImplTest {
+
+    // ============================================================ 既有用例（勿删）
+
+    /** 编码首尾空格必须被去掉，否则 `SUP001` 与 ` SUP001 ` 会并存，与唯一索引语义不一致。 */
+    @Test
+    void addSupplier_shouldTrimCodeAndName() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(true).when(service).save(any());
+
+        WmsSupplier supplier = new WmsSupplier()
+                .setSupplierCode("  SUP001  ")
+                .setSupplierName("  永鑫五金  ");
+
+        service.addSupplier(supplier);
+
+        assertEquals("SUP001", supplier.getSupplierCode());
+        assertEquals("永鑫五金", supplier.getSupplierName());
+    }
+
+    /** 编码为空白必须直接拒绝，不能落一条空编码。 */
+    @Test
+    void addSupplier_shouldRejectBlankCode() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+
+        WmsSupplier supplier = new WmsSupplier()
+                .setSupplierCode("   ")
+                .setSupplierName("永鑫五金");
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.addSupplier(supplier));
+        assertEquals("供应商编码不能为空", ex.getMessage());
+    }
+
+    /** 编码重复必须拒绝。 */
+    @Test
+    void addSupplier_shouldRejectDuplicatedCode() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(true).when(service).checkCodeExists(any(), any());
+
+        WmsSupplier supplier = new WmsSupplier()
+                .setSupplierCode("SUP001")
+                .setSupplierName("永鑫五金");
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.addSupplier(supplier));
+        assertEquals("编码已存在，请重新输入", ex.getMessage());
+    }
+
+    // ============================================================ 新增（BD002-T01）
+
+    /** 新增必须清空客户端传入的 id、重置 delFlag、状态落默认启用，且所有文本字段去空格。 */
+    @Test
+    void addSupplier_shouldApplyDefaultsForNewEntity() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(true).when(service).save(any());
+
+        WmsSupplier supplier = new WmsSupplier()
+                .setSupplierCode("  SUP001  ").setSupplierName("永鑫五金")
+                .setContact("  张三  ").setPhone("  13800000000  ").setSupplyScope("  五金件  ");
+        supplier.setId("客户端伪造ID");
+        // 伪造一个「已删除」时间戳，新增路径必须把它复位
+        supplier.setDeletedAt(1700000000000L);
+
+        service.addSupplier(supplier);
+
+        assertNull(supplier.getId(), "新增必须清空 id，交由 MyBatis-Plus 生成");
+        assertEquals(0L, supplier.getDeletedAt().longValue(), "新增必须把删除时间戳复位为 0（未删除）");
+        assertEquals(WmsConstants.STATUS_ENABLE, supplier.getStatus());
+        assertEquals("张三", supplier.getContact(), "联系人同样要去空格");
+        assertEquals("13800000000", supplier.getPhone());
+        assertEquals("五金件", supplier.getSupplyScope());
+    }
+
+    /** 名称缺失必须拒绝——否则列表里会出现一条没有名字的供应商。 */
+    @Test
+    void addSupplier_shouldRejectBlankName() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(false).when(service).checkCodeExists(any(), any());
+
+        WmsSupplier supplier = new WmsSupplier()
+                .setSupplierCode("SUP001")
+                .setSupplierName("   ");
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.addSupplier(supplier));
+        assertEquals("供应商名称不能为空", ex.getMessage());
+        verify(service, never()).save(any());
+    }
+
+    /** 已显式指定的状态（如停用）不得被默认值覆盖。 */
+    @Test
+    void addSupplier_shouldKeepExplicitStatus() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(true).when(service).save(any());
+
+        WmsSupplier supplier = new WmsSupplier()
+                .setSupplierCode("SUP001").setSupplierName("永鑫五金")
+                .setStatus(WmsConstants.STATUS_DISABLE);
+
+        service.addSupplier(supplier);
+
+        assertEquals(WmsConstants.STATUS_DISABLE, supplier.getStatus());
+    }
+
+    // ============================================================ 编辑（BD002-T03）
+
+    /** 编辑成功：trim 后按自身 id 排除查重并更新。 */
+    @Test
+    void editSupplier_shouldTrimAndUpdate() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(true).when(service).updateById(any());
+
+        WmsSupplier supplier = new WmsSupplier()
+                .setSupplierCode("  SUP001  ").setSupplierName("  永鑫五金（改名）  ")
+                .setContact("  李四  ");
+        supplier.setId("1");
+
+        service.editSupplier(supplier);
+
+        assertEquals("SUP001", supplier.getSupplierCode());
+        assertEquals("永鑫五金（改名）", supplier.getSupplierName());
+        assertEquals("李四", supplier.getContact());
+        verify(service).checkCodeExists("SUP001", "1");
+        verify(service).updateById(supplier);
+    }
+
+    /** 编辑时编码撞上别的供应商必须拒绝。 */
+    @Test
+    void editSupplier_shouldRejectDuplicatedCode() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(true).when(service).checkCodeExists(any(), any());
+
+        WmsSupplier supplier = new WmsSupplier()
+                .setSupplierCode("SUP001").setSupplierName("永鑫五金");
+        supplier.setId("1");
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.editSupplier(supplier));
+        assertEquals("编码已存在，请重新输入", ex.getMessage());
+        verify(service, never()).updateById(any());
+    }
+
+    /** 编辑时编码被清空必须拒绝。 */
+    @Test
+    void editSupplier_shouldRejectBlankCode() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+
+        WmsSupplier supplier = new WmsSupplier()
+                .setSupplierCode("").setSupplierName("永鑫五金");
+        supplier.setId("1");
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.editSupplier(supplier));
+        assertEquals("供应商编码不能为空", ex.getMessage());
+    }
+
+    // ============================================================ 停用（BD002-T04）
+
+    /** 停用只需一条更新，且把状态置为 0。 */
+    @Test
+    void disableSupplier_shouldSetStatusDisabled() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(true).when(service).updateById(any());
+
+        service.disableSupplier("1");
+
+        ArgumentCaptor<WmsSupplier> captor = ArgumentCaptor.forClass(WmsSupplier.class);
+        verify(service).updateById(captor.capture());
+        assertEquals("1", captor.getValue().getId());
+        assertEquals(WmsConstants.STATUS_DISABLE, captor.getValue().getStatus());
+    }
+
+    // ============================================================ 删除守卫（TC-BD002-006）
+
+    /** 构造已注入 mock 订单 mapper 的 service：守卫查询 wms_order.supplier_id。 */
+    private WmsSupplierServiceImpl guardService(long orderCount, List<WmsOrder> orders) {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        WmsOrderMapper orderMapper = mock(WmsOrderMapper.class);
+        WmsTestSupport.inject(service, "wmsOrderMapper", orderMapper);
+        doReturn(orderCount).when(orderMapper).selectCount(any(Wrapper.class));
+        doReturn(orders).when(orderMapper).selectList(any(Wrapper.class));
+        return service;
+    }
+
+    /** 有关联订单必须拒绝删除，文案逐字对齐 TC-BD002-006 预期结果。 */
+    @Test
+    void removeSupplier_shouldRejectWhenHasOrders() {
+        WmsSupplierServiceImpl service = guardService(3L,
+                Arrays.asList(new WmsOrder().setOrderNo("PO001"), new WmsOrder().setOrderNo("PO002")));
+        doReturn(true).when(service).removeById(any(String.class));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> service.removeSupplier("S1"));
+
+        assertEquals("该供应商存在关联订单，不允许删除", ex.getMessage());
+        verify(service, never()).removeById(any(String.class));
+    }
+
+    /** 无关联订单时正常删除（替换原 removeSupplier_shouldRemoveById）。 */
+    @Test
+    void removeSupplier_shouldRemoveById() {
+        WmsSupplierServiceImpl service = guardService(0L, Collections.emptyList());
+        doReturn(true).when(service).removeById("1");
+
+        service.removeSupplier("1");
+
+        verify(service).removeById("1");
+    }
+
+    /** 预检要一次报全：可删性、数量、订单号样本。 */
+    @Test
+    void checkDelete_shouldReportOrdersWithCountAndSamples() {
+        WmsSupplierServiceImpl service = guardService(3L,
+                Arrays.asList(new WmsOrder().setOrderNo("PO001"), new WmsOrder().setOrderNo("PO002")));
+
+        WmsDeleteCheckVO vo = service.checkDelete("S1");
+
+        assertEquals(false, vo.isDeletable());
+        assertEquals(1, vo.getBlockers().size());
+        assertEquals("存在关联订单", vo.getBlockers().get(0).getMessage());
+        assertEquals(3L, vo.getBlockers().get(0).getCount());
+        assertEquals(Arrays.asList("PO001", "PO002"), vo.getBlockers().get(0).getSamples());
+    }
+
+    /** 无订单时预检为可删。 */
+    @Test
+    void checkDelete_shouldBeDeletableWhenNoOrders() {
+        WmsSupplierServiceImpl service = guardService(0L, Collections.emptyList());
+
+        assertTrue(service.checkDelete("S1").isDeletable());
+    }
+
+    /** 查不到的 id 预检必须为可删（与现状 removeById 对不存在 id 无操作一致），不得 NPE。 */
+    @Test
+    void checkDelete_shouldBeDeletableForUnknownId() {
+        WmsSupplierServiceImpl service = guardService(0L, Collections.emptyList());
+
+        assertTrue(service.checkDelete("不存在").isDeletable());
+    }
+
+    /** 批量删除复用单条守卫：空入参安全返回（替换原 removeBatch_shouldNoOpOnNullOrEmpty）。 */
+    @Test
+    void removeBatch_shouldNoOpOnNullOrEmpty() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doNothing().when(service).removeSupplier(any(String.class));
+
+        service.removeBatch(null);
+        service.removeBatch(Collections.emptyList());
+
+        verify(service, never()).removeSupplier(any(String.class));
+    }
+
+    /** 批量删除逐条走单条守卫（替换原 removeBatch_shouldRemoveAll）。 */
+    @Test
+    void removeBatch_shouldLoopSingleGuard() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doNothing().when(service).removeSupplier(any(String.class));
+
+        service.removeBatch(Arrays.asList("1", "2"));
+
+        verify(service).removeSupplier("1");
+        verify(service).removeSupplier("2");
+    }
+
+    /** 批量中途遇守卫必须把异常抛出（事务回滚本身无 Spring 上下文不可单测，由端到端验证）。 */
+    @Test
+    void removeBatch_shouldPropagateGuardException() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doNothing().when(service).removeSupplier("1");
+        doThrow(new RuntimeException("该供应商存在关联订单，不允许删除")).when(service).removeSupplier("2");
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.removeBatch(Arrays.asList("1", "2")));
+
+        assertEquals("该供应商存在关联订单，不允许删除", ex.getMessage());
+    }
+
+    // ============================================================ 查重按 trim 比对
+
+    /**
+     * 查重必须按 **trim 后**的编码比对。
+     *
+     * <p>否则 `" SUP001"` 会绕过 `"SUP001"` 的查重，最终撞上唯一索引 `uk_wms_supplier_code` 报 500，
+     * 用户看到的是数据库异常而不是「编码已存在」。本用例断言拼进 SQL 的参数值已被 trim。
+     */
+    @Test
+    void checkCodeExists_shouldCompareTrimmedCode() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(0L).when(service).count(any(Wrapper.class));
+
+        service.checkCodeExists("  SUP001  ", null);
+
+        ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(service).count(captor.capture());
+        QueryWrapper<WmsSupplier> wrapper = (QueryWrapper<WmsSupplier>) captor.getValue();
+        // 必须先渲染 SQL 片段：MyBatis-Plus 的条件参数是惰性填充的，
+        // 不调 getSqlSegment() 时 getParamNameValuePairs() 恒为空，断言会退化成永真
+        String sqlSegment = wrapper.getSqlSegment();
+        assertTrue(sqlSegment.contains("supplier_code"), "查重条件应落在 supplier_code 列，实际：" + sqlSegment);
+        assertTrue(wrapper.getParamNameValuePairs().containsValue("SUP001"),
+                "查重必须按 trim 后的编码比对，实际参数：" + wrapper.getParamNameValuePairs());
+    }
+
+    // ============================================================ 下拉列表
+
+    /** 下拉列表只取启用中的供应商（订单页选择用）。 */
+    @Test
+    void listAllEnabled_shouldQueryEnabledOnly() {
+        WmsSupplierServiceImpl service = spy(new WmsSupplierServiceImpl());
+        doReturn(Collections.emptyList()).when(service).list(any(Wrapper.class));
+
+        assertTrue(service.listAllEnabled().isEmpty());
+
+        ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(service).list(captor.capture());
+        QueryWrapper<WmsSupplier> wrapper = (QueryWrapper<WmsSupplier>) captor.getValue();
+        // 同上：先渲染片段，否则参数集合为空、断言形同虚设
+        String sqlSegment = wrapper.getSqlSegment();
+        assertTrue(sqlSegment.contains("status"), "下拉列表应限定 status，实际：" + sqlSegment);
+        assertTrue(wrapper.getParamNameValuePairs().containsValue(WmsConstants.STATUS_ENABLE),
+                "下拉列表必须限定 status=1，实际参数：" + wrapper.getParamNameValuePairs());
+    }
+}

@@ -1,0 +1,497 @@
+package org.jeecg.modules.wms.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.wms.constant.WmsConfigGroup;
+import org.jeecg.modules.wms.constant.WmsConfigKey;
+import org.jeecg.modules.wms.constant.WmsConfigType;
+import org.jeecg.modules.wms.constant.WmsConfigValidator;
+import org.jeecg.modules.wms.constant.WmsConstants;
+import org.jeecg.modules.wms.dto.WmsConfigItemDTO;
+import org.jeecg.modules.wms.dto.WmsConfigRollbackDTO;
+import org.jeecg.modules.wms.dto.WmsConfigSaveDTO;
+import org.jeecg.modules.wms.entity.WmsLocation;
+import org.jeecg.modules.wms.entity.WmsSystemConfig;
+import org.jeecg.modules.wms.entity.WmsWarehouse;
+import org.jeecg.modules.wms.entity.WmsSystemConfigHistory;
+import org.jeecg.modules.wms.exception.WmsConfigConflictException;
+import org.jeecg.modules.wms.mapper.WmsLocationMapper;
+import org.jeecg.modules.wms.mapper.WmsSystemConfigHistoryMapper;
+import org.jeecg.modules.wms.mapper.WmsSystemConfigMapper;
+import org.jeecg.modules.wms.mapper.WmsWarehouseMapper;
+import org.jeecg.modules.wms.service.IWmsSystemConfigService;
+import org.jeecg.modules.wms.util.WmsUtils;
+import org.jeecg.modules.wms.vo.WmsConfigConflict;
+import org.jeecg.modules.wms.vo.WmsConfigGroupVO;
+import org.jeecg.modules.wms.vo.WmsConfigItemVO;
+import org.jeecg.modules.wms.vo.WmsConfigOptionVO;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * @Description: 系统配置
+ * @Author: 永鑫WMS
+ * @Date: 2026-10-16
+ */
+@Slf4j
+@Service
+public class WmsSystemConfigServiceImpl extends ServiceImpl<WmsSystemConfigMapper, WmsSystemConfig>
+        implements IWmsSystemConfigService {
+
+    @Autowired
+    private WmsSystemConfigHistoryMapper wmsSystemConfigHistoryMapper;
+
+    /** 单选类配置的候选集来自库区表（「不良品默认仓」），故需读库区/库位。 */
+    @Autowired
+    private WmsWarehouseMapper warehouseMapper;
+    @Autowired
+    private WmsLocationMapper locationMapper;
+
+    @Override
+    public List<WmsConfigGroupVO> definitions() {
+        Map<String, WmsSystemConfig> stored = loadStoredMap();
+        Map<String, Integer> versions = latestVersionNoMap(
+                java.util.Arrays.stream(WmsConfigKey.ordered()).map(WmsConfigKey::getKey).toList());
+        List<WmsConfigGroupVO> groups = new ArrayList<>();
+        for (WmsConfigGroup group : WmsConfigGroup.orderedAsList()) {
+            WmsConfigGroupVO vo = new WmsConfigGroupVO();
+            vo.setCode(group.getCode());
+            vo.setName(group.getName());
+            List<WmsConfigItemVO> items = new ArrayList<>();
+            for (WmsConfigKey key : WmsConfigKey.ofGroup(group)) {
+                items.add(toItemVO(key, stored.get(key.getKey()), versions));
+            }
+            vo.setItems(items);
+            groups.add(vo);
+        }
+        return groups;
+    }
+
+    @Override
+    public List<WmsConfigItemVO> listByGroup(String groupCode) {
+        WmsConfigGroup group = WmsConfigGroup.of(groupCode);
+        Map<String, WmsSystemConfig> stored = loadStoredMap();
+        Map<String, Integer> versions = latestVersionNoMap(
+                WmsConfigKey.ofGroup(group).stream().map(WmsConfigKey::getKey).toList());
+        List<WmsConfigItemVO> items = new ArrayList<>();
+        for (WmsConfigKey key : WmsConfigKey.ofGroup(group)) {
+            items.add(toItemVO(key, stored.get(key.getKey()), versions));
+        }
+        return items;
+    }
+
+    @Override
+    public int currentVersionNo(String key) {
+        List<WmsSystemConfigHistory> rows = recentHistory(key, 1);
+        return rows.isEmpty() || rows.get(0).getVersionNo() == null ? 0 : rows.get(0).getVersionNo();
+    }
+
+    @Override
+    public int getInt(String key, int fallback) {
+        // 未知键与「值有问题」必须分开报：NumberFormatException extends IllegalArgumentException，
+        // 混在一个 catch 里会把「值非法」说成「键未知」，排查时被引向完全错误的方向。
+        WmsConfigKey meta;
+        try {
+            meta = WmsConfigKey.of(key);
+        } catch (IllegalArgumentException e) {
+            log.warn("读取了未知配置键[{}]，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+
+        WmsSystemConfig stored;
+        try {
+            stored = this.getOne(new QueryWrapper<WmsSystemConfig>().eq("config_key", meta.getKey()), false);
+        } catch (Exception e) {
+            log.warn("读取系统配置[{}]失败（{}），改用兜底值 {}", key, e.getMessage(), fallback);
+            return fallback;
+        }
+        if (stored == null) {
+            log.warn("系统配置[{}]尚未设置，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        String rawValue = stored.getConfigValue();
+        if (rawValue == null || rawValue.trim().isEmpty()) {
+            log.warn("系统配置[{}]的值为空，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        try {
+            int parsed = Integer.parseInt(rawValue.trim());
+            if (parsed <= 0) {
+                log.warn("系统配置[{}]的值 {} 非正数，改用兜底值 {}", key, parsed, fallback);
+                return fallback;
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            // 配置损坏不得让调用方（离线扫描任务）失败 —— 监控链路断了比阈值不准严重得多
+            log.warn("系统配置[{}]的值不合法（{}），改用兜底值 {}", key, rawValue, fallback);
+            return fallback;
+        }
+    }
+
+    @Override
+    public String getString(String key, String fallback) {
+        WmsConfigKey meta;
+        try {
+            meta = WmsConfigKey.of(key);
+        } catch (IllegalArgumentException e) {
+            log.warn("读取了未知配置键[{}]，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        WmsSystemConfig stored;
+        try {
+            stored = this.getOne(new QueryWrapper<WmsSystemConfig>().eq("config_key", meta.getKey()), false);
+        } catch (Exception e) {
+            log.warn("读取系统配置[{}]失败（{}），改用兜底值 {}", key, e.getMessage(), fallback);
+            return fallback;
+        }
+        if (stored == null) {
+            log.warn("系统配置[{}]尚未设置，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        String rawValue = stored.getConfigValue();
+        if (rawValue == null || rawValue.trim().isEmpty()) {
+            log.warn("系统配置[{}]的值为空，改用兜底值 {}", key, fallback);
+            return fallback;
+        }
+        return rawValue.trim();
+    }
+
+    @Override
+    public boolean getBool(String key, boolean fallback) {
+        // 借 getString 的容错：键未知/未设置/读库失败都会打 warn 后返回兜底值
+        String value = getString(key, String.valueOf(fallback));
+        if ("true".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value)) {
+            return false;
+        }
+        log.warn("系统配置[{}]不是布尔值（{}），改用兜底值 {}", key, value, fallback);
+        return fallback;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void saveGroup(WmsConfigSaveDTO dto) {
+        if (dto == null || dto.getGroup() == null) {
+            throw new IllegalArgumentException("缺少配置分组");
+        }
+        // 与 list/history 的入参口径一致：先 trim 再用（评审 M5）
+        String groupCode = dto.getGroup().trim();
+        Map<String, String> values = new LinkedHashMap<>();
+        if (dto.getItems() != null) {
+            for (WmsConfigItemDTO item : dto.getItems()) {
+                if (item != null && item.getKey() != null) {
+                    values.put(item.getKey(), item.getValue());
+                }
+            }
+        }
+
+        // 1) 先校验，全组通过才动库。校验失败时下面两个写方法一次都不会被调用。
+        List<WmsConfigConflict> conflicts =
+                new ArrayList<>(WmsConfigValidator.validate(groupCode, values));
+        if (conflicts.isEmpty()) {
+            conflicts.addAll(validateSelectValues(values));
+        }
+        if (!conflicts.isEmpty()) {
+            throw new WmsConfigConflictException(conflicts);
+        }
+
+        // 2) upsert 主表 + 3) 追加历史（同一事务：写历史失败则 upsert 一起回滚，不会出现「值改了没留痕」）
+        Map<String, WmsSystemConfig> stored = loadStoredMap();
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            WmsConfigKey meta = WmsConfigKey.of(entry.getKey());
+            String value = normalizeValue(meta, entry.getValue());
+
+            WmsSystemConfig existing = stored.get(entry.getKey());
+            if (existing == null) {
+                WmsSystemConfig row = new WmsSystemConfig()
+                        .setConfigKey(meta.getKey())
+                        .setConfigValue(value)
+                        .setConfigDesc(meta.getLabel());
+                WmsUtils.fillCreate(row);
+                this.save(row);
+            } else {
+                existing.setConfigValue(value);
+                WmsUtils.fillUpdate(existing);
+                this.updateById(existing);
+            }
+
+            WmsSystemConfigHistory history = new WmsSystemConfigHistory();
+            history.setConfigKey(meta.getKey());
+            history.setConfigValue(value);
+            history.setVersionNo(currentVersionNo(meta.getKey()) + 1);
+            history.setChangeType(WmsConstants.CONFIG_CHANGE_SAVE);
+            WmsUtils.fillCreate(history);
+            wmsSystemConfigHistoryMapper.insert(history);
+        }
+        log.info("系统配置已保存：分组={}，项数={}", groupCode, values.size());
+    }
+
+    /**
+     * 值规范化：统一按字符串存；多选项还要「段内 trim + 去空段」再拼回。
+     *
+     * <p>否则 "库存账 , 出入库记录" 会原样入库，前端 `split(',')` 后出现候选集之外的幽灵标签。
+     * （空段本身已由校验器拦下，这里的过滤是给历史值兜底。）
+     */
+    private static String normalizeValue(WmsConfigKey meta, String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (meta.getType() != WmsConfigType.MULTI || value.isEmpty()) {
+            return value;
+        }
+        List<String> parts = new ArrayList<>();
+        for (String part : value.split(",", -1)) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                parts.add(trimmed);
+            }
+        }
+        return String.join(",", parts);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void rollback(WmsConfigRollbackDTO dto) {
+        if (dto == null || dto.getGroup() == null) {
+            throw new IllegalArgumentException("缺少配置分组");
+        }
+        WmsConfigGroup group = WmsConfigGroup.of(dto.getGroup().trim());
+        Map<String, WmsSystemConfig> stored = loadStoredMap();
+
+        // 1) 逐键取「次新」版本（当前值是最大版本，上一版本是第 2 条）。
+        //    previous 只收「确实有上一版本」的键 —— 它们才是要写回的；
+        //    target 则补齐没有上一版本的键（用其当前值/默认值），它是回滚**之后的完整状态**。
+        Map<String, String> previous = new LinkedHashMap<>();
+        Map<String, String> target = new LinkedHashMap<>();
+        for (WmsConfigKey key : WmsConfigKey.ofGroup(group)) {
+            List<WmsSystemConfigHistory> rows = recentHistory(key.getKey(), 2);
+            if (rows.size() >= 2) {
+                String value = rows.get(1).getConfigValue();
+                previous.put(key.getKey(), value);
+                target.put(key.getKey(), value);
+            } else {
+                WmsSystemConfig current = stored.get(key.getKey());
+                target.put(key.getKey(), current == null || current.getConfigValue() == null
+                        ? key.getDefaultValue() : current.getConfigValue());
+            }
+        }
+        if (previous.isEmpty()) {
+            throw new RuntimeException("当前分组没有可回滚的历史版本");
+        }
+
+        // 2) 校验**回滚之后的完整状态**（而非只校验被回滚的那部分）。
+        //    两条理由：① 规则中途加严时旧值可能已非法，宁可拒绝也不能把非法值写进主表；
+        //    ② 若只把 previous 交给校验器，缺项会被判「配置项缺失」而报成冲突 ——
+        //    那会让「组内新增了一个配置项」导致整组回滚被误拒（评审 I2）。
+        List<WmsConfigConflict> conflicts = WmsConfigValidator.validate(group.getCode(), target);
+        if (!conflicts.isEmpty()) {
+            throw new WmsConfigConflictException(conflicts);
+        }
+
+        // 3) 写回主表 + 追加 ROLLBACK 历史（只写 previous 里的键；不删旧历史，审计链完整）
+        for (Map.Entry<String, String> entry : previous.entrySet()) {
+            WmsConfigKey meta = WmsConfigKey.of(entry.getKey());
+            String value = normalizeValue(meta, entry.getValue());
+
+            WmsSystemConfig existing = stored.get(entry.getKey());
+            if (existing == null) {
+                WmsSystemConfig row = new WmsSystemConfig()
+                        .setConfigKey(meta.getKey()).setConfigValue(value).setConfigDesc(meta.getLabel());
+                WmsUtils.fillCreate(row);
+                this.save(row);
+            } else {
+                existing.setConfigValue(value);
+                WmsUtils.fillUpdate(existing);
+                this.updateById(existing);
+            }
+
+            WmsSystemConfigHistory history = new WmsSystemConfigHistory();
+            history.setConfigKey(meta.getKey());
+            history.setConfigValue(value);
+            history.setVersionNo(currentVersionNo(meta.getKey()) + 1);
+            history.setChangeType(WmsConstants.CONFIG_CHANGE_ROLLBACK);
+            WmsUtils.fillCreate(history);
+            wmsSystemConfigHistoryMapper.insert(history);
+        }
+        log.info("系统配置已回滚：分组={}，回滚 {} 项（共 {} 项）",
+                dto.getGroup(), previous.size(), target.size());
+    }
+
+    @Override
+    public List<WmsSystemConfigHistory> history(String key) {
+        return wmsSystemConfigHistoryMapper.selectList(new QueryWrapper<WmsSystemConfigHistory>()
+                .eq("config_key", key)
+                .orderByDesc("version_no", "create_time", "id"));
+    }
+
+    /**
+     * 取某键最近 n 条历史（版本降序）。
+     *
+     * <p><b>排序必须带 tie-break</b>（version_no → create_time → id）：版本号取「最大值 + 1」，
+     * 而 READ COMMITTED 下并发保存可能算出同一个版本号，只按 version_no 排序会让回滚结果不确定。
+     */
+    private List<WmsSystemConfigHistory> recentHistory(String key, int limit) {
+        return wmsSystemConfigHistoryMapper.selectList(new QueryWrapper<WmsSystemConfigHistory>()
+                .eq("config_key", key)
+                .orderByDesc("version_no", "create_time", "id")
+                .last("limit " + limit));
+    }
+
+    /**
+     * 一次性取多个键的最新版本号（组 → 最大 version_no），避免页面首载逐项查库。
+     *
+     * <p>原实现每项调 {@code currentVersionNo} 走一次 SELECT，9 项就是 9 次。
+     */
+    Map<String, Integer> latestVersionNoMap(java.util.Collection<String> keys) {
+        Map<String, Integer> map = new HashMap<>();
+        if (keys == null || keys.isEmpty()) {
+            return map;
+        }
+        List<WmsSystemConfigHistory> rows = wmsSystemConfigHistoryMapper.selectList(
+                new QueryWrapper<WmsSystemConfigHistory>()
+                        .select("config_key", "max(version_no) as version_no")
+                        .in("config_key", keys)
+                        .groupBy("config_key"));
+        for (WmsSystemConfigHistory row : rows) {
+            if (row.getVersionNo() != null && row.getConfigKey() != null) {
+                map.put(row.getConfigKey(), row.getVersionNo());
+            }
+        }
+        return map;
+    }
+
+    /** 一次性把在存配置读成 map，避免逐项查库。 */
+    private Map<String, WmsSystemConfig> loadStoredMap() {
+        Map<String, WmsSystemConfig> map = new HashMap<>();
+        for (WmsSystemConfig row : this.list(new QueryWrapper<>())) {
+            map.put(row.getConfigKey(), row);
+        }
+        return map;
+    }
+
+    /** 单选类配置的候选项：目前只有「不良品默认仓」一项。 */
+    private List<WmsConfigOptionVO> selectOptions(WmsConfigKey key) {
+        if (key == WmsConfigKey.DEFECT_WAREHOUSE_CODE) {
+            return defectWarehouseOptions();
+        }
+        return new ArrayList<>();
+    }
+
+    /**
+     * 「不良品默认仓」的候选项：列出全部**启用**的库区，缺 {@code FPC-DEFAULT} 库位的置灰。
+     *
+     * <p>运行时会按 warehouse_code 找该库区的默认库位，找不到就静默回退废品仓默认位——
+     * 所以没有默认库位的库区**可选但无效**。置灰并注明原因，比直接不列出来更容易理解
+     * （否则用户会以为「我的仓区怎么不在下拉里」）。
+     */
+    private List<WmsConfigOptionVO> defectWarehouseOptions() {
+        if (warehouseMapper == null || locationMapper == null) {
+            return new ArrayList<>();
+        }
+        List<WmsWarehouse> warehouses = warehouseMapper.selectList(new QueryWrapper<WmsWarehouse>()
+                .eq("status", WmsConstants.STATUS_ENABLE)
+                .orderByAsc("warehouse_code"));
+        if (warehouses == null || warehouses.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<String> warehouseIds = new ArrayList<>();
+        for (WmsWarehouse warehouse : warehouses) {
+            warehouseIds.add(warehouse.getId());
+        }
+        Set<String> withDefaultLocation = new HashSet<>();
+        List<WmsLocation> locations = locationMapper.selectList(new QueryWrapper<WmsLocation>()
+                .eq("location_code", WmsConstants.LOCATION_CODE_SCRAP_DEFAULT)
+                .in("warehouse_id", warehouseIds));
+        if (locations != null) {
+            for (WmsLocation location : locations) {
+                withDefaultLocation.add(location.getWarehouseId());
+            }
+        }
+        List<WmsConfigOptionVO> options = new ArrayList<>();
+        for (WmsWarehouse warehouse : warehouses) {
+            boolean selectable = withDefaultLocation.contains(warehouse.getId());
+            String label = warehouse.getWarehouseCode() + " " + warehouse.getWarehouseName();
+            options.add(new WmsConfigOptionVO(warehouse.getWarehouseCode(),
+                    selectable ? label : label + "（缺少 " + WmsConstants.LOCATION_CODE_SCRAP_DEFAULT + " 库位）",
+                    !selectable));
+        }
+        return options;
+    }
+
+    /**
+     * 单选类配置取值必须落在候选项内。
+     *
+     * <p>纯校验器不碰数据库，看不到动态候选集；这里补一道「存在性」校验，
+     * 免得直接调接口写进一个不存在的库区编码，运行时静默回退。
+     */
+    private List<WmsConfigConflict> validateSelectValues(Map<String, String> values) {
+        List<WmsConfigConflict> conflicts = new ArrayList<>();
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            WmsConfigKey meta = findKeyOrNull(entry.getKey());
+            if (meta == null || meta.getType() != WmsConfigType.SELECT) {
+                continue;
+            }
+            String value = entry.getValue() == null ? "" : entry.getValue().trim();
+            if (value.isEmpty()) {
+                // 留空 = 沿用废品仓默认位，是合法取值
+                continue;
+            }
+            if (meta == WmsConfigKey.DEFECT_WAREHOUSE_CODE) {
+                // 候选集是动态的（启用仓区 + 默认库位），只能在这里查库校验
+                boolean exists = defectWarehouseOptions().stream()
+                        .anyMatch(option -> value.equals(option.getValue())
+                                && !Boolean.TRUE.equals(option.getDisabled()));
+                if (!exists) {
+                    conflicts.add(new WmsConfigConflict(meta.getKey(), meta.getLabel(),
+                            "库区不存在、已停用或缺少 " + WmsConstants.LOCATION_CODE_SCRAP_DEFAULT
+                                    + " 默认库位，实际：" + value));
+                }
+                continue;
+            }
+            // 其余 SELECT 候选集是静态的（元数据自带），按候选值校验
+            List<String> options = meta.getOptions();
+            if (options != null && !options.contains(value)) {
+                conflicts.add(new WmsConfigConflict(meta.getKey(), meta.getLabel(),
+                        "取值不在候选范围（" + String.join("/", options) + "），实际：" + value));
+            }
+        }
+        return conflicts;
+    }
+
+    private WmsConfigKey findKeyOrNull(String key) {
+        try {
+            return WmsConfigKey.of(key);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private WmsConfigItemVO toItemVO(WmsConfigKey key, WmsSystemConfig stored,
+                                     Map<String, Integer> versions) {
+        WmsConfigItemVO vo = new WmsConfigItemVO();
+        vo.setKey(key.getKey());
+        vo.setLabel(key.getLabel());
+        vo.setType(key.getType().name());
+        // 库里没有该键时回落元数据默认值：新环境首次打开页面不能是空白
+        vo.setValue(stored == null || stored.getConfigValue() == null
+                ? key.getDefaultValue() : stored.getConfigValue());
+        vo.setOptions(key.getOptions());
+        if (key.getType() == WmsConfigType.SELECT) {
+            vo.setOptionItems(selectOptions(key));
+        }
+        int version = versions == null ? 0 : versions.getOrDefault(key.getKey(), 0);
+        vo.setVersionNo(version);
+        vo.setCanRollback(version >= 2);
+        return vo;
+    }
+}
