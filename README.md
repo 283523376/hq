@@ -80,13 +80,19 @@ git push
 git fetch origin
 git merge --ff-only origin/main
 
-# 4) 快进后修复两个活仓库的换行差异（必做）
-#    根仓 .gitattributes 是 `* -text`，子树快照按 LF 写回工作区；
-#    而代码仓 core.autocrlf=true 期望 CRLF，快进后会显示几千个「已修改」。
-git -C code/yongxin_WMS checkout -- .
-git -C code/wms-logicflow-designer checkout -- .
-# 自检：只剩换行差异时，忽略 CR 后的差异文件数应为 0
-git -C code/yongxin_WMS diff --ignore-cr-at-eol --name-only | wc -l
+# 4) 一次性：两个代码仓关闭 CRLF 转换
+#    根仓 `.gitattributes` 是 `* -text`，备份按 LF 原样存储；活仓库默认
+#    core.autocrlf=true 会把同一份工作区写成 CRLF，两边对同一批文件给出
+#    相反的「已修改」判断。统一成 LF 后，根仓与活仓库可共用一份工作区。
+git -C code/yongxin_WMS config core.autocrlf false
+git -C code/wms-logicflow-designer config core.autocrlf false
+
+# 5) 若活仓库仍显示大批「已修改」：git 的 stat 缓存没刷新，强制按索引重写
+(cd code/yongxin_WMS && git ls-files -z | xargs -0 touch && git checkout -- .)
+(cd code/wms-logicflow-designer && git ls-files -z | xargs -0 touch && git checkout -- .)
+# 自检：两边都应为 0
+git -C code/yongxin_WMS status --porcelain | wc -l
+git status --porcelain | wc -l
 ```
 
 > 注意：`code/yongxin_WMS/`、`code/wms-logicflow-designer/` 在 `.gitignore` 里保留了忽略规则，
