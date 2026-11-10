@@ -75,6 +75,18 @@ git subtree pull --prefix=code/yongxin_WMS \
 git subtree pull --prefix=code/wms-logicflow-designer \
   <设计器远端> master -m "backup: 同步设计器"
 git push
+
+# 3) 本地根仓快进（会把子树内容就地写回 code/ 下）
+git fetch origin
+git merge --ff-only origin/main
+
+# 4) 快进后修复两个活仓库的换行差异（必做）
+#    根仓 .gitattributes 是 `* -text`，子树快照按 LF 写回工作区；
+#    而代码仓 core.autocrlf=true 期望 CRLF，快进后会显示几千个「已修改」。
+git -C code/yongxin_WMS checkout -- .
+git -C code/wms-logicflow-designer checkout -- .
+# 自检：只剩换行差异时，忽略 CR 后的差异文件数应为 0
+git -C code/yongxin_WMS diff --ignore-cr-at-eol --name-only | wc -l
 ```
 
 > 注意：`code/yongxin_WMS/`、`code/wms-logicflow-designer/` 在 `.gitignore` 里保留了忽略规则，
