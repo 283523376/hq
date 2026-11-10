@@ -11,7 +11,8 @@
       :class="[{ 'print-area-editable': editable }, items.length > 1 ? `mode-${pageMode}` : '']"
       :contenteditable="editable ? 'true' : 'false'"
     >
-      <div v-for="(item, idx) in items" :key="idx" class="print-item">
+      <!-- multi-page：本身超过一页的单据（行数多），其分页由组装器决定，不参与「整张不拆」约束 -->
+      <div v-for="(item, idx) in items" :key="idx" class="print-item" :class="{ 'multi-page': pageCount(item) > 1 }">
         <!-- 数据提示：快照回退标注数据时间；仅 warn（如本地单金蝶价税取不到）也要显示；打印时隐藏 -->
         <a-alert
           v-if="item.snapshotTime || item.extras?.warn"
@@ -73,6 +74,11 @@
 
   function templateOf(item: WmsPrintDataVO) {
     return TEMPLATES[item.billType] || ProfitListPrint;
+  }
+
+  /** 单据自身页数：>1 表示行数已超出单页容量，分页由组装器切分，不能被「整张不拆」挡住 */
+  function pageCount(item: WmsPrintDataVO) {
+    return item.totalPages || item.pages?.length || 1;
   }
 
   function snapshotTimeText(t?: string | null) {

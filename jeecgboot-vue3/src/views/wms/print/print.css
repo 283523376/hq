@@ -158,6 +158,22 @@
 
 /* 批量打印的两种排版模式（2026-11-10 客户要求） */
 @media print {
+  /* 单据保持完整（客户口径 2026-11-10）：页边界只允许落在单据之间，
+     剩余空间不够就整张挪到下一页，不把同一张单据切成两页。
+     例外是本身就超过一页的单据（行数超过每页行数时分页由组装器决定），
+     故给多页单据打 .multi-page 标记并放行。 */
+  .print-item:not(.multi-page) {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 单个页块与表格行同样不允许被页边界切开（整块排不下时浏览器仍会回退为拆分） */
+  .print-page,
+  .sheet-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   /* 每张单据自成一页：张与张之间强制分页 */
   .print-area.mode-per-bill .print-item {
     break-after: page;
@@ -191,6 +207,15 @@
   @page {
     size: A4 landscape;
     margin: 8mm;
+  }
+
+  /* 抵消 src/design/index.less 的 html{overflow:hidden} 与 html,body{height:100%}：
+     根元素被裁到第一屏高度时，批量打印只会输出一页（2026-11-10 实测：只加这条即 1 页→3 页）。
+     加 !important 是因为 design/index.less 走全局入口、本文件在组件内 import，构建后顺序不保证。 */
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
   }
 
   body * {
