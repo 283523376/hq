@@ -1,4 +1,5 @@
-# 嵌套的独立仓库：各自有远端，用 hq.git 的分支镜像备份，不在本仓重复存
+# 两个代码仓已用 git subtree 合并进来（已跟踪文件不受此处影响）；
+# 保留忽略只为防止根仓 `git add -A` 误收它们工作区里的未跟踪文件
 /code/yongxin_WMS/
 /code/wms-logicflow-designer/
 
