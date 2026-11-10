@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-RK-001",
+  "name": "YX-WMS-RK-001 外购/受托原材料入库流程",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "仓管员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "堆垛机",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 8,
+  "nodes": [
+    {
+      "id": "E01",
+      "text": "登录，进入入库管理（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "E02",
+      "text": "登记到货：供应商/受托方、物料、批次、数量（来源：ERP采购/受托订单）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "E03",
+      "text": "校验采购/受托订单（来源：金蝶）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "E04",
+      "text": "订单不存在→提示",
+      "laneId": "lane-3",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "E05",
+      "text": "选择处理方式：改刀料 或 段差棒（来源：来料属性）",
+      "laneId": "lane-0",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "E06",
+      "text": "分配半成品立库货位（两类处理方式一致，来源：WMS库存与库位规则）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "E07",
+      "text": "库位不足→告警",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "E08",
+      "text": "下发入库任务（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "E09",
+      "text": "堆垛机执行（来源：WCS/RMS）",
+      "laneId": "lane-2",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "E10",
+      "text": "设备故障→告警并转人工",
+      "laneId": "lane-3",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "E11",
+      "text": "接收回执，更新库存；受托材料记受托库存（来源：设备回执）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "E12",
+      "text": "上架失败→重试",
+      "laneId": "lane-3",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "E13",
+      "text": "回写金蝶：外购走采购收料单，受托走受托材料入库单（来源：WMS单据）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "E14",
+      "text": "同步失败→重试并告警",
+      "laneId": "lane-3",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "E15",
+      "text": "记录批次信息与操作日志（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 8,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-E01-E02-0",
+      "source": "E01",
+      "target": "E02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E02-E03-1",
+      "source": "E02",
+      "target": "E03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E03-E05-2",
+      "source": "E03",
+      "target": "E05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E03-E04-3",
+      "source": "E03",
+      "target": "E04",
+      "label": "不存在",
+      "kind": "exception"
+    },
+    {
+      "id": "e-E05-E06-4",
+      "source": "E05",
+      "target": "E06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E06-E08-5",
+      "source": "E06",
+      "target": "E08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E06-E07-6",
+      "source": "E06",
+      "target": "E07",
+      "label": "不足",
+      "kind": "exception"
+    },
+    {
+      "id": "e-E08-E09-7",
+      "source": "E08",
+      "target": "E09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E09-E11-8",
+      "source": "E09",
+      "target": "E11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E09-E10-9",
+      "source": "E09",
+      "target": "E10",
+      "label": "故障",
+      "kind": "exception"
+    },
+    {
+      "id": "e-E11-E13-10",
+      "source": "E11",
+      "target": "E13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E11-E12-11",
+      "source": "E11",
+      "target": "E12",
+      "label": "失败",
+      "kind": "exception"
+    },
+    {
+      "id": "e-E13-E15-12",
+      "source": "E13",
+      "target": "E15",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-E13-E14-13",
+      "source": "E13",
+      "target": "E14",
+      "label": "失败",
+      "kind": "exception"
+    }
+  ]
+}

@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-XT-001",
+  "name": "YX-WMS-XT-001 不良品处理流程",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "操作员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "金蝶ERP",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 6,
+  "nodes": [
+    {
+      "id": "P01",
+      "text": "登录管理端，进入不良品处置（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "P02",
+      "text": "展示废品仓台账（来源：WMS库存）",
+      "laneId": "lane-1",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "P03",
+      "text": "无记录→提示",
+      "laneId": "lane-3",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "P04",
+      "text": "选择报废物料与数量（来源：操作员输入）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "P05",
+      "text": "校验可用数量（来源：WMS库存）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "P06",
+      "text": "数量超出范围→提示",
+      "laneId": "lane-3",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "P07",
+      "text": "扣减废品仓库存，生成报废出库单（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "P08",
+      "text": "库存不足→提示",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "P09",
+      "text": "记录不良品处置台账（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "P10",
+      "text": "回写金蝶其他出库单（来源：WMS单据）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "P11",
+      "text": "接收并更新库存（来源：ERP）",
+      "laneId": "lane-2",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "P12",
+      "text": "同步失败→重试并告警",
+      "laneId": "lane-3",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "P13",
+      "text": "记录操作日志与操作人（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-P01-P02-0",
+      "source": "P01",
+      "target": "P02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-P02-P04-1",
+      "source": "P02",
+      "target": "P04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-P02-P03-2",
+      "source": "P02",
+      "target": "P03",
+      "label": "无记录",
+      "kind": "exception"
+    },
+    {
+      "id": "e-P04-P05-3",
+      "source": "P04",
+      "target": "P05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-P05-P07-4",
+      "source": "P05",
+      "target": "P07",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-P05-P06-5",
+      "source": "P05",
+      "target": "P06",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-P07-P09-6",
+      "source": "P07",
+      "target": "P09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-P07-P08-7",
+      "source": "P07",
+      "target": "P08",
+      "label": "不足",
+      "kind": "exception"
+    },
+    {
+      "id": "e-P09-P10-8",
+      "source": "P09",
+      "target": "P10",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-P10-P11-9",
+      "source": "P10",
+      "target": "P11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-P11-P13-10",
+      "source": "P11",
+      "target": "P13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-P11-P12-11",
+      "source": "P11",
+      "target": "P12",
+      "label": "失败",
+      "kind": "exception"
+    }
+  ]
+}

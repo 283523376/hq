@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-DY-001",
+  "name": "YX-WMS-DY-001 单据打印流程",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "仓库管理员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "金蝶ERP",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 9,
+  "nodes": [
+    {
+      "id": "R01",
+      "text": "登录，进入「单据打印」工作台（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "R02",
+      "text": "按 12 类单据分页签展示（来源：单据类型配置）",
+      "laneId": "lane-1",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "R03",
+      "text": "无权限→提示",
+      "laneId": "lane-3",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "R04",
+      "text": "选择单据类型，输入或选择单号（来源：操作员录入）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "R05",
+      "text": "查询单据（来源：WMS单据库）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "R06",
+      "text": "单号不存在→提示",
+      "laneId": "lane-3",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "R07",
+      "text": "本地已有该单据→直接读取单头与分录（来源：WMS单据库）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "R08",
+      "text": "本地无该类型单据→按单号调用金蝶查询（来源：金蝶WebAPI）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "R09",
+      "text": "返回单据头与分录（来源：ERP）",
+      "laneId": "lane-2",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "R10",
+      "text": "接口异常→提示",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "R11",
+      "text": "校验单头、分录、物料、数量完整性（来源：ERP报文）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "R12",
+      "text": "字段缺失→提示",
+      "laneId": "lane-3",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "R13",
+      "text": "落只读单据快照，重复打印直接复用（来源：同步数据）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "R14",
+      "text": "同步未启用→提示配置",
+      "laneId": "lane-3",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "R15",
+      "text": "按单据类型套用打印模板渲染预览（来源：模板配置）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "R16",
+      "text": "预览确认版式与内容（来源：操作员操作）",
+      "laneId": "lane-0",
+      "step": 8,
+      "kind": "process"
+    },
+    {
+      "id": "R17",
+      "text": "展示打印预览（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 8,
+      "kind": "process"
+    },
+    {
+      "id": "R18",
+      "text": "打印或另存PDF（来源：浏览器打印）",
+      "laneId": "lane-0",
+      "step": 9,
+      "kind": "process"
+    },
+    {
+      "id": "R19",
+      "text": "输出打印视图，支持重复调出补打（来源：浏览器）",
+      "laneId": "lane-1",
+      "step": 9,
+      "kind": "process"
+    },
+    {
+      "id": "R20",
+      "text": "打印失败→提示重打",
+      "laneId": "lane-3",
+      "step": 9,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-R01-R02-0",
+      "source": "R01",
+      "target": "R02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R02-R04-1",
+      "source": "R02",
+      "target": "R04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R02-R03-2",
+      "source": "R02",
+      "target": "R03",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-R04-R05-3",
+      "source": "R04",
+      "target": "R05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R05-R07-4",
+      "source": "R05",
+      "target": "R07",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R05-R06-5",
+      "source": "R05",
+      "target": "R06",
+      "label": "不存在",
+      "kind": "exception"
+    },
+    {
+      "id": "e-R07-R08-6",
+      "source": "R07",
+      "target": "R08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R08-R09-7",
+      "source": "R08",
+      "target": "R09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R09-R11-8",
+      "source": "R09",
+      "target": "R11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R09-R10-9",
+      "source": "R09",
+      "target": "R10",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-R11-R13-10",
+      "source": "R11",
+      "target": "R13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R11-R12-11",
+      "source": "R11",
+      "target": "R12",
+      "label": "缺失",
+      "kind": "exception"
+    },
+    {
+      "id": "e-R13-R15-12",
+      "source": "R13",
+      "target": "R15",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R13-R14-13",
+      "source": "R13",
+      "target": "R14",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-R15-R16-14",
+      "source": "R15",
+      "target": "R16",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R16-R17-15",
+      "source": "R16",
+      "target": "R17",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R17-R18-16",
+      "source": "R17",
+      "target": "R18",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R18-R19-17",
+      "source": "R18",
+      "target": "R19",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-R19-R20-18",
+      "source": "R19",
+      "target": "R20",
+      "label": "失败",
+      "kind": "exception"
+    }
+  ]
+}

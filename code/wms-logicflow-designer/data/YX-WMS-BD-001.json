@@ -1,0 +1,275 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-BD-001",
+  "name": "YX-WMS-BD-001 物料与分类管理流程",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "管理员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "金蝶ERP",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 7,
+  "nodes": [
+    {
+      "id": "A01",
+      "text": "登录管理端（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "A02",
+      "text": "触发物料与分类同步（来源：管理员操作）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "A03",
+      "text": "按物料分组拉取（来源：金蝶BD_MATERIAL）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "A04",
+      "text": "返回物料与分组（来源：ERP）",
+      "laneId": "lane-2",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "A05",
+      "text": "接口异常→提示",
+      "laneId": "lane-3",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "A06",
+      "text": "按分组前缀映射物料分类（来源：分类映射规则）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "A07",
+      "text": "分类映射失败→提示",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "A08",
+      "text": "维护物料编码/名称/规格（来源：管理员录入或导入）",
+      "laneId": "lane-0",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "A09",
+      "text": "校验编码唯一性，写入金蝶编码（来源：ERP编码）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "A10",
+      "text": "编码重复→提示",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "A11",
+      "text": "保存物料信息（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "A12",
+      "text": "保存失败→回滚并提示",
+      "laneId": "lane-3",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "A13",
+      "text": "批量导入/导出（来源：Excel文件）",
+      "laneId": "lane-0",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "A14",
+      "text": "解析文件，校验数据格式（来源：导入模板）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "A15",
+      "text": "格式错误→提示错误行号",
+      "laneId": "lane-3",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "A16",
+      "text": "停用分类与物料，不删除（来源：管理员操作）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "A17",
+      "text": "被引用→拒绝停用",
+      "laneId": "lane-3",
+      "step": 7,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-A01-A02-0",
+      "source": "A01",
+      "target": "A02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A02-A03-1",
+      "source": "A02",
+      "target": "A03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A03-A04-2",
+      "source": "A03",
+      "target": "A04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A04-A06-3",
+      "source": "A04",
+      "target": "A06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A04-A05-4",
+      "source": "A04",
+      "target": "A05",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-A06-A08-5",
+      "source": "A06",
+      "target": "A08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A06-A07-6",
+      "source": "A06",
+      "target": "A07",
+      "label": "失败",
+      "kind": "exception"
+    },
+    {
+      "id": "e-A08-A09-7",
+      "source": "A08",
+      "target": "A09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A09-A11-8",
+      "source": "A09",
+      "target": "A11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A09-A10-9",
+      "source": "A09",
+      "target": "A10",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-A11-A13-10",
+      "source": "A11",
+      "target": "A13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A11-A12-11",
+      "source": "A11",
+      "target": "A12",
+      "label": "失败",
+      "kind": "exception"
+    },
+    {
+      "id": "e-A13-A14-12",
+      "source": "A13",
+      "target": "A14",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A14-A16-13",
+      "source": "A14",
+      "target": "A16",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-A14-A15-14",
+      "source": "A14",
+      "target": "A15",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-A16-A17-15",
+      "source": "A16",
+      "target": "A17",
+      "label": "异常",
+      "kind": "exception"
+    }
+  ]
+}

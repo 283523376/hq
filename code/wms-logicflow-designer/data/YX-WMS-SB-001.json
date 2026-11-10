@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-SB-001",
+  "name": "YX-WMS-SB-001 上位系统数据同步流程（ERP/MES/WMS）",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "系统管理员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "金蝶ERP",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 8,
+  "nodes": [
+    {
+      "id": "N01",
+      "text": "登录管理端，进入上位系统同步（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "N02",
+      "text": "选择对账范围：全量/今日变动/指定仓库，或等待定时任务（来源：管理员/定时配置）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "N03",
+      "text": "创建对账批次（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "N04",
+      "text": "汇总库存与出入库流水（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "N05",
+      "text": "无库存→跳过查询",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "N06",
+      "text": "查询即时库存（来源：金蝶STK_Inventory，组织101）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "N07",
+      "text": "返回即时库存（来源：ERP）",
+      "laneId": "lane-2",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "N08",
+      "text": "查询失败→重试并告警",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "N09",
+      "text": "按仓库+物料+批次比对（来源：两侧数据）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "N10",
+      "text": "存在差异→生成差异清单",
+      "laneId": "lane-3",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "N11",
+      "text": "核对差异清单（来源：管理员操作）",
+      "laneId": "lane-0",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "N12",
+      "text": "标记已核对/已忽略（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "N13",
+      "text": "发起盘点，二次确认（来源：管理员操作）",
+      "laneId": "lane-0",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "N14",
+      "text": "生成盘点草稿并回填单号（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "N15",
+      "text": "无账面→拒绝发起",
+      "laneId": "lane-3",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "N16",
+      "text": "记录同步日志与操作人，按保留期清理（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 8,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-N01-N02-0",
+      "source": "N01",
+      "target": "N02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N02-N03-1",
+      "source": "N02",
+      "target": "N03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N03-N04-2",
+      "source": "N03",
+      "target": "N04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N04-N06-3",
+      "source": "N04",
+      "target": "N06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N04-N05-4",
+      "source": "N04",
+      "target": "N05",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-N06-N07-5",
+      "source": "N06",
+      "target": "N07",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N07-N09-6",
+      "source": "N07",
+      "target": "N09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N07-N08-7",
+      "source": "N07",
+      "target": "N08",
+      "label": "失败",
+      "kind": "exception"
+    },
+    {
+      "id": "e-N09-N11-8",
+      "source": "N09",
+      "target": "N11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N09-N10-9",
+      "source": "N09",
+      "target": "N10",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-N11-N12-10",
+      "source": "N11",
+      "target": "N12",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N12-N13-11",
+      "source": "N12",
+      "target": "N13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N13-N14-12",
+      "source": "N13",
+      "target": "N14",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N14-N16-13",
+      "source": "N14",
+      "target": "N16",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-N14-N15-14",
+      "source": "N14",
+      "target": "N15",
+      "label": "异常",
+      "kind": "exception"
+    }
+  ]
+}

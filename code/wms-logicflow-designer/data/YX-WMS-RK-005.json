@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-RK-005",
+  "name": "YX-WMS-RK-005 不良品入库流程",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "操作员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "金蝶ERP",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 8,
+  "nodes": [
+    {
+      "id": "G01",
+      "text": "从ERP同步工单或受托订单（来源：ERP）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "G02",
+      "text": "调出物料与来源信息（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "G03",
+      "text": "单据无效→提示",
+      "laneId": "lane-3",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "G04",
+      "text": "选择不良品来源：生产不良 / 受托原材料不良（来源：检验记录）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "G05",
+      "text": "录入不良数量与原因（来源：检验单）",
+      "laneId": "lane-0",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "G06",
+      "text": "校验数量合理性（来源：来料/报工数量）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "G07",
+      "text": "数量超出范围→提示",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "G08",
+      "text": "生产不良写入废品仓默认库位（来源：WMS配置）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "G09",
+      "text": "废品仓未配置→提示",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "G10",
+      "text": "受托不良选择处置方式，二选一（来源：质检判定）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "G11",
+      "text": "未选择→提示",
+      "laneId": "lane-3",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "G12",
+      "text": "入废品仓（受托材料记受托库存）；退货生成采购退货单（来源：ERP采购管理）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "G13",
+      "text": "记录不良品台账，两类共用（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "G14",
+      "text": "回写金蝶：其他入库或退货单（来源：WMS单据）",
+      "laneId": "lane-1",
+      "step": 8,
+      "kind": "process"
+    },
+    {
+      "id": "G15",
+      "text": "接收并更新库存（来源：ERP）",
+      "laneId": "lane-2",
+      "step": 8,
+      "kind": "process"
+    },
+    {
+      "id": "G16",
+      "text": "同步失败→重试并告警",
+      "laneId": "lane-3",
+      "step": 8,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-G01-G02-0",
+      "source": "G01",
+      "target": "G02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G02-G04-1",
+      "source": "G02",
+      "target": "G04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G02-G03-2",
+      "source": "G02",
+      "target": "G03",
+      "label": "无效",
+      "kind": "exception"
+    },
+    {
+      "id": "e-G04-G05-3",
+      "source": "G04",
+      "target": "G05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G05-G06-4",
+      "source": "G05",
+      "target": "G06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G06-G08-5",
+      "source": "G06",
+      "target": "G08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G06-G07-6",
+      "source": "G06",
+      "target": "G07",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-G08-G10-7",
+      "source": "G08",
+      "target": "G10",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G08-G09-8",
+      "source": "G08",
+      "target": "G09",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-G10-G12-9",
+      "source": "G10",
+      "target": "G12",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G10-G11-10",
+      "source": "G10",
+      "target": "G11",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-G12-G13-11",
+      "source": "G12",
+      "target": "G13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G13-G14-12",
+      "source": "G13",
+      "target": "G14",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G14-G15-13",
+      "source": "G14",
+      "target": "G15",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-G15-G16-14",
+      "source": "G15",
+      "target": "G16",
+      "label": "失败",
+      "kind": "exception"
+    }
+  ]
+}

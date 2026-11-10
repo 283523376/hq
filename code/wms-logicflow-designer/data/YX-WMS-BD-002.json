@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-BD-002",
+  "name": "YX-WMS-BD-002 生产工单管理流程",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "计划员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "金蝶ERP",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 7,
+  "nodes": [
+    {
+      "id": "B01",
+      "text": "登录，进入基础管理（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "B02",
+      "text": "触发工单同步，按单号或时间段（来源：计划员操作）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "B03",
+      "text": "调用工单接口（来源：金蝶）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "B04",
+      "text": "返回生产订单（来源：ERP PRD_MO）",
+      "laneId": "lane-2",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "B05",
+      "text": "接口异常→提示",
+      "laneId": "lane-3",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "B06",
+      "text": "校验工单号与数据完整性（来源：ERP报文）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "B07",
+      "text": "字段缺失→提示",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "B08",
+      "text": "按工单号upsert计划量/状态/批次（来源：ERP）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "B09",
+      "text": "状态置为已下达，可领料/入库（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "B10",
+      "text": "同步失败→重试并告警",
+      "laneId": "lane-3",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "B11",
+      "text": "同步作废状态并校验下游（来源：ERP作废标记）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "B12",
+      "text": "工单作废（来源：ERP）",
+      "laneId": "lane-2",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "B13",
+      "text": "有下游→拒绝作废",
+      "laneId": "lane-3",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "B14",
+      "text": "查询工单执行情况（来源：计划员操作）",
+      "laneId": "lane-0",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "B15",
+      "text": "展示工单关联入库记录（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "B16",
+      "text": "无记录→提示",
+      "laneId": "lane-3",
+      "step": 7,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-B01-B02-0",
+      "source": "B01",
+      "target": "B02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B02-B03-1",
+      "source": "B02",
+      "target": "B03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B03-B04-2",
+      "source": "B03",
+      "target": "B04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B04-B06-3",
+      "source": "B04",
+      "target": "B06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B04-B05-4",
+      "source": "B04",
+      "target": "B05",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-B06-B08-5",
+      "source": "B06",
+      "target": "B08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B06-B07-6",
+      "source": "B06",
+      "target": "B07",
+      "label": "缺失",
+      "kind": "exception"
+    },
+    {
+      "id": "e-B08-B09-7",
+      "source": "B08",
+      "target": "B09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B09-B11-8",
+      "source": "B09",
+      "target": "B11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B09-B10-9",
+      "source": "B09",
+      "target": "B10",
+      "label": "失败",
+      "kind": "exception"
+    },
+    {
+      "id": "e-B11-B12-10",
+      "source": "B11",
+      "target": "B12",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B12-B14-11",
+      "source": "B12",
+      "target": "B14",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B12-B13-12",
+      "source": "B12",
+      "target": "B13",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-B14-B15-13",
+      "source": "B14",
+      "target": "B15",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-B15-B16-14",
+      "source": "B15",
+      "target": "B16",
+      "label": "无记录",
+      "kind": "exception"
+    }
+  ]
+}

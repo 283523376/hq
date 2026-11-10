@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-KC-002",
+  "name": "YX-WMS-KC-002 仓库盘点与库存调整流程",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "系统管理员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "现场操作员",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "WMS系统",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 8,
+  "nodes": [
+    {
+      "id": "L01",
+      "text": "创建定期/周期盘点计划（来源：管理员录入）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "L02",
+      "text": "生成盘点单并冻结库位（来源：WMS库位）",
+      "laneId": "lane-1",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "L03",
+      "text": "校验盘点范围（来源：盘点计划）",
+      "laneId": "lane-2",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "L04",
+      "text": "范围异常→提示",
+      "laneId": "lane-3",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "L05",
+      "text": "逐个库位清点实物（来源：现场实盘）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "L06",
+      "text": "录入实际数量（来源：现场操作员）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "L07",
+      "text": "记录实际数量，标记重盘（来源：WMS）",
+      "laneId": "lane-2",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "L08",
+      "text": "数量异常→提示",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "L09",
+      "text": "差异比对，账面vs实盘（来源：WMS库存）",
+      "laneId": "lane-2",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "L10",
+      "text": "差异超阈值→需复核",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "L11",
+      "text": "确认差异（来源：管理员审核）",
+      "laneId": "lane-0",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "L12",
+      "text": "等待复核，复核人≠发起人（来源：WMS）",
+      "laneId": "lane-2",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "L13",
+      "text": "按实际数量调整库存（来源：WMS）",
+      "laneId": "lane-2",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "L14",
+      "text": "盘盈/盘亏回写金蝶（来源：WMS单据）",
+      "laneId": "lane-2",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "L15",
+      "text": "同步失败→重试并告警",
+      "laneId": "lane-3",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "L16",
+      "text": "生成盘点记录并归档（来源：WMS）",
+      "laneId": "lane-2",
+      "step": 8,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-L01-L02-0",
+      "source": "L01",
+      "target": "L02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L02-L03-1",
+      "source": "L02",
+      "target": "L03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L03-L05-2",
+      "source": "L03",
+      "target": "L05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L03-L04-3",
+      "source": "L03",
+      "target": "L04",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-L05-L06-4",
+      "source": "L05",
+      "target": "L06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L06-L07-5",
+      "source": "L06",
+      "target": "L07",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L07-L09-6",
+      "source": "L07",
+      "target": "L09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L07-L08-7",
+      "source": "L07",
+      "target": "L08",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-L09-L11-8",
+      "source": "L09",
+      "target": "L11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L09-L10-9",
+      "source": "L09",
+      "target": "L10",
+      "label": "超阈值",
+      "kind": "exception"
+    },
+    {
+      "id": "e-L11-L12-10",
+      "source": "L11",
+      "target": "L12",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L12-L13-11",
+      "source": "L12",
+      "target": "L13",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L13-L14-12",
+      "source": "L13",
+      "target": "L14",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L14-L16-13",
+      "source": "L14",
+      "target": "L16",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-L14-L15-14",
+      "source": "L14",
+      "target": "L15",
+      "label": "失败",
+      "kind": "exception"
+    }
+  ]
+}

@@ -1,0 +1,309 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-RK-002",
+  "name": "YX-WMS-RK-002 生产入库流程（半成品/成品）",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "操作员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "WCS/RMS",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "堆垛机/SCR",
+      "color": "purple",
+      "width": 210
+    },
+    {
+      "id": "lane-4",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 8,
+  "nodes": [
+    {
+      "id": "F01",
+      "text": "从ERP同步工单（来源：操作员触发+ERP）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "F02",
+      "text": "调出工单与产品信息（来源：ERP PRD_MO）",
+      "laneId": "lane-1",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "F03",
+      "text": "工单不存在→提示",
+      "laneId": "lane-4",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "F04",
+      "text": "创建生产入库单，登记良品/不良品数量（来源：车间报工）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "F05",
+      "text": "校验数量合理性（来源：工单计划量）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "F06",
+      "text": "数量异常→提示",
+      "laneId": "lane-4",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "F07",
+      "text": "不良品写入废品仓默认库位（来源：WMS配置）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "F08",
+      "text": "良品分配立库/敏捷仓库位（来源：WMS库存与库位规则）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "F09",
+      "text": "库位不足→告警",
+      "laneId": "lane-4",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "F10",
+      "text": "下发入库任务（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "F11",
+      "text": "接收任务并调度设备（来源：WCS/RMS）",
+      "laneId": "lane-2",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "F12",
+      "text": "堆垛机/SCR执行（来源：设备）",
+      "laneId": "lane-3",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "F13",
+      "text": "设备故障→告警并转人工",
+      "laneId": "lane-4",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "F14",
+      "text": "接收设备回执，更新库存（来源：设备回执）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "F15",
+      "text": "物料上架/入箱（来源：设备）",
+      "laneId": "lane-3",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "F16",
+      "text": "上架失败→重试",
+      "laneId": "lane-4",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "F17",
+      "text": "回写金蝶：良品下推，不良品另开其他入库（来源：WMS单据）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "F18",
+      "text": "同步失败→重试并告警",
+      "laneId": "lane-4",
+      "step": 7,
+      "kind": "process"
+    },
+    {
+      "id": "F19",
+      "text": "记录批次信息与操作日志（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 8,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-F01-F02-0",
+      "source": "F01",
+      "target": "F02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F02-F04-1",
+      "source": "F02",
+      "target": "F04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F02-F03-2",
+      "source": "F02",
+      "target": "F03",
+      "label": "不存在",
+      "kind": "exception"
+    },
+    {
+      "id": "e-F04-F05-3",
+      "source": "F04",
+      "target": "F05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F05-F07-4",
+      "source": "F05",
+      "target": "F07",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F05-F06-5",
+      "source": "F05",
+      "target": "F06",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-F07-F08-6",
+      "source": "F07",
+      "target": "F08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F08-F10-7",
+      "source": "F08",
+      "target": "F10",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F08-F09-8",
+      "source": "F08",
+      "target": "F09",
+      "label": "不足",
+      "kind": "exception"
+    },
+    {
+      "id": "e-F10-F11-9",
+      "source": "F10",
+      "target": "F11",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F11-F12-10",
+      "source": "F11",
+      "target": "F12",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F12-F14-11",
+      "source": "F12",
+      "target": "F14",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F12-F13-12",
+      "source": "F12",
+      "target": "F13",
+      "label": "故障",
+      "kind": "exception"
+    },
+    {
+      "id": "e-F14-F15-13",
+      "source": "F14",
+      "target": "F15",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F15-F17-14",
+      "source": "F15",
+      "target": "F17",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F15-F16-15",
+      "source": "F15",
+      "target": "F16",
+      "label": "失败",
+      "kind": "exception"
+    },
+    {
+      "id": "e-F17-F19-16",
+      "source": "F17",
+      "target": "F19",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-F17-F18-17",
+      "source": "F17",
+      "target": "F18",
+      "label": "失败",
+      "kind": "exception"
+    }
+  ]
+}

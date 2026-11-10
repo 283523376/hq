@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-SB-002",
+  "name": "YX-WMS-SB-002 WCS/RMS设备调度与状态采集流程",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "WMS系统",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WCS/RMS",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "堆垛机/SCR",
+      "color": "green",
+      "width": 210
+    },
+    {
+      "id": "lane-3",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 6,
+  "nodes": [
+    {
+      "id": "O01",
+      "text": "生成设备任务：入库/出库/移库（来源：WMS业务单据）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "O02",
+      "text": "接收任务（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "O03",
+      "text": "调度设备执行（来源：WCS/RMS）",
+      "laneId": "lane-1",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "O04",
+      "text": "堆垛机/SCR执行（来源：设备）",
+      "laneId": "lane-2",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "O05",
+      "text": "设备故障→告警并转人工",
+      "laneId": "lane-3",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "O06",
+      "text": "采集设备状态：在线/离线/故障（来源：设备心跳）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "O07",
+      "text": "状态异常→告警",
+      "laneId": "lane-3",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "O08",
+      "text": "采集任务执行进度（来源：设备回执）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "O09",
+      "text": "执行异常→告警",
+      "laneId": "lane-3",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "O10",
+      "text": "上报状态至WMS（来源：WCS/RMS）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "O11",
+      "text": "记录状态日志，留痕（来源：WMS）",
+      "laneId": "lane-0",
+      "step": 6,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-O01-O02-0",
+      "source": "O01",
+      "target": "O02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-O02-O03-1",
+      "source": "O02",
+      "target": "O03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-O03-O04-2",
+      "source": "O03",
+      "target": "O04",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-O04-O06-3",
+      "source": "O04",
+      "target": "O06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-O04-O05-4",
+      "source": "O04",
+      "target": "O05",
+      "label": "故障",
+      "kind": "exception"
+    },
+    {
+      "id": "e-O06-O08-5",
+      "source": "O06",
+      "target": "O08",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-O06-O07-6",
+      "source": "O06",
+      "target": "O07",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-O08-O10-7",
+      "source": "O08",
+      "target": "O10",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-O08-O09-8",
+      "source": "O08",
+      "target": "O09",
+      "label": "异常",
+      "kind": "exception"
+    },
+    {
+      "id": "e-O10-O11-9",
+      "source": "O10",
+      "target": "O11",
+      "label": "",
+      "kind": "main"
+    }
+  ]
+}

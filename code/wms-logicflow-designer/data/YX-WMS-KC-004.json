@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "id": "YX-WMS-KC-004",
+  "name": "YX-WMS-KC-004 库存查询与报表导出流程",
+  "updatedAt": "2026-11-10T11:59:26",
+  "grid": {
+    "headerHeight": 44,
+    "stepColumnWidth": 64,
+    "rowHeight": 122,
+    "lanePadX": 14,
+    "lanePadY": 10
+  },
+  "lanes": [
+    {
+      "id": "lane-0",
+      "name": "仓管员",
+      "color": "blue",
+      "width": 210
+    },
+    {
+      "id": "lane-1",
+      "name": "WMS系统",
+      "color": "orange",
+      "width": 210
+    },
+    {
+      "id": "lane-2",
+      "name": "异常处理",
+      "color": "red",
+      "width": 200
+    }
+  ],
+  "stepCount": 7,
+  "nodes": [
+    {
+      "id": "M01",
+      "text": "登录管理端，进入库存查询（来源：账号权限）",
+      "laneId": "lane-0",
+      "step": 1,
+      "kind": "process"
+    },
+    {
+      "id": "M02",
+      "text": "选择查询条件：物料/批次/库位/关键词（来源：仓管员输入）",
+      "laneId": "lane-0",
+      "step": 2,
+      "kind": "process"
+    },
+    {
+      "id": "M03",
+      "text": "检索库存台账（来源：WMS库存）",
+      "laneId": "lane-1",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "M04",
+      "text": "无匹配记录→提示更换条件",
+      "laneId": "lane-2",
+      "step": 3,
+      "kind": "process"
+    },
+    {
+      "id": "M05",
+      "text": "展示库存明细：数量/批次/位置（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 4,
+      "kind": "process"
+    },
+    {
+      "id": "M06",
+      "text": "导出查询结果（来源：仓管员操作）",
+      "laneId": "lane-0",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "M07",
+      "text": "生成异步导出任务，支持大数据量（来源：查询结果）",
+      "laneId": "lane-1",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "M08",
+      "text": "导出失败→保留任务可重导",
+      "laneId": "lane-2",
+      "step": 5,
+      "kind": "process"
+    },
+    {
+      "id": "M09",
+      "text": "导出文件保留7天后清理（来源：WMS任务）",
+      "laneId": "lane-1",
+      "step": 6,
+      "kind": "process"
+    },
+    {
+      "id": "M10",
+      "text": "记录查询日志，操作人/时间（来源：WMS）",
+      "laneId": "lane-1",
+      "step": 7,
+      "kind": "process"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-M01-M02-0",
+      "source": "M01",
+      "target": "M02",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-M02-M03-1",
+      "source": "M02",
+      "target": "M03",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-M03-M05-2",
+      "source": "M03",
+      "target": "M05",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-M03-M04-3",
+      "source": "M03",
+      "target": "M04",
+      "label": "无匹配",
+      "kind": "exception"
+    },
+    {
+      "id": "e-M05-M06-4",
+      "source": "M05",
+      "target": "M06",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-M06-M07-5",
+      "source": "M06",
+      "target": "M07",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-M07-M09-6",
+      "source": "M07",
+      "target": "M09",
+      "label": "",
+      "kind": "main"
+    },
+    {
+      "id": "e-M07-M08-7",
+      "source": "M07",
+      "target": "M08",
+      "label": "失败",
+      "kind": "exception"
+    },
+    {
+      "id": "e-M09-M10-8",
+      "source": "M09",
+      "target": "M10",
+      "label": "",
+      "kind": "main"
+    }
+  ]
+}
