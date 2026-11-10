@@ -60,12 +60,13 @@ import java.util.Set;
  * （待检验 → 待分配 → 待上架）并走旧 HTTP 网关 {@code WmsInboundErpSyncGateway}；
  * 原材料到货要求「跳过检验、一步上架、回写金蝶可配置单据」，两条链路的状态机与回写目标都不同。
  *
- * <p><b>处理方式不落库，用单据状态区分</b>：{@code wms_inbound_order} 没有 handling_type 列，
- * 因此：
+ * <p><b>处理方式不落库，两类同口径</b>：{@code wms_inbound_order} 没有 handling_type 列。
+ * V2.6（2026-11-10）起「改刀料（CONVERT）」与「段差棒直入（DIRECT）」处理方式完全一致：
+ * 到货登记为「待分配」→ {@link #putawayRaw} 选库位 → 「已审核」→ 库存入账 → 回写金蝶。
  * <ul>
- *   <li>DIRECT（段差棒直入）到货登记为「待分配」，上架后「已审核」，库存入账；</li>
- *   <li>CONVERT（大改小）到货登记即「已审核」（登记完成，原材料直送车间），
- *       {@code sync_status=无需同步}，不存在可上架状态——{@link #putawayRaw} 自然拒绝。</li>
+ *   <li>V2.6 之前的历史 CONVERT 单据（大改小）登记即「已审核」、{@code sync_status=无需同步}、
+ *       原材料不入 WMS 库存，这些行不做数据迁移——{@link #putawayRaw} 与重试回写仍按单据状态
+ *       自然拒绝，口径见各方法内注释。</li>
  * </ul>
  *
  * <p><b>所有权口径</b>：{@code sourceType=CONSIGNED} 的库存行写
@@ -144,7 +145,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         }
         if (!WmsConstants.INBOUND_HANDLING_DIRECT.equals(handlingType)
                 && !WmsConstants.INBOUND_HANDLING_CONVERT.equals(handlingType)) {
-            throw new RuntimeException("处理方式必须为大改小(CONVERT)或段差棒直入(DIRECT)");
+            throw new RuntimeException("处理方式必须为改刀料(CONVERT)或段差棒直入(DIRECT)");
         }
         String erpOrderNo = trim(dto.getErpOrderNo());
         if (erpOrderNo.isEmpty()) {
@@ -158,17 +159,16 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         requireNotRegistered(sourceType, erpOrderNo);
 
         boolean consigned = WmsConstants.INBOUND_SOURCE_CONSIGNED.equals(sourceType);
-        boolean direct = WmsConstants.INBOUND_HANDLING_DIRECT.equals(handlingType);
         String consignorId = trim(dto.getConsignorId());
         if (consigned && consignorId.isEmpty()) {
             throw new RuntimeException("受托到货必须指定受托方（consignorId）");
         }
-        // 外购直入必须带供应商：金蝶采购收料单的 FSupplierID 是必填项，缺了回写必失败；
+        // 外购必须带供应商：金蝶采购收料单的 FSupplierID 是必填项，缺了回写必失败；
         // 放在 ERP 查询之前，避免白调一次接口。
-        // 大改小（CONVERT）原始材料不入 WMS 库存、也不回写采购收料单（产出走 PRD_INSTOCK），
-        // 因此不强制供应商——否则会对不需要该字段的路径过度校验。
-        if (!consigned && direct && trim(dto.getSupplierId()).isEmpty()) {
-            throw new RuntimeException("外购直入必须指定供应商（supplierId），否则采购收料单回写会缺少 FSupplierID");
+        // V2.6（2026-11-10）起改刀料与段差棒同口径直入半成品立库，两者都要回写采购收料单，
+        // 因此不再区分处理方式，一律强制供应商。
+        if (!consigned && trim(dto.getSupplierId()).isEmpty()) {
+            throw new RuntimeException("外购到货必须指定供应商（supplierId），否则采购收料单回写会缺少 FSupplierID");
         }
 
         // 1) ERP 订单校验：金蝶侧查不到这张单就不允许登记（开关关/未配 formId 同样失败）
@@ -205,16 +205,9 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
                 .setConsignorId(customer == null ? null : customer.getId())
                 .setConsignorCode(customer == null ? null : customer.getCustomerCode())
                 .setConsignorName(customer == null ? null : customer.getCustomerName())
-                .setSyncStatus(direct ? WmsConstants.SYNC_STATUS_PENDING : WmsConstants.SYNC_STATUS_NOT_REQUIRED);
-        if (direct) {
-            // 跳过检验：直接待分配，等无检验上架
-            order.setInboundStatus(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE);
-        } else {
-            // 大改小：到货只登记，原材料不入 WMS 库存，登记即终态
-            order.setInboundStatus(WmsConstants.INBOUND_STATUS_AUDITED);
-            order.setAuditBy(operator);
-            order.setAuditTime(now);
-        }
+                .setSyncStatus(WmsConstants.SYNC_STATUS_PENDING);
+        // V2.6：改刀料与段差棒同口径——跳过检验直接待分配，上架入库存后回写采购收料单
+        order.setInboundStatus(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE);
         order.setCreateBy(operator);
         order.setCreateTime(now);
         order.setUpdateBy(operator);
@@ -334,7 +327,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         }
         if (!WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE.equals(order.getInboundStatus())
                 && !WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY.equals(order.getInboundStatus())) {
-            // 大改小单据登记即「已审核」、且不产生库存行，走到这里必须拒绝
+            // V2.6 之前的历史大改小单据登记即「已审核」、且不产生库存行，走到这里必须拒绝
             throw new RuntimeException("当前状态不允许上架");
         }
 
@@ -419,9 +412,9 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         if (WmsConstants.SYNC_STATUS_SUCCESS.equals(order.getSyncStatus())) {
             return resultOf(order);
         }
-        // 大改小（CONVERT）登记即终态、原材料不入 WMS 库存，不存在可回写的入库单
+        // V2.6 之前的历史大改小单据登记即终态、原材料不入 WMS 库存，不存在可回写的入库单
         if (WmsConstants.SYNC_STATUS_NOT_REQUIRED.equals(order.getSyncStatus())) {
-            throw new RuntimeException("该单据无需同步（大改小登记即终态），不能重试回写");
+            throw new RuntimeException("该单据无需同步（V2.6 前的大改小登记单），不能重试回写");
         }
 
         String formId = requireKingdeeReady(order);

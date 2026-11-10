@@ -1002,17 +1002,18 @@ public final class WmsConstants {
     public static final String INBOUND_SOURCE_CONSIGNED = "CONSIGNED";
 
     /**
-     * 到货处理方式：大改小（CONVERT）。
+     * 到货处理方式：改刀料（CONVERT）。
      *
-     * <p>原材料直送车间、**不入 WMS 库存**；WMS 只登记改制单投入数量，
-     * 产出半成品走生产入库（RK-002 通道）。
+     * <p>V2.6（2026-11-10 客户变更）：改刀料不是加工工序，处理方式与段差棒**完全一致**——
+     * 直接入半成品立库：分配立库货位 → 设备入库 → 按自有/受托库存入账 → 回写采购收料单。
+     * 值仍为 {@code CONVERT}（历史单据数据不迁移，语义按版本区分）。
      */
     public static final String INBOUND_HANDLING_CONVERT = "CONVERT";
 
     /** 到货处理方式：段差棒直入（分配立库货位、设备入库后按自有库存入账）。 */
     public static final String INBOUND_HANDLING_DIRECT = "DIRECT";
 
-    /** 改制单号前缀（GZ + 雪花 ID）。 */
+    /** 改制单号前缀（GZ + 雪花 ID）。@deprecated V2.6 起流程不再生成改制单，模块保留可回滚。 */
     public static final String CONVERSION_NO_PREFIX = "GZ";
 
     /** 改制明细方向：投入（原材料，不入 WMS 库存，只登记数量）。 */

@@ -61,7 +61,7 @@
           <a-form-item label="口径说明">
             <div class="raw-inbound__mode-tip">
               <template v-if="form.handlingType === 'CONVERT'">
-                大改小原材料不入 WMS 库存，到货仅登记、物料直送车间；产出请走改制单。
+                改刀料：与段差棒同口径，直接入半成品立库——登记后为「待分配」，需在列表点「上架」选择库位后入库存并回写金蝶。
               </template>
               <template v-else>
                 段差棒直入：登记后为「待分配」，需在列表点「上架」选择库位后才入库存并回写金蝶。
@@ -158,7 +158,8 @@
   const partnerRequired = computed(
     () => isConsigned.value || (form.sourceType === 'PURCHASE' && form.handlingType === 'DIRECT')
   );
-  const showSupplierWarning = computed(() => form.sourceType === 'PURCHASE' && form.handlingType === 'DIRECT');
+  // V2.6：改刀料与段差棒都要回写采购收料单，外购一律必须有供应商
+  const showSupplierWarning = computed(() => form.sourceType === 'PURCHASE');
   /** 两种档案语义不同：受托方取客户档案，外购取供应商档案 */
   const partnerOptions = computed(() => (isConsigned.value ? customerOptions.value : supplierOptions.value));
 
@@ -327,10 +328,7 @@
         })),
       };
       const res: any = await receiveRawInbound(payload);
-      const suffix =
-        form.handlingType === 'CONVERT'
-          ? '（大改小：仅登记，不入库存，产出请走改制单）'
-          : '（段差棒直入：请在列表点「上架」选择库位后入库）';
+      const suffix = '（请在列表点「上架」选择立库货位后入库）';
       createMessage.success(`登记成功：${res?.orderNo || ''}${suffix}`);
       open.value = false;
       emit('success');

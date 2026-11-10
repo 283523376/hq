@@ -59,7 +59,7 @@ import static org.mockito.Mockito.when;
  * <p>锁五件事：
  * <ol>
  *   <li>来源 × 处理四组合：只有 DIRECT 产生库存，且 CONSIGNED 写受托行（必须带受托方）；</li>
- *   <li>CONVERT 只登记，单据不可上架（不产生库存行）；</li>
+ *   <li>V2.6 起 CONVERT（改刀料）与 DIRECT（段差棒）同口径：待分配→上架→库存→回写；</li>
  *   <li>金蝶开关关闭 / formId 未配置必须显式拒绝，且在写库存之前；</li>
  *   <li>回写成功回存 ERP 单号与同步时间；</li>
  *   <li>Submit 失败不回滚库存，只落同步失败。</li>
@@ -206,27 +206,36 @@ class WmsRawInboundServiceImplTest {
         verify(reader).queryConsignedOrder(ERP_ORDER_NO);
     }
 
+    /**
+     * V2.6（2026-11-10 客户变更）：改刀料与段差棒同口径——登记为「待分配」，
+     * 可上架入库存并回写采购收料单；不再有「登记即终态」分支。
+     */
     @Test
-    void receiveConvertRegistersOnlyAndDoesNotAllowPutaway() {
+    void receiveConvertRegistersAsPendingAllocateAndAllowsPutaway() {
         stubErpOrder(false);
         stubRawMaterial();
 
         WmsInboundOrder order = spy.receive(dto(WmsConstants.INBOUND_SOURCE_PURCHASE,
                 WmsConstants.INBOUND_HANDLING_CONVERT), OPERATOR);
 
-        // 大改小：登记即终态，不产生库存、不同步 ERP
-        assertEquals(WmsConstants.INBOUND_STATUS_AUDITED, order.getInboundStatus());
-        assertEquals(WmsConstants.SYNC_STATUS_NOT_REQUIRED, order.getSyncStatus());
-        assertEquals(OPERATOR, order.getAuditBy());
-        assertNotNull(order.getAuditTime());
+        assertEquals(WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE, order.getInboundStatus());
+        assertEquals(WmsConstants.SYNC_STATUS_PENDING, order.getSyncStatus());
+        assertNull(order.getAuditBy(), "改刀料不再登记即终态，不应写审核人");
+        assertNull(order.getAuditTime());
 
-        // 返回给改制单引用的单据不得再走无检验上架
+        // 与段差棒一致：待分配单据可上架，上架后入库存并回写采购收料单
+        stubPutawayReady(order, WmsConstants.INBOUND_SOURCE_PURCHASE);
+        when(purchaseReceiveWriter.write(order))
+                .thenReturn(WmsKingdeeResult.ok("{}", null, "CGRK002", "erpId2"));
+        when(formClient.submit(anyString(), any())).thenReturn(WmsKingdeeResult.ok("{}", null, null, null));
         when(orderMapper.selectById("in1")).thenReturn(order);
-        when(detailMapper.selectList(any())).thenReturn(Collections.singletonList(detail()));
-        RuntimeException e = assertThrows(RuntimeException.class,
-                () -> spy.putawayRaw("in1", putawayDto(), OPERATOR));
-        assertTrue(e.getMessage().contains("不允许上架"), e.getMessage());
-        verify(inventoryMapper, never()).upsertInventory(any(WmsInventory.class));
+
+        org.jeecg.modules.wms.vo.WmsRawPutawayResultVO result =
+                spy.putawayRaw("in1", putawayDto(), OPERATOR);
+
+        assertEquals(WmsConstants.SYNC_STATUS_SUCCESS, result.getSyncStatus());
+        assertEquals("CGRK002", result.getErpBillNo());
+        verify(inventoryMapper).upsertInventory(any(WmsInventory.class));
     }
 
     /** I3：同一 ERP 订单重复登记 → 拒绝并带上已存在单号，不落新单也不查金蝶。 */
@@ -506,9 +515,9 @@ class WmsRawInboundServiceImplTest {
         verify(formClient, never()).submit(anyString(), any());
     }
 
-    /** 大改小登记即终态、原材料不入库存，不存在可回写的入库单。 */
+    /** V2.6 前的历史大改小单据登记即终态、原材料不入库存，不存在可回写的入库单。 */
     @Test
-    void resyncRejectsConvertOrder() {
+    void resyncRejectsLegacyConvertOrder() {
         auditedOrder(WmsConstants.SYNC_STATUS_NOT_REQUIRED, null);
 
         RuntimeException e = assertThrows(RuntimeException.class, () -> spy.resync("in1", OPERATOR));

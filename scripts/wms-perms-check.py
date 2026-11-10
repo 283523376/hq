@@ -43,7 +43,10 @@ WMS_ADMIN_ROLE_ID = "191000000000009001"
 # 已停用域（2026-10-19 原材料线边柜移出：采购入库/订单，代码保留、权限点随菜单撤除，
 # 见 docs/superpowers/specs/2026-10-19-yx-wms-scope-reduction-line-side-design.md）。
 # 这些注解码**没有**对应权限点是预期状态；恢复该域时应同时删除这里的豁免。
-DEACTIVATED_PREFIXES = ("wms:inbound:", "wms:order:")
+DEACTIVATED_PREFIXES = ("wms:inbound:", "wms:order:",
+                        # 2026-11-10 RK-001 V2.6：改刀料与段差棒同口径直入半成品立库，
+                        # 不再生成改制单 → 改制单菜单/按钮逻辑删除（V3.9.5_58），代码保留可回滚
+                        "wms:conversion:")
 
 ANNOTATION = re.compile(r'@RequiresPermissions\(([^)]*)\)')
 QUOTED = re.compile(r'"([\w.:-]+)"')

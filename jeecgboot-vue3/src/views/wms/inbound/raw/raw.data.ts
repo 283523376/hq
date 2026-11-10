@@ -8,9 +8,10 @@ export const SOURCE_TYPE_OPTIONS = [
   { label: '受托（CONSIGNED）', value: 'CONSIGNED' },
 ];
 
-/** 处理方式选项（后端 `WmsConstants.INBOUND_HANDLING_*`） */
+/** 处理方式选项（后端 `WmsConstants.INBOUND_HANDLING_*`）
+ *  V2.6（2026-11-10）：改刀料与段差棒同口径 —— 均直接入半成品立库，登记后需上架。 */
 export const HANDLING_TYPE_OPTIONS = [
-  { label: '大改小（CONVERT）', value: 'CONVERT' },
+  { label: '改刀料（CONVERT）', value: 'CONVERT' },
   { label: '段差棒直入（DIRECT）', value: 'DIRECT' },
 ];
 
@@ -61,17 +62,18 @@ export function sourceTypeLabel(record: any): string {
 }
 
 /**
- * 处理方式（后端不落库，用状态区分，见 `WmsRawInboundServiceImpl` 类注释）。
+ * 历史大改小单据（V2.6 之前）：后端不落库处理方式，只能靠状态特征识别——
+ * 「已审核」且「无需同步」，即登记即终态、原材料直送车间、不进 WMS 库存。
  *
- * CONVERT 到货登记即终态：状态「已审核」且同步状态「无需同步」，没有上架动作；
- * 其余（待分配 / 上架后的已审核+待同步等）都是 DIRECT。
+ * V2.6（2026-11-10）起改刀料与段差棒同口径（登记→待分配→上架→库存→回写），
+ * 新单据无法也不需要在列表里区分两者，列上显示「—」。
  */
-export function isConvertOrder(record: any): boolean {
+export function isLegacyConvertOrder(record: any): boolean {
   return record?.inboundStatus === '已审核' && record?.syncStatus === '无需同步';
 }
 
 export function handlingTypeLabel(record: any): string {
-  return isConvertOrder(record) ? '大改小' : '段差棒直入';
+  return isLegacyConvertOrder(record) ? '改刀料（历史）' : '—';
 }
 
 /** 同步状态颜色（后端 `WmsConstants.SYNC_STATUS_*`） */
@@ -107,7 +109,7 @@ export const columns: BasicColumn[] = [
     dataIndex: 'handlingType',
     width: 130,
     customRender: ({ record }) =>
-      h('span', { style: isConvertOrder(record) ? { color: '#d46b08', fontWeight: 600 } : {} }, handlingTypeLabel(record)),
+      h('span', { style: isLegacyConvertOrder(record) ? { color: '#d46b08', fontWeight: 600 } : {} }, handlingTypeLabel(record)),
   },
   {
     title: '状态',

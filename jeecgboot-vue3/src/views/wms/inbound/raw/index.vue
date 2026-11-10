@@ -5,14 +5,14 @@
       type="info"
       show-icon
       class="wms-raw-inbound__alert"
-      message="大改小原材料不入 WMS 库存，到货仅登记、物料直送车间；产出请走改制单"
+      message="改刀料与段差棒同口径：直接入半成品立库，登记后需上架入库"
     >
       <template #description>
         <div>
-          「大改小（CONVERT）」单据登记后停在「已审核」是设计使然——登记即终态，不需要上架，也不会出现在库存里；
-          需加工产出时请到「改制单」建单。
+          「改刀料（CONVERT）」与「段差棒直入（DIRECT）」处理方式一致——登记后为「待分配」，
+          在行内点「上架」选择立库货位后才入库存，并按外购/受托回写金蝶。
         </div>
-        <div>「段差棒直入（DIRECT）」登记后为「待分配」，在行内点「上架」选择库位后才入库存并回写金蝶。</div>
+        <div>受托材料单独记「受托库存」，与自有库存分开；两类均不经过任何加工环节。</div>
       </template>
     </a-alert>
 
@@ -39,7 +39,7 @@
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import { columns, isConvertOrder, isSyncFailed, searchFormSchema } from './raw.data';
+  import { columns, isSyncFailed, searchFormSchema } from './raw.data';
   import { listRawInbound, resyncRawInbound } from './raw.api';
   import RawReceiveModal from './components/RawReceiveModal.vue';
   import RawPutawayModal from './components/RawPutawayModal.vue';
@@ -67,8 +67,8 @@
 
   function getActions(record: any) {
     const actions: any[] = [];
-    // 只有 DIRECT 且待分配的才需要上架；CONVERT 是登记即终态，绝不显示上架按钮
-    if (!isConvertOrder(record) && record.inboundStatus === '待分配') {
+    // V2.6：改刀料与段差棒同口径，凡是「待分配」都要上架（历史大改小单据状态为「已审核」，自然不会命中）
+    if (record.inboundStatus === '待分配') {
       actions.push({
         label: '上架',
         auth: 'wms:inbound:consigned',
@@ -83,10 +83,6 @@
         color: 'error',
         onClick: () => handleResync(record),
       });
-    }
-    if (isConvertOrder(record)) {
-      // 大改小没有上架动作，给一个显式口径入口，避免用户以为单据卡住了
-      actions.push({ label: '口径说明', onClick: () => showConvertTip(record) });
     }
     return actions;
   }
@@ -103,15 +99,6 @@
       });
     }
     reload();
-  }
-
-  function showConvertTip(record: any) {
-    Modal.info({
-      title: `大改小登记 ${record.orderNo}`,
-      content:
-        '大改小原材料不入 WMS 库存，到货仅登记、物料直送车间；产出请走改制单。' +
-        '该单停在「已审核」是设计使然（登记即终态），没有上架动作，也不会产生库存。',
-    });
   }
 
   function openPutaway(record: any) {

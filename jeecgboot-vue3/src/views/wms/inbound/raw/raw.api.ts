@@ -4,7 +4,7 @@ import { defHttp } from '/@/utils/http/axios';
 const RAW = '/wms/raw-inbound';
 
 /**
- * 到货登记（外购/受托 × 大改小/段差棒直入）。
+ * 到货登记（外购/受托 × 改刀料/段差棒直入，V2.6 起两者处理方式一致）。
  *
  * 入参与后端 `WmsRawInboundDTO` 逐字一致：明细行只有 materialId / quantity / batchNo /
  * sourceMaterialCode，**没有物料编码**——编码由服务端按主数据回填。
@@ -25,7 +25,7 @@ export const putawayRawInbound = (id: string, params) =>
 /**
  * 重试回写（补偿入口）。
  *
- * 只对「已审核」且非大改小的单有效；已有金蝶单号的只补提交，已同步成功的幂等返回。
+ * 只对「已审核」且同步状态为「待同步/同步失败」的单有效（V2.6 前的历史大改小单为「无需同步」，不可重试）；已有金蝶单号的只补提交，已同步成功的幂等返回。
  * 返回与上架同款的 `{ syncStatus, erpBillNo, lastSyncError }`。
  */
 export const resyncRawInbound = (id: string) =>
@@ -35,7 +35,7 @@ export const resyncRawInbound = (id: string) =>
  * 原材料入库单分页（`source_type` 为 PURCHASE/CONSIGNED 的单据）。
  *
  * 不用 `/wms/inbound/list`：那是全量入库单，会混入生产入库与历史采购收料单，
- * 而那些单的 `source_type` 为空，前端只能靠状态猜「处理方式」，会误判成大改小。
+ * 而那些单的 `source_type` 为空，前端只能靠状态猜「处理方式」，会误判成历史大改小单。
  */
 export const listRawInbound = (params?) => defHttp.get({ url: `${RAW}/page`, params });
 
