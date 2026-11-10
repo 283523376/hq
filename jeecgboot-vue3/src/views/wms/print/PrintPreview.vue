@@ -1,18 +1,24 @@
 <template>
   <div class="print-preview">
-    <!-- 数据提示：快照回退标注数据时间；仅 warn（如本地单金蝶价税取不到）也要显示；打印时隐藏 -->
-    <a-alert
-      v-if="data.snapshotTime || data.extras?.warn"
-      class="no-print"
-      type="warning"
-      show-icon
-      :message="alertMessage"
-      :description="alertDescription"
-      style="margin-bottom: 12px"
-    />
-    <!-- 编辑模式：contenteditable 直接改预览文字；打印输出当前 DOM（含修改），不落库 -->
+    <!-- 批量打印时每张单据之前标注序号与单号，便于分拣（打印时隐藏） -->
+    <div v-if="items.length > 1" class="batch-tip no-print">
+      共 {{ items.length }} 张单据，将一次打印；每张单据自成一页
+    </div>
+    <!-- 打印区：所有选中单据同处一个 .print-area，多页由各模板的 .print-page 分页 -->
     <div class="print-area" :class="{ 'print-area-editable': editable }" :contenteditable="editable ? 'true' : 'false'">
-      <component :is="template" :data="data" />
+      <div v-for="(item, idx) in items" :key="idx" class="print-item">
+        <!-- 数据提示：快照回退标注数据时间；仅 warn（如本地单金蝶价税取不到）也要显示；打印时隐藏 -->
+        <a-alert
+          v-if="item.snapshotTime || item.extras?.warn"
+          class="no-print"
+          type="warning"
+          show-icon
+          :message="alertMessage(item)"
+          :description="item.extras?.warn || ''"
+          style="margin-bottom: 12px"
+        />
+        <component :is="templateOf(item)" :data="item" />
+      </div>
     </div>
   </div>
 </template>
@@ -27,9 +33,15 @@
   import SalesOutstockPrint from './templates/SalesOutstockPrint.vue';
   import SalesReturnPrint from './templates/SalesReturnPrint.vue';
 
-  const props = withDefaults(defineProps<{ data: WmsPrintDataVO; editable?: boolean }>(), {
-    editable: false,
-  });
+  /**
+   * @param data    单张单据（兼容旧用法）
+   * @param items   批量单据；传入后优先于 data
+   * @param editable 编辑模式（仅单张时生效，批量打印不开放编辑以免串改）
+   */
+  const props = withDefaults(
+    defineProps<{ data?: WmsPrintDataVO; items?: WmsPrintDataVO[]; editable?: boolean }>(),
+    { editable: false },
+  );
 
   const TEMPLATES: Record<string, any> = {
     PROFIT: ProfitListPrint,
@@ -41,27 +53,39 @@
     SALES_RETURN: SalesReturnPrint,
   };
 
-  const template = computed(() => TEMPLATES[props.data.billType] || ProfitListPrint);
+  const items = computed<WmsPrintDataVO[]>(() => {
+    if (props.items && props.items.length) return props.items;
+    return props.data ? [props.data] : [];
+  });
 
-  const snapshotTimeText = computed(() => {
-    const t = props.data.snapshotTime;
+  const editable = computed(() => props.editable && items.value.length === 1);
+
+  function templateOf(item: WmsPrintDataVO) {
+    return TEMPLATES[item.billType] || ProfitListPrint;
+  }
+
+  function snapshotTimeText(t?: string | null) {
     if (!t) return '';
     const d = new Date(t);
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  });
+  }
 
   /** 有快照：提示数据时间；无快照仅有 warn（如本地单金蝶价税取不到）：直接展示原因 */
-  const alertMessage = computed(() =>
-    props.data.snapshotTime
-      ? `金蝶暂不可达，本次预览为 ${snapshotTimeText.value} 的数据`
-      : '打印数据提示',
-  );
-
-  const alertDescription = computed(() => props.data.extras?.warn || '');
+  function alertMessage(item: WmsPrintDataVO) {
+    return item.snapshotTime
+      ? `金蝶暂不可达，本次预览为 ${snapshotTimeText(item.snapshotTime)} 的数据`
+      : '打印数据提示';
+  }
 </script>
 
 <style scoped>
+  .batch-tip {
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: #666;
+  }
+
   .print-area-editable {
     outline: 2px dashed #faad14;
     outline-offset: 4px;
@@ -73,9 +97,18 @@
     background: #fffbe6;
   }
 
+  /* 批量时每张单据之间留间距，打印时由各模板 .print-page 的 page-break-after 分页 */
+  .print-item + .print-item {
+    margin-top: 16px;
+  }
+
   @media print {
     .print-area-editable {
       outline: none;
+    }
+
+    .print-item + .print-item {
+      margin-top: 0;
     }
   }
 </style>

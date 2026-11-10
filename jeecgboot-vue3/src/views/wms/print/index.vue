@@ -34,9 +34,17 @@
         <a-button :disabled="pageNo <= 1" @click="loadList(pageNo - 1)">上一页</a-button>
         <a-button :disabled="!hasMore" @click="loadList(pageNo + 1)">下一页</a-button>
         <a-divider type="vertical" />
-        <a-switch v-model:checked="editing" :disabled="!data" checked-children="编辑中" un-checked-children="只读" />
-        <a-button :disabled="!data || !editing" @click="handleRestore">还原内容</a-button>
-        <a-button type="primary" :disabled="!data" @click="handlePrint">打印</a-button>
+        <a-switch
+          v-model:checked="editing"
+          :disabled="previewItems.length !== 1"
+          checked-children="编辑中"
+          un-checked-children="只读"
+        />
+        <a-button :disabled="previewItems.length !== 1 || !editing" @click="handleRestore">还原内容</a-button>
+        <a-button type="primary" :disabled="!previewItems.length" @click="handlePrint">打印</a-button>
+        <a-button type="primary" ghost :disabled="!selectedRowKeys.length" @click="handleBatchPrint">
+          批量打印{{ selectedRowKeys.length ? `(${selectedRowKeys.length})` : '' }}
+        </a-button>
       </div>
       <div v-if="editing" class="edit-tip">
         可直接在下方预览中修改文字（表头、表格内容、签名、公司信息），<b>修改仅作用于本次打印，不会保存到单据、也不会回写金蝶</b>。
@@ -50,6 +58,7 @@
         row-key="billNo"
         size="small"
         :custom-row="customRow"
+        :row-selection="rowSelection"
         :row-class-name="(record: any) => (record.billNo === selectedNo ? 'row-selected' : '')"
         :scroll="{ y: 280 }"
       >
@@ -62,10 +71,10 @@
     </a-card>
 
     <a-spin :spinning="previewLoading">
-      <div v-if="data" class="preview-wrap">
-        <PrintPreview :data="data" :editable="editing" />
+      <div v-if="previewItems.length" class="preview-wrap">
+        <PrintPreview :items="previewItems" :editable="editing" />
       </div>
-      <a-empty v-else description="点击上方列表中的单据进行预览" />
+      <a-empty v-else description="点击列表中的单据预览，勾选多张可批量打印" />
     </a-spin>
   </div>
 </template>
@@ -98,9 +107,19 @@
   const records = ref<any[]>([]);
   const listLoading = ref(false);
   const previewLoading = ref(false);
-  const data = ref<WmsPrintDataVO | null>(null);
+  const previewItems = ref<WmsPrintDataVO[]>([]);
   const selectedNo = ref('');
   const editing = ref(false);
+  const selectedRowKeys = ref<string[]>([]);
+
+  /** 复选框多选（跨页保留已选；只对当前页可见行生效） */
+  const rowSelection = computed(() => ({
+    selectedRowKeys: selectedRowKeys.value,
+    preserveSelectedRowKeys: true,
+    onChange: (keys: string[]) => {
+      selectedRowKeys.value = keys;
+    },
+  }));
 
   const searchPlaceholder = computed(() => SEARCH_PLACEHOLDERS[activeType.value] || '按单号模糊搜索');
 
@@ -115,9 +134,10 @@
 
   function onTabChange() {
     keyword.value = '';
-    data.value = null;
+    previewItems.value = [];
     selectedNo.value = '';
     editing.value = false;
+    selectedRowKeys.value = [];
     loadList(1);
   }
 
@@ -166,17 +186,57 @@
     try {
       const res: any = await getPrintData({ billType: activeType.value, billNo });
       if (res && res.success) {
-        data.value = res.result;
+        previewItems.value = [res.result];
       } else {
-        data.value = null;
+        previewItems.value = [];
         createMessage.error(res?.message || '查询失败');
       }
     } catch (e: any) {
-      data.value = null;
+      previewItems.value = [];
       createMessage.error(e?.message || '查询失败');
     } finally {
       previewLoading.value = false;
     }
+  }
+
+  /**
+   * 批量打印：逐张取数（串行，避免金蝶接口并发压力），全部就绪后一次性打印。
+   * 取数失败的单据跳过并提示，不影响其余单据。
+   */
+  async function handleBatchPrint() {
+    const keys = [...selectedRowKeys.value];
+    if (!keys.length) return;
+    previewLoading.value = true;
+    editing.value = false;
+    const items: WmsPrintDataVO[] = [];
+    const errors: string[] = [];
+    try {
+      for (const billNo of keys) {
+        try {
+          const res: any = await getPrintData({ billType: activeType.value, billNo });
+          if (res && res.success) {
+            items.push(res.result);
+          } else {
+            errors.push(`${billNo}：${res?.message || '取数失败'}`);
+          }
+        } catch (e: any) {
+          errors.push(`${billNo}：${e?.message || '取数失败'}`);
+        }
+      }
+    } finally {
+      previewLoading.value = false;
+    }
+    if (!items.length) {
+      createMessage.error('选中的单据都无法打印');
+      return;
+    }
+    previewItems.value = items;
+    selectedNo.value = '';
+    if (errors.length) {
+      createMessage.warning(`${errors.length} 张取数失败已跳过（${errors[0]}${errors.length > 1 ? ' 等' : ''}）`);
+    }
+    // 等预览渲染完成再拉起打印对话框
+    setTimeout(() => window.print(), 400);
   }
 
   /** 还原：重新拉取原始数据（丢弃手工修改） */
@@ -187,7 +247,7 @@
   }
 
   function handlePrint() {
-    if (!data.value) return;
+    if (!previewItems.value.length) return;
     window.print();
   }
 </script>

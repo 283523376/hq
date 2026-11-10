@@ -57,7 +57,7 @@
 
   /** 列宽 %（样单观感：序号窄、名称/规格宽） */
   function colWidth(index: number) {
-    const widths = ['6%', '20%', '28%', '20%', '8%', '8%', '10%'];
+    const widths = ['7%', '21%', '21%', '20%', '5%', '9.5%', '16.5%'];
     return { width: widths[index] || 'auto' };
   }
 </script>

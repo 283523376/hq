@@ -37,13 +37,11 @@
           <tr v-for="(row, ri) in page" :key="ri">
             <td v-for="(cell, ci) in row" :key="ci" :class="{ center: ci === 1 || ci === 2 || ci === 3 || ci === 4 }">{{ cell }}</td>
           </tr>
+          <!-- 纸样：合计窄格 + 单位/数量合并且数字右贴格端 + 单价/货款/备注合并 -->
           <tr v-if="pi === data.totalPages - 1" class="total-row">
             <td>合计</td>
-            <td></td>
-            <td>{{ data.totalsOnLastPage['数量'] }}</td>
-            <td></td>
-            <td>{{ data.totalsOnLastPage['货款'] || '' }}</td>
-            <td></td>
+            <td colspan="2" class="total-number">{{ data.totalsOnLastPage['数量'] }}</td>
+            <td colspan="3">{{ data.totalsOnLastPage['货款'] || '' }}</td>
           </tr>
         </tbody>
       </table>
@@ -82,7 +80,7 @@
   const infoRight = computed(() => companyInfo.value.slice(leftCount.value));
 
   function colWidth(index: number) {
-    const widths = ['40%', '8%', '7.5%', '7%', '9%', '27%'];
+    const widths = ['47%', '6%', '10%', '6%', '8%', '23%'];
     return { width: widths[index] || 'auto' };
   }
 </script>
@@ -148,5 +146,9 @@
   /* 销售出库单五栏落款：纸样 4% / 38% / 54% / 72% / 95% */
   :deep(.sheet-footers) {
     padding: 0 5% 0 4%;
+  }
+  .total-number {
+    text-align: right;
+    padding-right: 10px;
   }
 </style>
