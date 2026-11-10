@@ -84,7 +84,7 @@ export const wmsData: WmsNode = {
         {
           text: '外购/受托原材料入库',
           children: [
-            { text: '大改小（改制单）' },
+            { text: '改刀料（直入立库）' },
             { text: '段差棒直入' },
           ],
         },
