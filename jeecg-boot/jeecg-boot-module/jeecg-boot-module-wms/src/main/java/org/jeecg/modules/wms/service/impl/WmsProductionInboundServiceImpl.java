@@ -188,6 +188,8 @@ public class WmsProductionInboundServiceImpl
                         ? WmsConstants.TASK_STATUS_NOT_DISPATCHED : WmsConstants.TASK_STATUS_FINISHED)
                 .setDefectRemark(dto.getDefectRemark())
                 .setRemark(dto.getRemark())
+                .setConversionOrderId(dto.getConversionOrderId())
+                .setSourceMaterialCode(dto.getSourceMaterialCode())
                 // 方案 B（2026-11-06 拍板）：半成品由车间工序汇报生成 ERP 入库单，WMS 不回写 PRD_INSTOCK——
                 // 良品/纯不良都不进同步队列（不良品走不良品台账通道，与本单无关）；
                 // 成品只有纯不良（无设备任务、提交即入库）才需要立即排队回写

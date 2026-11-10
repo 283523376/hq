@@ -211,6 +211,9 @@ class WmsConversionServiceImplTest {
         assertEquals(WmsConstants.PRODUCT_TYPE_SEMI, dto.getProductType());
         assertEquals(CONVERSION_NO, dto.getCarrierCode());
         assertEquals("改制单:" + CONVERSION_NO, dto.getRemark());
+        // 技术债 §5-23：结构化关联必须带上，反查不能再依赖 remark 字符串
+        assertEquals(ORDER_ID, dto.getConversionOrderId());
+        assertEquals("M-RAW", dto.getSourceMaterialCode());
     }
 
     @Test

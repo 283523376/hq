@@ -5,6 +5,7 @@ import org.jeecg.modules.wms.entity.WmsStocktakeDetail;
 import org.jeecg.modules.wms.entity.WmsStocktakeOrder;
 import org.jeecg.modules.wms.mapper.WmsStocktakeDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
+import org.jeecg.modules.wms.sync.IWmsKingdeeInventoryReader;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
@@ -40,6 +41,7 @@ class WmsStocktakeErpWriterTest {
     private WmsStocktakeDetailMapper detailMapper;
     private WmsStocktakeOrderMapper orderMapper;
     private org.jeecg.modules.wms.mapper.WmsMaterialMapper materialMapper;
+    private IWmsKingdeeInventoryReader inventoryReader;
     private WmsStocktakeErpWriterImpl writer;
 
     @BeforeEach
@@ -50,7 +52,15 @@ class WmsStocktakeErpWriterTest {
         detailMapper = mock(WmsStocktakeDetailMapper.class);
         orderMapper = mock(WmsStocktakeOrderMapper.class);
         materialMapper = mock(org.jeecg.modules.wms.mapper.WmsMaterialMapper.class);
-        writer = new WmsStocktakeErpWriterImpl(properties, formClient, detailMapper, orderMapper, materialMapper);
+        inventoryReader = mock(IWmsKingdeeInventoryReader.class);
+        // 默认金蝶有货，避免前置校验干扰原有断言；验证拦截时在用例内覆盖
+        when(inventoryReader.queryInventory(any())).thenReturn(Map.of(
+                "D.01|MC-m1|B1", new BigDecimal("100"),
+                "D.01|MC-m2|B1", new BigDecimal("100"),
+                "D.01|MC-m3|B1", new BigDecimal("100"),
+                "D.02|MC-m2|B1", new BigDecimal("100")));
+        writer = new WmsStocktakeErpWriterImpl(properties, formClient, detailMapper, orderMapper,
+                materialMapper, inventoryReader);
         // 公共桩：保存成功后要 Submit（不提交单据停在 A），默认成功
         when(formClient.submit(anyString(), any()))
                 .thenReturn(WmsKingdeeResult.ok("{}", List.of(), null, null));
@@ -197,5 +207,34 @@ class WmsStocktakeErpWriterTest {
         writer.writeLoss(order());
 
         verify(formClient).submit("STK_MisDelivery", List.of("QTCK000001"));
+    }
+
+    /** 技术债 §5-15b：金蝶目标仓没有足够即时库存时，不得开出必被审核拒绝的 QTCK。 */
+    @Test
+    void lossIsBlockedWhenKingdeeInventoryInsufficient() {
+        properties.getStocktake().setStockCode("D.02");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("loc-2", "m2", "10", "7")));
+        when(inventoryReader.queryInventory(any()))
+                .thenReturn(Map.of("D.02|MC-m2|B1", new BigDecimal("1")));
+
+        WmsOrderSyncResult loss = writer.writeLoss(order());
+
+        assertFalse(loss.isSuccess());
+        assertTrue(loss.getErrorMessage().contains("前置校验"), loss.getErrorMessage());
+        verify(formClient, never()).save(anyString(), any());
+    }
+
+    /** 查询故障不等于库存不足：金蝶不可用时放行，交给原有 Save 失败链路。 */
+    @Test
+    void lossProceedsWhenInventoryQueryFails() {
+        properties.getStocktake().setStockCode("D.02");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("loc-2", "m2", "10", "7")));
+        when(inventoryReader.queryInventory(any())).thenThrow(new RuntimeException("金蝶超时"));
+        when(formClient.save(anyString(), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", List.of(), "QTCK1", "1"));
+
+        WmsOrderSyncResult loss = writer.writeLoss(order());
+
+        assertTrue(loss.isSuccess(), loss.getErrorMessage());
     }
 }

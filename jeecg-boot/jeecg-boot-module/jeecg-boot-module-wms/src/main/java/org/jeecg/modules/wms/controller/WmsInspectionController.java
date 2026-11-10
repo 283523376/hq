@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.modules.wms.dto.WmsInspectCompleteDTO;
 import org.jeecg.modules.wms.service.IWmsInspectionService;
@@ -44,6 +45,10 @@ public class WmsInspectionController {
     }
 
     @Operation(summary = "检验-提交结果（合格/不合格）")
+    // 技术债 §5-18：权限码沿用 V3.9.5_11 的种子 wms:inspection:do。
+    // 该模块随方案 A 停用、权限点已逻辑删除，加注解是 fail-closed：
+    // 真要用时须先恢复权限点与角色授权，不能靠「没注解」默认放行。
+    @RequiresPermissions("wms:inspection:do")
     @PostMapping(value = "/{id}/complete")
     public Result<Void> complete(@PathVariable("id") String id, @RequestBody WmsInspectCompleteDTO dto) {
         try {

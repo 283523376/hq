@@ -172,6 +172,14 @@ public class WmsProductionInbound extends JeecgEntity {
     @Schema(description = "备注")
     private String remark;
 
+    /** 改制单 ID（改制产出关联，wms_conversion_order.id；V3.9.5_59，技术债 §5-23） */
+    @Schema(description = "改制单ID")
+    private String conversionOrderId;
+
+    /** 来源物料编码（改制投入物料；V3.9.5_59，技术债 §5-23） */
+    @Schema(description = "来源物料编码")
+    private String sourceMaterialCode;
+
     /** 目标库位编码（非持久化，列表/详情展示用） */
     @TableField(exist = false)
     @Schema(description = "目标库位编码")

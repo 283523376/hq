@@ -259,6 +259,26 @@ class WmsDefectSourceTest {
         verify(defectRecordMapper, never()).insert(any(WmsDefectRecord.class));
     }
 
+    /** 技术债 §5-21：废品仓里的受托货已判废，不能拿来抵扣正常处置的数量。 */
+    @Test
+    void consignedScrap_excludesScrapWarehouseRows() {
+        stubConsignorChain();
+        WmsInventory scrapRow = consignedRow("IV-SCRAP", "S1", "5");
+        scrapRow.setLocationId("L-SCRAP");
+        WmsInventory goodRow = consignedRow("IV-A", "S1", "3");
+        goodRow.setLocationId("L-GOOD");
+        when(inventoryMapper.selectList(any())).thenReturn(List.of(scrapRow, goodRow));
+        when(warehouseMapper.selectList(any())).thenReturn(List.of(scrapWarehouse()));
+        when(locationMapper.selectList(any())).thenReturn(List.of(scrapLocation()));
+
+        // 可用只有好货仓的 3，废品仓的 5 不能算进来
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> service.recordInbound(consignedDto(WmsConstants.DEFECT_DISPOSAL_SCRAP, "4"), "tester"));
+
+        assertTrue(e.getMessage().contains("受托库存不足"), e.getMessage());
+        verify(inventoryMapper, never()).deductQuantity(anyString(), any());
+    }
+
     /** 受托 RETURN：只登记台账（待处理），不扣受托库存、不写废品仓。 */
     @Test
     void consignedReturn_onlyRegistersRecord() {
