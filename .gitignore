@@ -1,0 +1,28 @@
+# 嵌套的独立仓库：各自有远端，用 hq.git 的分支镜像备份，不在本仓重复存
+/code/yongxin_WMS/
+/code/wms-logicflow-designer/
+
+# 调试残留、日志、数据库快照；.tmp_env/kingdee.env 含明文凭据，绝不入库
+/code/tmp_files/
+*.log
+
+# 客户与第三方原始资料：方案 PPTX、厂商手册、其他客户的蓝图，不推个人仓库
+/资料/
+/软件蓝图/
+
+# 工具与本地配置
+.idea/
+.claude/
+/code/.claude/
+/code/.pi/
+/proofshot-artifacts/
+
+# 构建/依赖产物
+node_modules/
+target/
+dist/
+__pycache__/
+*.pyc
+
+# 证明工具产物（截图/录像）
+/code/proofshot-artifacts/

@@ -1,0 +1,2136 @@
+{
+ "YX-WMS-BD-001": {
+  "code": "YX-WMS-BD-001",
+  "name": "物料与分类管理流程",
+  "lanes": [
+   "管理员",
+   "WMS系统",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "登录管理端\n进入基础管理",
+    "lane": "管理员"
+   },
+   "A2": {
+    "text": "选择物料分类管理",
+    "lane": "管理员"
+   },
+   "A3": {
+    "text": "新增/编辑/停用分类",
+    "lane": "管理员"
+   },
+   "A4": {
+    "text": "维护物料信息\n编码/名称/规格",
+    "lane": "管理员"
+   },
+   "A5": {
+    "text": "保存物料信息",
+    "lane": "管理员"
+   },
+   "A6": {
+    "text": "批量导入/导出",
+    "lane": "管理员"
+   },
+   "S1": {
+    "text": "展示现有分类树",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "校验分类编码\n唯一性",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "校验物料编码\n唯一性",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "写入数据库\n记录操作日志",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "解析文件\n校验数据格式",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "编码重复\n提示重新输入",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "保存失败\n回滚并提示",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "格式错误\n提示错误行号",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "A3",
+    "label": ""
+   },
+   {
+    "source": "A3",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "A4",
+    "label": "通过"
+   },
+   {
+    "source": "A4",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "E1",
+    "label": "不通过"
+   },
+   {
+    "source": "S3",
+    "target": "A5",
+    "label": "通过"
+   },
+   {
+    "source": "A5",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "E1",
+    "label": "不通过"
+   },
+   {
+    "source": "S4",
+    "target": "A6",
+    "label": ""
+   },
+   {
+    "source": "A6",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "S4",
+    "label": "格式正确"
+   },
+   {
+    "source": "S5",
+    "target": "E3",
+    "label": "格式错误"
+   },
+   {
+    "source": "S4",
+    "target": "E2",
+    "label": "保存失败"
+   }
+  ]
+ },
+ "YX-WMS-BD-002": {
+  "code": "YX-WMS-BD-002",
+  "name": "生产工单管理流程",
+  "lanes": [
+   "计划员",
+   "WMS系统",
+   "ERP/MES",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "登录\n进入基础管理",
+    "lane": "计划员"
+   },
+   "A2": {
+    "text": "新建生产工单\n工单号/物料/产品类型/计划数量",
+    "lane": "计划员"
+   },
+   "A3": {
+    "text": "提交工单审核",
+    "lane": "计划员"
+   },
+   "A4": {
+    "text": "审核通过",
+    "lane": "计划员"
+   },
+   "A6": {
+    "text": "查询工单执行情况",
+    "lane": "计划员"
+   },
+   "S2": {
+    "text": "校验工单号\n唯一性",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "状态置为待审核",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "状态置为已下达",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "按工单号upsert",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "展示工单关联的\n入库记录",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "同步工单至MES\n接收MES推送",
+    "lane": "ERP/MES"
+   },
+   "X2": {
+    "text": "工单号重复提示",
+    "lane": "异常处理"
+   },
+   "X3": {
+    "text": "同步失败\n重试并告警",
+    "lane": "异常处理"
+   },
+   "X4": {
+    "text": "无记录提示",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "A3",
+    "label": "通过"
+   },
+   {
+    "source": "A3",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "A4",
+    "label": ""
+   },
+   {
+    "source": "A4",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S4",
+    "target": "E1",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "X2",
+    "label": "不通过"
+   },
+   {
+    "source": "E1",
+    "target": "A6",
+    "label": "成功"
+   },
+   {
+    "source": "A6",
+    "target": "S6",
+    "label": ""
+   },
+   {
+    "source": "E1",
+    "target": "X3",
+    "label": "失败"
+   },
+   {
+    "source": "S6",
+    "target": "X4",
+    "label": "无记录"
+   }
+  ]
+ },
+ "YX-WMS-BD-003": {
+  "code": "YX-WMS-BD-003",
+  "name": "库区/库位与设备绑定流程",
+  "lanes": [
+   "管理员",
+   "WMS系统",
+   "WCS/RMS",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "登录\n进入仓库管理",
+    "lane": "管理员"
+   },
+   "A2": {
+    "text": "选择库区/库位管理",
+    "lane": "管理员"
+   },
+   "A3": {
+    "text": "新增库区\n立库/敏捷仓",
+    "lane": "管理员"
+   },
+   "A4": {
+    "text": "按规则生成库位编码",
+    "lane": "管理员"
+   },
+   "A5": {
+    "text": "绑定设备\n堆垛机/SCR/分拣单元",
+    "lane": "管理员"
+   },
+   "A6": {
+    "text": "设置库位属性\n承重/状态",
+    "lane": "管理员"
+   },
+   "A7": {
+    "text": "保存并生效",
+    "lane": "管理员"
+   },
+   "S1": {
+    "text": "展示库区树",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "校验库区\n编码唯一性",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "批量生成库位",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "保存设备与库区关联",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "更新库位属性",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "记录操作日志",
+    "lane": "WMS系统"
+   },
+   "W1": {
+    "text": "接收设备注册信息",
+    "lane": "WCS/RMS"
+   },
+   "E1": {
+    "text": "编码重复提示",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "生成失败提示",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "设备离线告警",
+    "lane": "异常处理"
+   },
+   "E4": {
+    "text": "保存失败回滚",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "A3",
+    "label": ""
+   },
+   {
+    "source": "A3",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "A4",
+    "label": "通过"
+   },
+   {
+    "source": "A4",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "E1",
+    "label": "不通过"
+   },
+   {
+    "source": "S3",
+    "target": "A5",
+    "label": "成功"
+   },
+   {
+    "source": "A5",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S4",
+    "target": "W1",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "E2",
+    "label": "失败"
+   },
+   {
+    "source": "W1",
+    "target": "E3",
+    "label": "设备离线"
+   },
+   {
+    "source": "W1",
+    "target": "A6",
+    "label": "设备在线"
+   },
+   {
+    "source": "A6",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "A7",
+    "label": ""
+   },
+   {
+    "source": "A7",
+    "target": "S6",
+    "label": ""
+   },
+   {
+    "source": "S6",
+    "target": "E4",
+    "label": "保存失败"
+   }
+  ]
+ },
+ "YX-WMS-BD-004": {
+  "code": "YX-WMS-BD-004",
+  "name": "权限与系统配置流程",
+  "lanes": [
+   "系统管理员",
+   "WMS系统",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "登录管理端\n进入系统管理",
+    "lane": "系统管理员"
+   },
+   "A2": {
+    "text": "维护账号与角色权限",
+    "lane": "系统管理员"
+   },
+   "A3": {
+    "text": "配置库存预警阈值",
+    "lane": "系统管理员"
+   },
+   "A4": {
+    "text": "配置上位系统同步范围",
+    "lane": "系统管理员"
+   },
+   "A5": {
+    "text": "配置不良品存放规则",
+    "lane": "系统管理员"
+   },
+   "A6": {
+    "text": "配置设备告警阈值",
+    "lane": "系统管理员"
+   },
+   "A7": {
+    "text": "保存全部配置",
+    "lane": "系统管理员"
+   },
+   "S1": {
+    "text": "校验权限\n编码唯一性",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "保存阈值参数",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "保存同步规则",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "保存规则",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "保存阈值",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "写入数据库\n留痕",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "冲突提示",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "阈值非法提示",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "保存失败\n回滚并提示",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "A3",
+    "label": "通过"
+   },
+   {
+    "source": "A3",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "E1",
+    "label": "不通过"
+   },
+   {
+    "source": "S2",
+    "target": "E2",
+    "label": "非法"
+   },
+   {
+    "source": "S2",
+    "target": "A4",
+    "label": "合法"
+   },
+   {
+    "source": "A4",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "A5",
+    "label": ""
+   },
+   {
+    "source": "A5",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S4",
+    "target": "A6",
+    "label": ""
+   },
+   {
+    "source": "A6",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "A7",
+    "label": ""
+   },
+   {
+    "source": "A7",
+    "target": "S6",
+    "label": ""
+   },
+   {
+    "source": "S6",
+    "target": "E3",
+    "label": "失败"
+   }
+  ]
+ },
+ "YX-WMS-RK-002": {
+  "code": "YX-WMS-RK-002",
+  "name": "生产入库流程（半成品/成品）",
+  "lanes": [
+   "操作员",
+   "WMS系统",
+   "WCS/RMS",
+   "堆垛机/SCR",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "扫码工单",
+    "lane": "操作员"
+   },
+   "A2": {
+    "text": "录入良品/不良品数量",
+    "lane": "操作员"
+   },
+   "S1": {
+    "text": "调出工单信息",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "校验数量\n合理性",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "不良品→入废品仓",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "良品→分配库位",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "下发入库任务",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "更新库存\n绑定RFID/二维码",
+    "lane": "WMS系统"
+   },
+   "S7": {
+    "text": "同步ERP/MES/WMS",
+    "lane": "WMS系统"
+   },
+   "W1": {
+    "text": "接收任务\n调度设备",
+    "lane": "WCS/RMS"
+   },
+   "D1": {
+    "text": "堆垛机/SCR执行",
+    "lane": "堆垛机/SCR"
+   },
+   "D2": {
+    "text": "物料上架/入箱",
+    "lane": "堆垛机/SCR"
+   },
+   "E1": {
+    "text": "工单不存在提示",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "数量异常提示",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "库位不足告警",
+    "lane": "异常处理"
+   },
+   "E4": {
+    "text": "设备故障\n告警并转人工",
+    "lane": "异常处理"
+   },
+   "E5": {
+    "text": "上架失败重试",
+    "lane": "异常处理"
+   },
+   "E6": {
+    "text": "同步失败\n重试并告警",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "E1",
+    "label": "不存在"
+   },
+   {
+    "source": "S1",
+    "target": "A2",
+    "label": "存在"
+   },
+   {
+    "source": "A2",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "E2",
+    "label": "异常"
+   },
+   {
+    "source": "S2",
+    "target": "S3",
+    "label": "正常"
+   },
+   {
+    "source": "S2",
+    "target": "S4",
+    "label": "正常"
+   },
+   {
+    "source": "S4",
+    "target": "E3",
+    "label": "库位不足"
+   },
+   {
+    "source": "S4",
+    "target": "S5",
+    "label": "库位充足"
+   },
+   {
+    "source": "S5",
+    "target": "W1",
+    "label": ""
+   },
+   {
+    "source": "W1",
+    "target": "D1",
+    "label": ""
+   },
+   {
+    "source": "D1",
+    "target": "D2",
+    "label": ""
+   },
+   {
+    "source": "D1",
+    "target": "E4",
+    "label": "故障"
+   },
+   {
+    "source": "D2",
+    "target": "E5",
+    "label": "失败"
+   },
+   {
+    "source": "D2",
+    "target": "S6",
+    "label": "成功"
+   },
+   {
+    "source": "S6",
+    "target": "S7",
+    "label": ""
+   },
+   {
+    "source": "S7",
+    "target": "E6",
+    "label": "失败"
+   }
+  ]
+ },
+ "YX-WMS-RK-005": {
+  "code": "YX-WMS-RK-005",
+  "name": "不良品入库流程",
+  "lanes": [
+   "操作员",
+   "WMS系统",
+   "ERP/MES",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "扫码生产工单",
+    "lane": "操作员"
+   },
+   "A2": {
+    "text": "录入不良数量与原因",
+    "lane": "操作员"
+   },
+   "S1": {
+    "text": "调出工单物料信息",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "校验数量\n合理性",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "校验废品仓\n默认库位",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "写入废品仓\n默认库位库存",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "记录不良品台账\n生产入库记录",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "发送同步报文",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "接收并更新库存",
+    "lane": "ERP/MES"
+   },
+   "X1": {
+    "text": "工单无效提示",
+    "lane": "异常处理"
+   },
+   "X2": {
+    "text": "数量超出工单范围提示",
+    "lane": "异常处理"
+   },
+   "X3": {
+    "text": "废品仓未配置\n提示联系管理员",
+    "lane": "异常处理"
+   },
+   "X4": {
+    "text": "同步失败\n重试并告警",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "X1",
+    "label": "无效"
+   },
+   {
+    "source": "S1",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "X2",
+    "label": "异常"
+   },
+   {
+    "source": "S2",
+    "target": "S3",
+    "label": "正常"
+   },
+   {
+    "source": "S3",
+    "target": "X3",
+    "label": "未配置"
+   },
+   {
+    "source": "S3",
+    "target": "S4",
+    "label": "已配置"
+   },
+   {
+    "source": "S4",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "S6",
+    "label": ""
+   },
+   {
+    "source": "S6",
+    "target": "E1",
+    "label": ""
+   },
+   {
+    "source": "S6",
+    "target": "X4",
+    "label": "失败"
+   }
+  ]
+ },
+ "YX-WMS-CK-001": {
+  "code": "YX-WMS-CK-001",
+  "name": "生产领料出库流程（半成品）",
+  "lanes": [
+   "领料人",
+   "半成品立库",
+   "WMS系统",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "扫码生产工单",
+    "lane": "领料人"
+   },
+   "A2": {
+    "text": "取料确认",
+    "lane": "领料人"
+   },
+   "C1": {
+    "text": "调出工单需求物料与数量",
+    "lane": "半成品立库"
+   },
+   "C2": {
+    "text": "检查立库库存",
+    "lane": "半成品立库"
+   },
+   "C3": {
+    "text": "分配立库货位",
+    "lane": "半成品立库"
+   },
+   "C4": {
+    "text": "下发堆垛机\n出库任务",
+    "lane": "半成品立库"
+   },
+   "C5": {
+    "text": "出库回执",
+    "lane": "半成品立库"
+   },
+   "S1": {
+    "text": "校验工单\n有效性",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "校验库存\n是否足够",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "按工单需求数量分配",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "调度设备",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "扣减库存\n生成领用记录",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "同步ERP/MES/WMS",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "工单不存在提示",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "库存不足\n提示并转人工",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "库位异常\n提示并转人工",
+    "lane": "异常处理"
+   },
+   "E4": {
+    "text": "设备故障\n告警并转人工",
+    "lane": "异常处理"
+   },
+   "E5": {
+    "text": "同步失败\n重试并告警",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "E1",
+    "label": "无效"
+   },
+   {
+    "source": "S1",
+    "target": "C1",
+    "label": "有效"
+   },
+   {
+    "source": "C1",
+    "target": "C2",
+    "label": ""
+   },
+   {
+    "source": "C2",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "E2",
+    "label": "不足"
+   },
+   {
+    "source": "S2",
+    "target": "C3",
+    "label": "足够"
+   },
+   {
+    "source": "C3",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "E3",
+    "label": "异常"
+   },
+   {
+    "source": "S3",
+    "target": "C4",
+    "label": "正常"
+   },
+   {
+    "source": "C4",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S4",
+    "target": "E4",
+    "label": "故障"
+   },
+   {
+    "source": "S4",
+    "target": "A2",
+    "label": "正常"
+   },
+   {
+    "source": "A2",
+    "target": "C5",
+    "label": ""
+   },
+   {
+    "source": "C5",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "S6",
+    "label": ""
+   },
+   {
+    "source": "S6",
+    "target": "E5",
+    "label": "失败"
+   }
+  ]
+ },
+ "YX-WMS-CK-002": {
+  "code": "YX-WMS-CK-002",
+  "name": "成品销售出库流程",
+  "lanes": [
+   "仓管员",
+   "WMS系统",
+   "WCS/RMS",
+   "SCR/分拣单元",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "录入销售订单",
+    "lane": "仓管员"
+   },
+   "A2": {
+    "text": "复核出库物料",
+    "lane": "仓管员"
+   },
+   "A3": {
+    "text": "确认出库",
+    "lane": "仓管员"
+   },
+   "S1": {
+    "text": "调出订单信息",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "分配料箱库位",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "下发出库任务",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "校验物料与订单一致性",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "扣减库存\n生成出库单",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "同步ERP/MES",
+    "lane": "WMS系统"
+   },
+   "W1": {
+    "text": "接收任务\n调度设备",
+    "lane": "WCS/RMS"
+   },
+   "D1": {
+    "text": "SCR执行取箱",
+    "lane": "SCR/分拣单元"
+   },
+   "D2": {
+    "text": "分拣单元输送至出货口",
+    "lane": "SCR/分拣单元"
+   },
+   "E1": {
+    "text": "订单不存在提示",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "库存不足告警",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "设备故障\n告警并转人工",
+    "lane": "异常处理"
+   },
+   "E4": {
+    "text": "输送异常告警",
+    "lane": "异常处理"
+   },
+   "E5": {
+    "text": "复核不一致提示",
+    "lane": "异常处理"
+   },
+   "E6": {
+    "text": "同步失败\n重试并告警",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "E1",
+    "label": "不存在"
+   },
+   {
+    "source": "S1",
+    "target": "S2",
+    "label": "存在"
+   },
+   {
+    "source": "S2",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "W1",
+    "label": ""
+   },
+   {
+    "source": "W1",
+    "target": "D1",
+    "label": ""
+   },
+   {
+    "source": "D1",
+    "target": "D2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "E2",
+    "label": "库存不足"
+   },
+   {
+    "source": "D1",
+    "target": "E3",
+    "label": "故障"
+   },
+   {
+    "source": "D2",
+    "target": "E4",
+    "label": "异常"
+   },
+   {
+    "source": "D2",
+    "target": "A2",
+    "label": "正常"
+   },
+   {
+    "source": "A2",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S4",
+    "target": "E5",
+    "label": "不一致"
+   },
+   {
+    "source": "S4",
+    "target": "A3",
+    "label": "一致"
+   },
+   {
+    "source": "A3",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "S6",
+    "label": ""
+   },
+   {
+    "source": "S6",
+    "target": "E6",
+    "label": "失败"
+   }
+  ]
+ },
+ "YX-WMS-CK-004": {
+  "code": "YX-WMS-CK-004",
+  "name": "库存调拨流程",
+  "lanes": [
+   "仓管员",
+   "WMS系统",
+   "WCS/RMS",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "创建调拨单",
+    "lane": "仓管员"
+   },
+   "S1": {
+    "text": "校验调拨\n可行性",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "分配调出与调入库位",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "下发调拨任务",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "更新库存",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "同步ERP/MES",
+    "lane": "WMS系统"
+   },
+   "W1": {
+    "text": "调度设备",
+    "lane": "WCS/RMS"
+   },
+   "E1": {
+    "text": "库存不足提示",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "库位异常提示",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "设备故障告警",
+    "lane": "异常处理"
+   },
+   "E4": {
+    "text": "同步失败\n重试并告警",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "E1",
+    "label": "不可行"
+   },
+   {
+    "source": "S1",
+    "target": "S2",
+    "label": "可行"
+   },
+   {
+    "source": "S2",
+    "target": "E2",
+    "label": "异常"
+   },
+   {
+    "source": "S2",
+    "target": "S3",
+    "label": "正常"
+   },
+   {
+    "source": "S3",
+    "target": "W1",
+    "label": ""
+   },
+   {
+    "source": "W1",
+    "target": "E3",
+    "label": "故障"
+   },
+   {
+    "source": "W1",
+    "target": "S4",
+    "label": "正常"
+   },
+   {
+    "source": "S4",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "E4",
+    "label": "失败"
+   }
+  ]
+ },
+ "YX-WMS-KC-001": {
+  "code": "YX-WMS-KC-001",
+  "name": "库存预警与批次管理流程",
+  "lanes": [
+   "仓管员",
+   "WMS系统",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "登录管理端\n进入库存管理",
+    "lane": "仓管员"
+   },
+   "A2": {
+    "text": "设置预警规则\n库存下限/存放超期",
+    "lane": "仓管员"
+   },
+   "A3": {
+    "text": "接收预警并处理",
+    "lane": "仓管员"
+   },
+   "A4": {
+    "text": "补料/清理超期物料",
+    "lane": "仓管员"
+   },
+   "A5": {
+    "text": "按批次查询库存",
+    "lane": "仓管员"
+   },
+   "S1": {
+    "text": "保存规则",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "按规则监控库存",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "触发预警\n生成提醒",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "记录处理结果",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "解除预警留痕",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "展示批次明细\n与流转记录",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "规则非法提示",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "重复触发\n合并提醒",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "批次缺失\n提示补充",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "E1",
+    "label": "非法"
+   },
+   {
+    "source": "S1",
+    "target": "S2",
+    "label": "合法"
+   },
+   {
+    "source": "S2",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "E2",
+    "label": "重复触发"
+   },
+   {
+    "source": "S3",
+    "target": "A3",
+    "label": "正常"
+   },
+   {
+    "source": "A3",
+    "target": "A4",
+    "label": ""
+   },
+   {
+    "source": "A4",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S4",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "A5",
+    "label": ""
+   },
+   {
+    "source": "A5",
+    "target": "S6",
+    "label": ""
+   },
+   {
+    "source": "S6",
+    "target": "E3",
+    "label": "缺失"
+   }
+  ]
+ },
+ "YX-WMS-KC-002": {
+  "code": "YX-WMS-KC-002",
+  "name": "仓库盘点与库存调整流程",
+  "lanes": [
+   "系统管理员",
+   "现场操作员",
+   "WMS系统",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "发起盘点\n生成盘库单",
+    "lane": "系统管理员"
+   },
+   "A2": {
+    "text": "管理员确认差异",
+    "lane": "系统管理员"
+   },
+   "B1": {
+    "text": "逐个库位清点",
+    "lane": "现场操作员"
+   },
+   "B2": {
+    "text": "录入实际数量",
+    "lane": "现场操作员"
+   },
+   "S1": {
+    "text": "校验盘点范围",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "记录实际数量",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "差异比对\n账面vs实盘",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "等待确认",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "按实际数量调整库存",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "生成盘库记录并归档",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "范围异常提示",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "数量异常提示",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "差异超阈值\n需复核",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "E1",
+    "label": "异常"
+   },
+   {
+    "source": "S1",
+    "target": "B1",
+    "label": "正常"
+   },
+   {
+    "source": "B1",
+    "target": "B2",
+    "label": ""
+   },
+   {
+    "source": "B2",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "E2",
+    "label": "异常"
+   },
+   {
+    "source": "S2",
+    "target": "S3",
+    "label": "正常"
+   },
+   {
+    "source": "S3",
+    "target": "E3",
+    "label": "超阈值"
+   },
+   {
+    "source": "S3",
+    "target": "S4",
+    "label": "正常"
+   },
+   {
+    "source": "S4",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "S6",
+    "label": ""
+   }
+  ]
+ },
+ "YX-WMS-KC-004": {
+  "code": "YX-WMS-KC-004",
+  "name": "库存查询与报表导出流程",
+  "lanes": [
+   "仓管员",
+   "WMS系统",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "登录管理端\n进入库存管理",
+    "lane": "仓管员"
+   },
+   "A2": {
+    "text": "选择查询条件\n物料/批次/库位",
+    "lane": "仓管员"
+   },
+   "A3": {
+    "text": "导出查询结果",
+    "lane": "仓管员"
+   },
+   "S1": {
+    "text": "检索库存",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "展示库存明细\n数量/批次/位置",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "生成Excel/CSV",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "记录查询日志\n操作人/时间",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "无匹配记录\n提示更换条件",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "导出失败重试",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "E1",
+    "label": "无匹配"
+   },
+   {
+    "source": "S1",
+    "target": "S2",
+    "label": "有匹配"
+   },
+   {
+    "source": "S2",
+    "target": "A3",
+    "label": ""
+   },
+   {
+    "source": "A3",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "E2",
+    "label": "失败"
+   }
+  ]
+ },
+ "YX-WMS-SB-001": {
+  "code": "YX-WMS-SB-001",
+  "name": "上位系统数据同步流程（ERP/MES/WMS）",
+  "lanes": [
+   "系统管理员",
+   "WMS系统",
+   "上位系统",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "登录管理端\n进入系统管理",
+    "lane": "系统管理员"
+   },
+   "A2": {
+    "text": "选择同步范围\n或触发自动同步",
+    "lane": "系统管理员"
+   },
+   "A3": {
+    "text": "核对差异清单",
+    "lane": "系统管理员"
+   },
+   "S1": {
+    "text": "汇总柜内库存\n与出入库记录",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "按接口推送同步报文",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "同步结果判定\n成功/失败",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "差异核对\n柜内账vs上位账",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "记录同步日志\n操作人/时间",
+    "lane": "WMS系统"
+   },
+   "U1": {
+    "text": "接收报文\n更新上位系统账",
+    "lane": "上位系统"
+   },
+   "E1": {
+    "text": "推送失败\n自动重试并告警",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "存在差异\n生成差异清单",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "U1",
+    "label": ""
+   },
+   {
+    "source": "U1",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "E1",
+    "label": "失败"
+   },
+   {
+    "source": "S3",
+    "target": "S4",
+    "label": "成功"
+   },
+   {
+    "source": "S4",
+    "target": "E2",
+    "label": "存在差异"
+   },
+   {
+    "source": "E2",
+    "target": "A3",
+    "label": ""
+   },
+   {
+    "source": "S4",
+    "target": "S5",
+    "label": "无差异"
+   }
+  ]
+ },
+ "YX-WMS-SB-002": {
+  "code": "YX-WMS-SB-002",
+  "name": "WCS/RMS设备调度与状态采集流程",
+  "lanes": [
+   "WMS系统",
+   "WCS/RMS",
+   "堆垛机/SCR",
+   "异常处理"
+  ],
+  "nodes": {
+   "S1": {
+    "text": "生成设备任务",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "记录状态日志留痕",
+    "lane": "WMS系统"
+   },
+   "W1": {
+    "text": "接收任务",
+    "lane": "WCS/RMS"
+   },
+   "W2": {
+    "text": "调度设备执行",
+    "lane": "WCS/RMS"
+   },
+   "W3": {
+    "text": "采集设备状态\n在线/离线/故障",
+    "lane": "WCS/RMS"
+   },
+   "W4": {
+    "text": "采集任务执行进度",
+    "lane": "WCS/RMS"
+   },
+   "W5": {
+    "text": "上报状态至WMS",
+    "lane": "WCS/RMS"
+   },
+   "D1": {
+    "text": "堆垛机/SCR执行",
+    "lane": "堆垛机/SCR"
+   },
+   "E1": {
+    "text": "设备故障\n告警并转人工",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "状态异常告警",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "执行异常告警",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "S1",
+    "target": "W1",
+    "label": ""
+   },
+   {
+    "source": "W1",
+    "target": "W2",
+    "label": ""
+   },
+   {
+    "source": "W2",
+    "target": "D1",
+    "label": ""
+   },
+   {
+    "source": "D1",
+    "target": "E1",
+    "label": "故障"
+   },
+   {
+    "source": "D1",
+    "target": "W3",
+    "label": "正常"
+   },
+   {
+    "source": "W3",
+    "target": "E2",
+    "label": "异常"
+   },
+   {
+    "source": "W3",
+    "target": "W4",
+    "label": "正常"
+   },
+   {
+    "source": "W4",
+    "target": "E3",
+    "label": "异常"
+   },
+   {
+    "source": "W4",
+    "target": "W5",
+    "label": "正常"
+   },
+   {
+    "source": "W5",
+    "target": "S2",
+    "label": ""
+   }
+  ]
+ },
+ "YX-WMS-XT-001": {
+  "code": "YX-WMS-XT-001",
+  "name": "不良品处理流程",
+  "lanes": [
+   "操作员",
+   "WMS系统",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "扫码不良品",
+    "lane": "操作员"
+   },
+   "A2": {
+    "text": "录入不良数量与原因",
+    "lane": "操作员"
+   },
+   "A3": {
+    "text": "上架废品仓",
+    "lane": "操作员"
+   },
+   "S1": {
+    "text": "调出物料信息",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "校验数量\n合理性",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "分配废品仓库位",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "更新库存",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "记录不良品台账",
+    "lane": "WMS系统"
+   },
+   "S6": {
+    "text": "同步ERP/MES",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "物料不存在提示",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "数量异常提示",
+    "lane": "异常处理"
+   },
+   "E3": {
+    "text": "库位不足告警",
+    "lane": "异常处理"
+   },
+   "E4": {
+    "text": "同步失败重试",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "E1",
+    "label": "不存在"
+   },
+   {
+    "source": "S1",
+    "target": "A2",
+    "label": "存在"
+   },
+   {
+    "source": "A2",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "E2",
+    "label": "异常"
+   },
+   {
+    "source": "S2",
+    "target": "S3",
+    "label": "正常"
+   },
+   {
+    "source": "S3",
+    "target": "E3",
+    "label": "不足"
+   },
+   {
+    "source": "S3",
+    "target": "A3",
+    "label": "充足"
+   },
+   {
+    "source": "A3",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S4",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "S6",
+    "label": ""
+   },
+   {
+    "source": "S6",
+    "target": "E4",
+    "label": "失败"
+   }
+  ]
+ },
+ "YX-WMS-XT-002": {
+  "code": "YX-WMS-XT-002",
+  "name": "操作日志留痕流程",
+  "lanes": [
+   "系统管理员",
+   "WMS系统",
+   "异常处理"
+  ],
+  "nodes": {
+   "A1": {
+    "text": "登录管理端\n进入系统管理",
+    "lane": "系统管理员"
+   },
+   "A2": {
+    "text": "按条件查询日志",
+    "lane": "系统管理员"
+   },
+   "A3": {
+    "text": "导出日志",
+    "lane": "系统管理员"
+   },
+   "S1": {
+    "text": "采集关键操作事件\n配置/绑定/入库",
+    "lane": "WMS系统"
+   },
+   "S2": {
+    "text": "记录操作人\n时间与操作对象",
+    "lane": "WMS系统"
+   },
+   "S3": {
+    "text": "日志存档\n不可修改",
+    "lane": "WMS系统"
+   },
+   "S4": {
+    "text": "展示日志明细",
+    "lane": "WMS系统"
+   },
+   "S5": {
+    "text": "生成Excel/CSV",
+    "lane": "WMS系统"
+   },
+   "E1": {
+    "text": "无匹配记录\n提示更换条件",
+    "lane": "异常处理"
+   },
+   "E2": {
+    "text": "导出失败重试",
+    "lane": "异常处理"
+   }
+  },
+  "edges": [
+   {
+    "source": "A1",
+    "target": "S1",
+    "label": ""
+   },
+   {
+    "source": "S1",
+    "target": "S2",
+    "label": ""
+   },
+   {
+    "source": "S2",
+    "target": "S3",
+    "label": ""
+   },
+   {
+    "source": "S3",
+    "target": "A2",
+    "label": ""
+   },
+   {
+    "source": "A2",
+    "target": "S4",
+    "label": ""
+   },
+   {
+    "source": "S4",
+    "target": "E1",
+    "label": "无匹配"
+   },
+   {
+    "source": "S4",
+    "target": "A3",
+    "label": "有匹配"
+   },
+   {
+    "source": "A3",
+    "target": "S5",
+    "label": ""
+   },
+   {
+    "source": "S5",
+    "target": "E2",
+    "label": "失败"
+   }
+  ]
+ }
+}

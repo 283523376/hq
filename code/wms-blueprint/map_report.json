@@ -1,0 +1,1238 @@
+{
+ "YX-WMS-BD-001": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "A4": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact",
+   "W5": "exact",
+   "W6": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "A4": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ],
+   "W5": [
+    null
+   ],
+   "W6": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-BD-002": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "E1": "exact",
+   "E2": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact",
+   "W5": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "E2": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ],
+   "W5": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-BD-003": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "A4": "exact",
+   "A5": "exact",
+   "A6": "exact",
+   "A7": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact",
+   "W5": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "A4": [
+    null
+   ],
+   "A5": [
+    null
+   ],
+   "A6": [
+    null
+   ],
+   "A7": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ],
+   "W5": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-BD-004": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "A4": "exact",
+   "A5": "exact",
+   "A6": "exact",
+   "A7": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "S7": "exact",
+   "E1": "exact+包含",
+   "E2": "exact",
+   "E3": "exact",
+   "E4": "exact",
+   "E5": "exact+包含"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "A4": [
+    null
+   ],
+   "A5": [
+    null
+   ],
+   "A6": [
+    null
+   ],
+   "A7": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "S7": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "E2": [
+    null
+   ],
+   "E3": [
+    null
+   ],
+   "E4": [
+    null
+   ],
+   "E5": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-RK-001": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact",
+   "W5": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ],
+   "W5": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-RK-002": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "S7": "exact",
+   "S8": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "X1": "exact",
+   "X2": "exact",
+   "X3": "exact",
+   "X4": "exact",
+   "X5": "exact",
+   "X6": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "S7": [
+    null
+   ],
+   "S8": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "X1": [
+    null
+   ],
+   "X2": [
+    null
+   ],
+   "X3": [
+    null
+   ],
+   "X4": [
+    null
+   ],
+   "X5": [
+    null
+   ],
+   "X6": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-RK-005": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "S7": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact",
+   "W5": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "S7": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ],
+   "W5": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-CK-001": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "S7": "exact",
+   "S8": "exact",
+   "S9": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact",
+   "W5": "exact",
+   "W6": "exact",
+   "W7": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "S7": [
+    null
+   ],
+   "S8": [
+    null
+   ],
+   "S9": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ],
+   "W5": [
+    null
+   ],
+   "W6": [
+    null
+   ],
+   "W7": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-CK-002": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "A4": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "X1": "exact",
+   "X2": "exact",
+   "X3": "exact",
+   "X4": "exact",
+   "X5": "exact",
+   "X6": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "A4": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "X1": [
+    null
+   ],
+   "X2": [
+    null
+   ],
+   "X3": [
+    null
+   ],
+   "X4": [
+    null
+   ],
+   "X5": [
+    null
+   ],
+   "X6": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-CK-004": {
+  "ways": {
+   "A1": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-KC-001": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "A4": "exact",
+   "A5": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "E1": "exact",
+   "E2": "exact",
+   "E3": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "A4": [
+    null
+   ],
+   "A5": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "E2": [
+    null
+   ],
+   "E3": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-KC-002": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "E1": "exact",
+   "E2": "exact",
+   "E3": "exact",
+   "E4": "exact",
+   "E5": "exact",
+   "E6": "exact",
+   "E7": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "E2": [
+    null
+   ],
+   "E3": [
+    null
+   ],
+   "E4": [
+    null
+   ],
+   "E5": [
+    null
+   ],
+   "E6": [
+    null
+   ],
+   "E7": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-KC-004": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "E1": "exact",
+   "E2": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "E2": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-SB-001": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "A4": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "S7": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "A4": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "S7": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-SB-002": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-XT-001": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-XT-002": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "E1": "exact",
+   "E2": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "E2": [
+    null
+   ]
+  }
+ },
+ "YX-WMS-DY-001": {
+  "ways": {
+   "A1": "exact",
+   "A2": "exact",
+   "A3": "exact",
+   "A4": "exact",
+   "S1": "exact",
+   "S2": "exact",
+   "S3": "exact",
+   "S4": "exact",
+   "S5": "exact",
+   "S6": "exact",
+   "S7": "exact",
+   "S8": "exact",
+   "S9": "exact",
+   "E1": "exact",
+   "W1": "exact",
+   "W2": "exact",
+   "W3": "exact",
+   "W4": "exact",
+   "W5": "exact",
+   "W6": "exact"
+  },
+  "mapping": {
+   "A1": [
+    null
+   ],
+   "A2": [
+    null
+   ],
+   "A3": [
+    null
+   ],
+   "A4": [
+    null
+   ],
+   "S1": [
+    null
+   ],
+   "S2": [
+    null
+   ],
+   "S3": [
+    null
+   ],
+   "S4": [
+    null
+   ],
+   "S5": [
+    null
+   ],
+   "S6": [
+    null
+   ],
+   "S7": [
+    null
+   ],
+   "S8": [
+    null
+   ],
+   "S9": [
+    null
+   ],
+   "E1": [
+    null
+   ],
+   "W1": [
+    null
+   ],
+   "W2": [
+    null
+   ],
+   "W3": [
+    null
+   ],
+   "W4": [
+    null
+   ],
+   "W5": [
+    null
+   ],
+   "W6": [
+    null
+   ]
+  }
+ }
+}
