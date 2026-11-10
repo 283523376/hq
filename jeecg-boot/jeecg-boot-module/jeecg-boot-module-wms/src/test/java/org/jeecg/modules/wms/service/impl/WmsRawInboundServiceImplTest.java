@@ -515,7 +515,7 @@ class WmsRawInboundServiceImplTest {
         verify(formClient, never()).submit(anyString(), any());
     }
 
-    /** V2.6 前的历史大改小单据登记即终态、原材料不入库存，不存在可回写的入库单。 */
+    /** V2.6 前的历史改制单据登记即终态、原材料不入库存，不存在可回写的入库单。 */
     @Test
     void resyncRejectsLegacyConvertOrder() {
         auditedOrder(WmsConstants.SYNC_STATUS_NOT_REQUIRED, null);

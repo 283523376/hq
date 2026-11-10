@@ -291,7 +291,7 @@ public final class WmsConstants {
     /** 入库类型：采购入库。 */
     public static final String INBOUND_TYPE_PURCHASE = "采购入库";
 
-    /** 入库类型：外购原材料入库（V2.4 RK-001 段差棒直入 / 大改小登记）。 */
+    /** 入库类型：外购原材料入库（RK-001；V2.6 起改刀料与段差棒同口径直入立库）。 */
     public static final String INBOUND_TYPE_RAW_PURCHASE = "外购原材料入库";
 
     /** 入库类型：受托原材料入库（V2.4 RK-001，入受托库存并回写受托加工材料入库单）。 */
@@ -547,7 +547,7 @@ public final class WmsConstants {
     public static final String AUDIT_BIZ_MASTER_DATA = "主数据";
     /** 审计业务类型：销售订单（ERP 只读快照）。 */
     public static final String AUDIT_BIZ_SALES_ORDER = "销售订单";
-    /** 审计业务类型：改制单（大改小，V2.4）。 */
+    /** 审计业务类型：改制单（V2.4 历史业务；V2.6 起不再生成，模块保留可回滚）。 */
     public static final String AUDIT_BIZ_CONVERSION = "改制单";
     /** 审计业务类型：不良品记录（RK-005 生产/受托两类来源）。 */
     public static final String AUDIT_BIZ_DEFECT_RECORD = "不良品记录";

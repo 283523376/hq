@@ -33,7 +33,7 @@ class WmsGapConstantsTest {
         assertEquals("CONSIGNED", WmsConstants.INBOUND_SOURCE_CONSIGNED);
     }
 
-    /** 到货处理方式：spec §3.2 —— 大改小 / 段差棒直入。 */
+    /** 到货处理方式：spec §3.2 —— 改刀料 / 段差棒直入（V2.6 起同口径）。 */
     @Test
     void inboundHandlingConstants() {
         assertEquals("CONVERT", WmsConstants.INBOUND_HANDLING_CONVERT);

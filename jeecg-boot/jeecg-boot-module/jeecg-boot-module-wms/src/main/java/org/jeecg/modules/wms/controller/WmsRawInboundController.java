@@ -60,7 +60,7 @@ public class WmsRawInboundController {
                 orderNo, supplierName));
     }
 
-    @Operation(summary = "原材料入库-到货登记（外购/受托 × 段差棒直入/大改小）")
+    @Operation(summary = "原材料入库-到货登记（外购/受托 × 段差棒直入/改刀料）")
     @PostMapping(value = "/receive")
     @RequiresPermissions("wms:inbound:consigned")
     @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_INBOUND, action = WmsConstants.AUDIT_ACTION_CREATE,

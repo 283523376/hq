@@ -67,7 +67,7 @@
 
   function getActions(record: any) {
     const actions: any[] = [];
-    // V2.6：改刀料与段差棒同口径，凡是「待分配」都要上架（历史大改小单据状态为「已审核」，自然不会命中）
+    // V2.6：改刀料与段差棒同口径，凡是「待分配」都要上架（历史改制单据状态为「已审核」，自然不会命中）
     if (record.inboundStatus === '待分配') {
       actions.push({
         label: '上架',

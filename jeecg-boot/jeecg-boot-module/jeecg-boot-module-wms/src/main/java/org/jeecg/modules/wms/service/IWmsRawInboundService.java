@@ -14,7 +14,8 @@ import org.jeecg.modules.wms.vo.WmsRawPutawayResultVO;
  * 到货登记后直接「待分配」，上架时一步写库存 + 置「已审核」并回写金蝶，
  * 不调用 {@code IWmsInboundService.putaway}（那条链路绑定检验任务与旧 ERP 网关）。
  *
- * <p>大改小（CONVERT）只登记到货，不写库存：原材料直送车间，产出半成品走生产入库。
+ * <p>V2.6（2026-11-10）起改刀料（CONVERT）与段差棒（DIRECT）处理方式一致：
+ * 到货登记为「待分配」，上架时写库存并回写采购收料单，均不经过任何加工环节。
  *
  * @Author: 永鑫WMS
  * @Date: 2026-11-04
@@ -26,8 +27,7 @@ public interface IWmsRawInboundService extends JeecgService<WmsInboundOrder> {
      *
      * <ul>
      *   <li>{@code DIRECT}（段差棒直入）→ 状态「待分配」，等 {@link #putawayRaw} 上架入账；</li>
-     *   <li>{@code CONVERT}（大改小）→ 状态直接「已审核」（登记即完成），不产生库存行，
-     *       同步状态「无需同步」，单据返回给改制单引用。</li>
+     *   <li>{@code CONVERT}（改刀料）→ 与 DIRECT 相同：状态「待分配」，上架后入账并回写。</li>
      * </ul>
      *
      * @param dto      到货入参
@@ -58,7 +58,7 @@ public interface IWmsRawInboundService extends JeecgService<WmsInboundOrder> {
      *
      * <p>幂等：{@code sync_status=同步成功} 的直接返回当前结果，不重复开单。
      * 已有 {@code erp_bill_no} 的只补 Submit；没有的走完整 Save→Submit→回存。
-     * 大改小（CONVERT）单据登记即终态、无需同步，显式拒绝。
+     * V2.6 前的历史改制单据（登记即终态、无需同步）仍显式拒绝。
      *
      * @param inboundId 入库单ID
      * @param operator  操作人
@@ -71,7 +71,7 @@ public interface IWmsRawInboundService extends JeecgService<WmsInboundOrder> {
      * 原材料入库单分页：<b>只含 {@code source_type} 为 PURCHASE/CONSIGNED 的单据</b>。
      *
      * <p>不复用 {@code /wms/inbound/list}：那是全量入库单（含生产入库、历史采购收料），
-     * 混在一起既分不清口径，也会把 {@code source_type=NULL} 的旧单渲染成「大改小/直入」。
+     * 混在一起既分不清口径，也会把 {@code source_type=NULL} 的旧单渲染成「历史改制/直入」。
      *
      * @param sourceType    来源类型（PURCHASE/CONSIGNED），空=不限
      * @param inboundStatus 单据状态，空=不限

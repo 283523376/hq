@@ -139,7 +139,7 @@ public class WmsProductionInboundServiceImpl
 
         // 产品类型按「入库来源」判定（2026-10-28 用户口径）：工单作业台提交的是**完工入库 → 成品**。
         // 工单本身不携带产品类型（金蝶没有这个概念），所以这里不能因为字段为空就拒绝入库。
-        // 调用方显式指定时优先（改制单大改小产出固定半成品 → 立库）；为空保持原口径。
+        // 调用方显式指定时优先（V2.6 前改制单产出固定半成品 → 立库）；为空保持原口径。
         String productType = resolveProductType(oConvertUtils.isEmpty(dto.getProductType())
                 ? order.getProductType() : dto.getProductType().trim());
         boolean semi = WmsConstants.PRODUCT_TYPE_SEMI.equals(productType);

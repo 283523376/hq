@@ -96,7 +96,7 @@ class WmsConsignedEntityTest {
         assertTrue(sql.contains("`conversion_order_id`"), "缺少 wms_inbound_order.conversion_order_id");
         assertTrue(sql.contains("`erp_bill_no`"), "缺少 wms_inbound_order.erp_bill_no");
         assertTrue(sql.contains("`erp_sync_time`"), "缺少 wms_inbound_order.erp_sync_time");
-        // 入库明细：来源物料编码（大改小投入）
+        // 入库明细：来源物料编码（改刀料投入）
         assertTrue(sql.contains("`source_material_code`"), "缺少 wms_inbound_detail.source_material_code");
         // 出库单：领料人 + 设备 + 取消原因（CK-001 领料动作细化）
         assertTrue(sql.contains("`picker_id`"), "缺少 wms_outbound_order.picker_id");

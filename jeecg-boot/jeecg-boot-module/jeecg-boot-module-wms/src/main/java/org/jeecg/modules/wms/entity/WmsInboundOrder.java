@@ -103,7 +103,7 @@ public class WmsInboundOrder extends JeecgEntity {
     @Schema(description = "入库来源类型：PURCHASE 外购 / CONSIGNED 受托")
     private String sourceType;
 
-    /** 改制单ID（wms_conversion_order.id）：大改小产出回填。 */
+    /** 改制单ID（wms_conversion_order.id）：仅 V2.6 前历史改制单回填，V2.6 起不再生成。 */
     @Schema(description = "改制单ID")
     private String conversionOrderId;
 

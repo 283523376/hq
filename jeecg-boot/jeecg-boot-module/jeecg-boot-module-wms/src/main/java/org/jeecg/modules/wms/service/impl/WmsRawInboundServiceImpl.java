@@ -64,7 +64,7 @@ import java.util.Set;
  * V2.6（2026-11-10）起「改刀料（CONVERT）」与「段差棒直入（DIRECT）」处理方式完全一致：
  * 到货登记为「待分配」→ {@link #putawayRaw} 选库位 → 「已审核」→ 库存入账 → 回写金蝶。
  * <ul>
- *   <li>V2.6 之前的历史 CONVERT 单据（大改小）登记即「已审核」、{@code sync_status=无需同步}、
+ *   <li>V2.6 之前的历史 CONVERT 单据（改制）登记即「已审核」、{@code sync_status=无需同步}、
  *       原材料不入 WMS 库存，这些行不做数据迁移——{@link #putawayRaw} 与重试回写仍按单据状态
  *       自然拒绝，口径见各方法内注释。</li>
  * </ul>
@@ -327,7 +327,7 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         }
         if (!WmsConstants.INBOUND_STATUS_PENDING_ALLOCATE.equals(order.getInboundStatus())
                 && !WmsConstants.INBOUND_STATUS_PENDING_PUTAWAY.equals(order.getInboundStatus())) {
-            // V2.6 之前的历史大改小单据登记即「已审核」、且不产生库存行，走到这里必须拒绝
+            // V2.6 之前的历史改制单据登记即「已审核」、且不产生库存行，走到这里必须拒绝
             throw new RuntimeException("当前状态不允许上架");
         }
 
@@ -412,9 +412,9 @@ public class WmsRawInboundServiceImpl extends ServiceImpl<WmsInboundOrderMapper,
         if (WmsConstants.SYNC_STATUS_SUCCESS.equals(order.getSyncStatus())) {
             return resultOf(order);
         }
-        // V2.6 之前的历史大改小单据登记即终态、原材料不入 WMS 库存，不存在可回写的入库单
+        // V2.6 之前的历史改制单据登记即终态、原材料不入 WMS 库存，不存在可回写的入库单
         if (WmsConstants.SYNC_STATUS_NOT_REQUIRED.equals(order.getSyncStatus())) {
-            throw new RuntimeException("该单据无需同步（V2.6 前的大改小登记单），不能重试回写");
+            throw new RuntimeException("该单据无需同步（V2.6 前的改制登记单），不能重试回写");
         }
 
         String formId = requireKingdeeReady(order);

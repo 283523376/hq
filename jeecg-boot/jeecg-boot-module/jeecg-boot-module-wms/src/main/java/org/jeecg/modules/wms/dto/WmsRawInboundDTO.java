@@ -12,7 +12,7 @@ import java.util.List;
  * <ul>
  *   <li>{@code sourceType=PURCHASE}（外购）/{@code CONSIGNED}（受托）；</li>
  *   <li>{@code handlingType=DIRECT}（段差棒直入，入库存并回写金蝶入库单）/
- *       {@code CONVERT}（大改小，只登记、不入库存，交改制单使用）。</li>
+ *       {@code CONVERT}（改刀料，V2.6 起与段差棒同口径：登记→待分配→上架入库存）。</li>
  * </ul>
  *
  * @Author: 永鑫WMS
@@ -24,7 +24,7 @@ public class WmsRawInboundDTO {
     /** 来源类型：PURCHASE 外购 / CONSIGNED 受托 */
     private String sourceType;
 
-    /** 处理方式：CONVERT 大改小（只登记）/ DIRECT 段差棒直入（上架入账） */
+    /** 处理方式：CONVERT 改刀料 / DIRECT 段差棒直入（V2.6 起两者处理方式一致，均需上架入账） */
     private String handlingType;
 
     /**
