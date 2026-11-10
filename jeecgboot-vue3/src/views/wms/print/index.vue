@@ -42,6 +42,11 @@
         />
         <a-button :disabled="previewItems.length !== 1 || !editing" @click="handleRestore">还原内容</a-button>
         <a-button type="primary" :disabled="!previewItems.length" @click="handlePrint">打印</a-button>
+        <a-switch
+          v-model:checked="perBillMode"
+          checked-children="每张一页"
+          un-checked-children="自动排版"
+        />
         <a-button type="primary" ghost :disabled="!selectedRowKeys.length" @click="handleBatchPrint">
           批量打印{{ selectedRowKeys.length ? `(${selectedRowKeys.length})` : '' }}
         </a-button>
@@ -72,7 +77,7 @@
 
     <a-spin :spinning="previewLoading">
       <div v-if="previewItems.length" class="preview-wrap">
-        <PrintPreview :items="previewItems" :editable="editing" />
+        <PrintPreview :items="previewItems" :editable="editing" :page-mode="pageMode" />
       </div>
       <a-empty v-else description="点击列表中的单据预览，勾选多张可批量打印" />
     </a-spin>
@@ -111,6 +116,9 @@
   const selectedNo = ref('');
   const editing = ref(false);
   const selectedRowKeys = ref<string[]>([]);
+  /** 批量排版开关：开 = 每张单据自成一页（默认），关 = 自动排版连续排布 */
+  const perBillMode = ref(true);
+  const pageMode = computed<'per-bill' | 'auto'>(() => (perBillMode.value ? 'per-bill' : 'auto'));
 
   /** 复选框多选（跨页保留已选；只对当前页可见行生效） */
   const rowSelection = computed(() => ({

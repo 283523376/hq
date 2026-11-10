@@ -156,6 +156,36 @@
 
 
 
+/* 批量打印的两种排版模式（2026-11-10 客户要求） */
+@media print {
+  /* 每张单据自成一页：张与张之间强制分页 */
+  .print-area.mode-per-bill .print-item {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .print-area.mode-per-bill .print-item:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  /* 模板内部最后一页的分页交给外层 .print-item，避免重复空白页 */
+  .print-area.mode-per-bill .print-item .print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  /* 自动排版：不强制分页，内容连续排布，页满由浏览器自动分页 */
+  .print-area.mode-auto .print-page {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .print-area.mode-auto .print-item + .print-item {
+    margin-top: 8px;
+  }
+}
+
 /* 打印：只输出 .print-area，界面控件一律隐藏 */
 @media print {
   @page {

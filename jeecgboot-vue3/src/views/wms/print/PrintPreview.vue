@@ -2,10 +2,15 @@
   <div class="print-preview">
     <!-- 批量打印时每张单据之前标注序号与单号，便于分拣（打印时隐藏） -->
     <div v-if="items.length > 1" class="batch-tip no-print">
-      共 {{ items.length }} 张单据，将一次打印；每张单据自成一页
+      共 {{ items.length }} 张单据，将一次打印；
+      {{ pageMode === 'per-bill' ? '每张单据自成一页' : '连续排版，页满自动换页' }}
     </div>
     <!-- 打印区：所有选中单据同处一个 .print-area，多页由各模板的 .print-page 分页 -->
-    <div class="print-area" :class="{ 'print-area-editable': editable }" :contenteditable="editable ? 'true' : 'false'">
+    <div
+      class="print-area"
+      :class="[{ 'print-area-editable': editable }, items.length > 1 ? `mode-${pageMode}` : '']"
+      :contenteditable="editable ? 'true' : 'false'"
+    >
       <div v-for="(item, idx) in items" :key="idx" class="print-item">
         <!-- 数据提示：快照回退标注数据时间；仅 warn（如本地单金蝶价税取不到）也要显示；打印时隐藏 -->
         <a-alert
@@ -37,10 +42,16 @@
    * @param data    单张单据（兼容旧用法）
    * @param items   批量单据；传入后优先于 data
    * @param editable 编辑模式（仅单张时生效，批量打印不开放编辑以免串改）
+   * @param pageMode 批量排版：per-bill 每张自成一页（默认）/ auto 自动排版连续排布
    */
   const props = withDefaults(
-    defineProps<{ data?: WmsPrintDataVO; items?: WmsPrintDataVO[]; editable?: boolean }>(),
-    { editable: false },
+    defineProps<{
+      data?: WmsPrintDataVO;
+      items?: WmsPrintDataVO[];
+      editable?: boolean;
+      pageMode?: 'per-bill' | 'auto';
+    }>(),
+    { editable: false, pageMode: 'per-bill' },
   );
 
   const TEMPLATES: Record<string, any> = {
