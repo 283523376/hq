@@ -9,6 +9,7 @@ import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeDetailMapper;
 import org.jeecg.modules.wms.mapper.WmsStocktakeOrderMapper;
 import org.jeecg.modules.wms.sync.IWmsKingdeeInventoryReader;
+import org.jeecg.modules.wms.sync.IWmsStocktakeErpWriter;
 import org.jeecg.modules.wms.sync.WmsKingdeeFormClient;
 import org.jeecg.modules.wms.sync.WmsKingdeeProperties;
 import org.jeecg.modules.wms.sync.WmsKingdeeResult;
@@ -40,7 +41,7 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-public class WmsStocktakeErpWriterImpl {
+public class WmsStocktakeErpWriterImpl implements IWmsStocktakeErpWriter {
 
     public static final String FORM_ID_GAIN = "STK_Miscellaneous";
     public static final String FORM_ID_LOSS = "STK_MisDelivery";
@@ -70,11 +71,13 @@ public class WmsStocktakeErpWriterImpl {
     }
 
     /** 盘盈 → 其他入库单 QTRK。 */
+    @Override
     public WmsOrderSyncResult writeGain(WmsStocktakeOrder order) {
         return write(order, FORM_ID_GAIN, true);
     }
 
     /** 盘亏 → 其他出库单 QTCK。 */
+    @Override
     public WmsOrderSyncResult writeLoss(WmsStocktakeOrder order) {
         return write(order, FORM_ID_LOSS, false);
     }
