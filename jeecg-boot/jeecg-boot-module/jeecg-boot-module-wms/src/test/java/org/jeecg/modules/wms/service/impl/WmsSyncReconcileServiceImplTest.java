@@ -229,6 +229,8 @@ class WmsSyncReconcileServiceImplTest {
         assertEquals(WmsConstants.SYNC_RUN_STATUS_SUCCESS, finished.getStatus());
         assertEquals(5, finished.getSnapshotCount().intValue());
         assertEquals(4, finished.getDiffCount().intValue());
+        // D10：差异本身不是告警事由——告警只留给「批次查询失败」（人工核验走差异/盘点流程）
+        verify(sysBaseAPI, never()).sendSysAnnouncement(any());
     }
 
     // ================================================================ 重试

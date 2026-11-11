@@ -126,6 +126,23 @@ class WmsOutboundConfirmTest {
         verify(locationMapper).update(any(), any());
     }
 
+    /** D2 最后一道兜底：库存被并发抢先（deductLocked 影响 0 行）→ 置异常 + 告警 + 抛错回滚。 */
+    @Test
+    void confirm_deductLockedZero_marksExceptionAlertsAndThrows() {
+        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK, WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW),
+                allocation(WmsConstants.REVIEW_STATUS_PENDING, "10", "10"));
+        when(inventoryMapper.deductLocked(eq("i1"), any())).thenReturn(0);
+
+        RuntimeException e = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> service.confirmPick("o1", new WmsOutboundConfirmDTO()));
+
+        assertTrue(e.getMessage().contains("库存扣减失败"), e.getMessage());
+        ArgumentCaptor<WmsOutboundOrder> captor = ArgumentCaptor.forClass(WmsOutboundOrder.class);
+        verify(orderMapper).update(captor.capture(), any());
+        assertEquals(WmsConstants.OUTBOUND_STATUS_EXCEPTION, captor.getValue().getStatus());
+        verify(sysBaseAPI).sendSysAnnouncement(any());
+    }
+
     @Test
     void confirm_zeroActual_releasesLockWithoutDeduct() {
         // 复核后显式确认「实收 0」才允许不扣库存直接释放锁定

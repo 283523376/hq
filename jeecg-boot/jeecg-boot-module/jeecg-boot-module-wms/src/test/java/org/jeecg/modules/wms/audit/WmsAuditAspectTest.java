@@ -154,6 +154,18 @@ class WmsAuditAspectTest {
         public void defect(String id) {
             // 业务本体
         }
+
+        @WmsAudit(bizType = "出库单", action = "取消", bizNoSpEL = "#holder.id")
+        public void mutate(Holder holder) {
+            // 业务过程改写了入参：审计必须仍记调用时的值（BEFORE 语义）
+            holder.setId("changed-in-business");
+        }
+    }
+
+    static class Holder {
+        private String id = "";
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
     }
 
     /** 控制器吞异常返回 Result.error：审计必须记失败，不能因为方法正常返回就记成功。 */
@@ -236,6 +248,19 @@ class WmsAuditAspectTest {
         WmsAuditEvent event = capture();
         assertEquals("GZ001", event.getBizNo());
         assertEquals("MO1", event.getBizRef());
+    }
+
+    /** 切面在 proceed 之前解析单号：业务过程改写入参也不影响审计记录的值。 */
+    @Test
+    void aspect_resolvesBizNoBeforeProceed() {
+        Holder holder = new Holder();
+        holder.setId("original-no");
+
+        proxy(new Target()).mutate(holder);
+
+        WmsAuditEvent event = capture();
+        assertEquals("original-no", event.getBizNo(),
+                "单号必须在业务执行前解析——业务改写入参后，审计仍应记调用时的值");
     }
 
     /** 技术债 §5-16：不良记录本身没有业务单号，用来源单号作 bizNo、物料编码进 biz_ref。 */

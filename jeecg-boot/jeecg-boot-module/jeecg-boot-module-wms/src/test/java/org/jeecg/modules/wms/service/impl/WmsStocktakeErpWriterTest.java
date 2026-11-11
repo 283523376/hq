@@ -224,6 +224,53 @@ class WmsStocktakeErpWriterTest {
         verify(formClient, never()).save(anyString(), any());
     }
 
+    /** D7：保存成功后金蝶单号必须回存（幂等键/对账键）。 */
+    @Test
+    void gain_persistsReturnedKingdeeBillNo() {
+        properties.getStocktake().setStockCode("D.01");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("loc-1", "m1", "10", "12")));
+        when(formClient.save(anyString(), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", List.of(), "QTRK900001", "1"));
+
+        writer.writeGain(order());
+
+        ArgumentCaptor<WmsStocktakeOrder> captor = ArgumentCaptor.forClass(WmsStocktakeOrder.class);
+        verify(orderMapper).updateById(captor.capture());
+        assertEquals("QTRK900001", captor.getValue().getErpBillNo());
+    }
+
+    /** D7：盘盈/盘亏两张单号分号拼接、去重合并。 */
+    @Test
+    void writeback_mergesExistingErpBillNoWithoutDuplicate() {
+        properties.getStocktake().setStockCode("D.01");
+        WmsStocktakeOrder st = order();
+        st.setErpBillNo("QTRK900001");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("loc-2", "m2", "10", "7")));
+        when(formClient.save(anyString(), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", List.of(), "QTCK900002", "1"));
+
+        writer.writeLoss(st);
+
+        ArgumentCaptor<WmsStocktakeOrder> captor = ArgumentCaptor.forClass(WmsStocktakeOrder.class);
+        verify(orderMapper).updateById(captor.capture());
+        assertEquals("QTRK900001;QTCK900002", captor.getValue().getErpBillNo());
+    }
+
+    /** D7：回存单号与已有完全一致时不重复写库。 */
+    @Test
+    void writeback_sameBillNo_skipsRedundantUpdate() {
+        properties.getStocktake().setStockCode("D.01");
+        WmsStocktakeOrder st = order();
+        st.setErpBillNo("QTCK900002");
+        when(detailMapper.selectList(any())).thenReturn(List.of(detail("loc-2", "m2", "10", "7")));
+        when(formClient.save(anyString(), any()))
+                .thenReturn(WmsKingdeeResult.ok("{}", List.of(), "QTCK900002", "1"));
+
+        writer.writeLoss(st);
+
+        verify(orderMapper, never()).updateById(any(WmsStocktakeOrder.class));
+    }
+
     /** 查询故障不等于库存不足：金蝶不可用时放行，交给原有 Save 失败链路。 */
     @Test
     void lossProceedsWhenInventoryQueryFails() {
