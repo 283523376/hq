@@ -627,7 +627,15 @@ public class WmsOutboundServiceImpl extends ServiceImpl<WmsOutboundOrderMapper, 
                         ? WmsConstants.SYNC_STATUS_PENDING : WmsConstants.SYNC_STATUS_NOT_REQUIRED);
         patch.setUpdateTime(new Date());
         patch.setCompleteTime(new Date());
-        baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>().eq("id", id));
+        // 不变量对照 2026-11-11 §2-1：确认必须条件认领（当前状态=待复核）——
+        // 读后写窗口内被并发取消/关单时，影响 0 行 → 抛错回滚整笔事务（含上面的库存扣减），
+        // 不允许「读时是待复核、写前被取消」的确认落成 COMPLETED。
+        int moved = baseMapper.update(patch, new UpdateWrapper<WmsOutboundOrder>()
+                .eq("id", id)
+                .in("status", WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW));
+        if (moved == 0) {
+            throw new RuntimeException("单据状态已变化，请刷新后重试");
+        }
         if (WmsConstants.OUTBOUND_TYPE_SALES.equals(order.getOutboundType())
                 && oConvertUtils.isNotEmpty(order.getSalesOrderNo())) {
             // 刷新销售订单快照的已出库数量，供下次出库校验剩余量

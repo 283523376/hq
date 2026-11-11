@@ -143,6 +143,30 @@ class WmsOutboundConfirmTest {
         verify(sysBaseAPI).sendSysAnnouncement(any());
     }
 
+    /** 不变量对照 §2-1：确认必须条件认领——读后写窗口内被并发取消时，0 行 → 抛错回滚。 */
+    @Test
+    void confirm_staleStatusClaimZero_throwsWithoutCompleting() {
+        stubOrderAndAllocation(order(WmsConstants.OUTBOUND_TYPE_PICK, WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW),
+                allocation(WmsConstants.REVIEW_STATUS_PENDING, "10", "10"));
+        // 库存扣减先于状态认领执行；认领 0 行抛错 → 事务回滚整笔扣减
+        when(orderMapper.update(any(), any())).thenReturn(0);
+
+        RuntimeException e = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> service.confirmPick("o1", new WmsOutboundConfirmDTO()));
+
+        assertTrue(e.getMessage().contains("单据状态已变化"), e.getMessage());
+        // 认领必须带状态条件：wrapper 的 WHERE 里要有 status IN (待复核)
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<WmsOutboundOrder>> wrapperCap =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(orderMapper).update(any(), wrapperCap.capture());
+        String sql = wrapperCap.getValue().getSqlSegment();
+        assertTrue(sql.contains("status"), sql);
+        com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<WmsOutboundOrder> uw =
+                (com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<WmsOutboundOrder>) wrapperCap.getValue();
+        assertTrue(uw.getParamNameValuePairs().containsValue(WmsConstants.OUTBOUND_STATUS_PENDING_REVIEW),
+                "认领条件必须包含 当前状态=待复核");
+    }
+
     @Test
     void confirm_zeroActual_releasesLockWithoutDeduct() {
         // 复核后显式确认「实收 0」才允许不扣库存直接释放锁定
