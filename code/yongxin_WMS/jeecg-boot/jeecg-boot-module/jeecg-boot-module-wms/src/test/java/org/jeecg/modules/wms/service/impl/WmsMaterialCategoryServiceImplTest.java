@@ -102,6 +102,7 @@ class WmsMaterialCategoryServiceImplTest {
     void addCategory_shouldApplyDefaultsAndMarkParent() {
         WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
         doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(false).when(service).checkNameExists(any(), any(), any());
         doReturn(true).when(service).save(any());
         WmsMaterialCategory parent = category("P1", "P", "父分类", WmsConstants.ROOT_PID_VALUE);
         doReturn(parent).when(service).getById("P1");
@@ -123,6 +124,7 @@ class WmsMaterialCategoryServiceImplTest {
     void addCategory_shouldNotTouchParentWhenRoot() {
         WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
         doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(false).when(service).checkNameExists(any(), any(), any());
         doReturn(true).when(service).save(any());
 
         WmsMaterialCategory input = category(null, "C01", "顶层分类", null);
@@ -138,6 +140,7 @@ class WmsMaterialCategoryServiceImplTest {
     void addCategory_shouldSkipParentUpdateWhenAlreadyHasChild() {
         WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
         doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(false).when(service).checkNameExists(any(), any(), any());
         doReturn(true).when(service).save(any());
         WmsMaterialCategory parent = category("P1", "P", "父分类", WmsConstants.ROOT_PID_VALUE)
                 .setHasChild(WmsConstants.YES);
@@ -170,6 +173,7 @@ class WmsMaterialCategoryServiceImplTest {
     void addCategory_shouldTolerateMissingParent() {
         WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
         doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(false).when(service).checkNameExists(any(), any(), any());
         doReturn(true).when(service).save(any());
         doReturn(null).when(service).getById("不存在的父节点");
 
@@ -188,7 +192,9 @@ class WmsMaterialCategoryServiceImplTest {
     void editCategory_shouldUpdateWhenCodeFree() {
         WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
         doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(false).when(service).checkNameExists(any(), any(), any());
         doReturn(true).when(service).updateById(any());
+        doReturn(category("1", "C01", "半成品", WmsConstants.ROOT_PID_VALUE)).when(service).getById("1");
 
         WmsMaterialCategory input = category("1", "C01", "半成品（改名）", WmsConstants.ROOT_PID_VALUE);
         service.editCategory(input);
@@ -209,6 +215,55 @@ class WmsMaterialCategoryServiceImplTest {
 
         assertEquals("编码已存在，请重新输入", ex.getMessage());
         verify(service, never()).updateById(any());
+    }
+
+    /** 同名同类型已存在必须拒绝，并给出可读提示（2026-11-11 分类合并口径）。 */
+    @Test
+    void addCategory_shouldRejectDuplicatedNameAndType() {
+        WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
+        doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(true).when(service).checkNameExists(any(), any(), any());
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.addCategory(category(null, "C01", "接头", null)));
+
+        assertTrue(ex.getMessage().contains("「接头」"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("同名同类型"), ex.getMessage());
+        verify(service, never()).save(any());
+    }
+
+    /** 编辑改名撞上已有的同名同类型分类：拒绝保存。 */
+    @Test
+    void editCategory_shouldRejectRenamingToExistingName() {
+        WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
+        doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(true).when(service).checkNameExists(any(), any(), any());
+        doReturn(category("1", "C01", "旧名称", WmsConstants.ROOT_PID_VALUE)).when(service).getById("1");
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.editCategory(category("1", "C01", "接头", WmsConstants.ROOT_PID_VALUE)));
+
+        assertTrue(ex.getMessage().contains("「接头」"), ex.getMessage());
+        verify(service, never()).updateById(any());
+    }
+
+    /**
+     * 名称/类型没变（同步侧只回写 erp_group_number）时不触发查重：
+     * 未跑合并脚本的库仍可能有同名分类，不能让同步因此失败。
+     */
+    @Test
+    void editCategory_shouldSkipNameCheckWhenNameUnchanged() {
+        WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
+        doReturn(false).when(service).checkCodeExists(any(), any());
+        doReturn(true).when(service).updateById(any());
+        doReturn(category("1", "C01", "接头", WmsConstants.ROOT_PID_VALUE)).when(service).getById("1");
+
+        WmsMaterialCategory input = category("1", "C01", "接头", WmsConstants.ROOT_PID_VALUE)
+                .setErpGroupNumber("HC.0101.0502.C");
+        service.editCategory(input);
+
+        verify(service, never()).checkNameExists(any(), any(), any());
+        verify(service).updateById(input);
     }
 
     // ------------------------------------------------------------ 停用（BD001-T08）
@@ -308,6 +363,35 @@ class WmsMaterialCategoryServiceImplTest {
         doReturn(1L).when(service).count(any(Wrapper.class));
 
         assertTrue(service.checkCodeExists("C01", null));
+    }
+
+    /** 空名称直接判为「不重复」，不查库。 */
+    @Test
+    void checkNameExists_shouldShortCircuitOnBlankName() {
+        WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
+
+        assertFalse(service.checkNameExists(null, "半成品", null));
+        assertFalse(service.checkNameExists("", null, null));
+
+        verify(service, never()).count(any(Wrapper.class));
+    }
+
+    /**
+     * 类型为空时必须按「IS NULL OR = ''」匹配——合并键是 {@code IFNULL(type,'')}，
+     * 只查 {@code = ''} 会漏掉真正的 NULL 行，重复分类又会漏网。
+     */
+    @Test
+    void checkNameExists_shouldMatchNullTypeAsEmpty() {
+        WmsMaterialCategoryServiceImpl service = spy(new WmsMaterialCategoryServiceImpl());
+        doReturn(1L).when(service).count(any(Wrapper.class));
+        ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+
+        assertTrue(service.checkNameExists("接头", null, null));
+
+        verify(service).count(captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertTrue(sql.contains("category_name"), sql);
+        assertTrue(sql.contains("category_type IS NULL"), sql);
     }
 
     // ------------------------------------------------------------ 分类下是否有物料

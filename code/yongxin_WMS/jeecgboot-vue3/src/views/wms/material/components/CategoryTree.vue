@@ -15,6 +15,16 @@
         <a-button
           type="link"
           size="small"
+          preIcon="ant-design:apartment-outlined"
+          v-auth="'wms:materialCategory:edit'"
+          :loading="syncingGroups"
+          @click="handleSyncMaterialGroups"
+        >
+          同步分组
+        </a-button>
+        <a-button
+          type="link"
+          size="small"
           preIcon="ant-design:sync-outlined"
           v-auth="'wms:materialCategory:edit'"
           :loading="syncing"
@@ -64,7 +74,14 @@
   import { useModal } from '/@/components/Modal';
   import { useMessage } from '/@/hooks/web/useMessage';
   import CategoryModal from './CategoryModal.vue';
-  import { queryTreeList, deleteCategory, disableCategory, checkCategoryDelete, syncCategoryFromKingdee } from '../category.api';
+  import {
+    queryTreeList,
+    deleteCategory,
+    disableCategory,
+    checkCategoryDelete,
+    syncCategoryFromKingdee,
+    syncMaterialGroupsFromKingdee,
+  } from '../category.api';
   import { showDeleteBlocked } from '../../common/useWmsDeleteCheck';
 
   const emit = defineEmits(['select', 'refresh']);
@@ -73,6 +90,7 @@
 
   const loading = ref(false);
   const syncing = ref(false);
+  const syncingGroups = ref(false);
   const treeData = ref<any[]>([]);
   /** 虚拟根：用于清除分类过滤 */
   const selectedKeys = ref<any[]>(['__all__']);
@@ -96,6 +114,32 @@
       createMessage.error(e?.message || '同步失败');
     } finally {
       syncing.value = false;
+    }
+  }
+
+  /**
+   * 从金蝶同步物料分组（2026-11-12 R2）：一个分组 → 已有分类（映射表优先、同名同类型复用、都没有才新建），
+   * 并补写「分组 → 分类」映射。合并后这是分类数据唯一来源，不再是一组一条分类。
+   */
+  async function handleSyncMaterialGroups() {
+    syncingGroups.value = true;
+    try {
+      const res: any = await syncMaterialGroupsFromKingdee();
+      const payload = res?.result ?? res;
+      const created = Number(payload?.created ?? 0);
+      const renamed = Number(payload?.renamed ?? 0);
+      const msg = payload?.message || '同步完成';
+      if (String(msg).includes('跳过')) {
+        createMessage.warning(`未同步：${msg}`);
+      } else {
+        createMessage.success(`${msg}（新建 ${created}，更新 ${renamed}）`);
+      }
+      await loadTree();
+      emit('refresh');
+    } catch (e: any) {
+      createMessage.error(e?.message || '同步失败');
+    } finally {
+      syncingGroups.value = false;
     }
   }
 

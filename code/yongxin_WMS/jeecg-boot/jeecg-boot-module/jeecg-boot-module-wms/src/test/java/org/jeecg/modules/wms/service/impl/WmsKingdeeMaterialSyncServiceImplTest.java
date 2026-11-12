@@ -2,6 +2,8 @@ package org.jeecg.modules.wms.service.impl;
 
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
+import org.jeecg.modules.wms.entity.WmsMaterialCategoryGroup;
+import org.jeecg.modules.wms.mapper.WmsMaterialCategoryGroupMapper;
 import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.service.IWmsSyncLogService;
@@ -39,6 +41,7 @@ class WmsKingdeeMaterialSyncServiceImplTest {
     private IWmsKingdeeAuthService authService;
     private WmsMaterialMapper materialMapper;
     private WmsMaterialCategoryMapper materialCategoryMapper;
+    private WmsMaterialCategoryGroupMapper categoryGroupMapper;
     private IWmsSyncLogService syncLogService;
     private WmsKingdeeMaterialSyncServiceImpl service;
 
@@ -52,10 +55,13 @@ class WmsKingdeeMaterialSyncServiceImplTest {
         materialMapper = mock(WmsMaterialMapper.class);
         materialCategoryMapper = mock(WmsMaterialCategoryMapper.class);
         when(materialCategoryMapper.selectList(any())).thenReturn(List.of());
+        categoryGroupMapper = mock(WmsMaterialCategoryGroupMapper.class);
+        when(categoryGroupMapper.selectList(any())).thenReturn(List.of());
         syncLogService = mock(IWmsSyncLogService.class);
         service = new WmsKingdeeMaterialSyncServiceImpl(
                 formClient, properties, authService, materialMapper, syncLogService);
         WmsTestSupport.inject(service, "materialCategoryMapper", materialCategoryMapper);
+        WmsTestSupport.inject(service, "categoryGroupMapper", categoryGroupMapper);
     }
 
     private void stubFetch(String... numbers) {
@@ -183,6 +189,49 @@ class WmsKingdeeMaterialSyncServiceImplTest {
 
         assertEquals("CAT1", existing.getCategoryId());
         verify(materialMapper).updateById(existing);
+    }
+
+    /**
+     * 合并后的权威来源：映射表优先。分类行的 erp_group_number 只是"代表分组"，
+     * 其他分组必须靠映射表挂到同一分类（否则合并后这些物料会掉分类）。
+     */
+    @Test
+    void sync_shouldPreferGroupMappingTableOverRepresentativeGroup() {
+        stubFetchWithGroup("KD.001", "HC.0101.0201.C", "接头");
+        when(materialMapper.selectOne(any())).thenReturn(null);
+        // 分类行只记了代表分组 HC.0101.0502.C
+        when(materialCategoryMapper.selectList(any())).thenReturn(List.of(category("CAT1", "HC.0101.0502.C")));
+        when(categoryGroupMapper.selectList(any())).thenReturn(List.of(group("HC.0101.0201.C", "CAT1")));
+
+        service.syncMaterial();
+
+        ArgumentCaptor<WmsMaterial> captor = ArgumentCaptor.forClass(WmsMaterial.class);
+        verify(materialMapper).insert(captor.capture());
+        assertEquals("CAT1", captor.getValue().getCategoryId(),
+                "非代表分组必须靠映射表挂到合并后的分类");
+    }
+
+    /** 映射指向已逻辑删除的分类：跳过，物料留空，不能挂到看不见的分类上。 */
+    @Test
+    void sync_shouldIgnoreGroupMappingPointingToDeletedCategory() {
+        stubFetchWithGroup("KD.001", "HC.0101.0201.C", "接头");
+        when(materialMapper.selectOne(any())).thenReturn(null);
+        when(materialCategoryMapper.selectList(any())).thenReturn(List.of());
+        when(categoryGroupMapper.selectList(any())).thenReturn(List.of(group("HC.0101.0201.C", "CAT-DELETED")));
+
+        WmsKingdeeStockSyncResultVO vo = service.syncMaterial();
+
+        assertEquals(1, vo.getCreated(), "映射失效不能阻断物料同步");
+        ArgumentCaptor<WmsMaterial> captor = ArgumentCaptor.forClass(WmsMaterial.class);
+        verify(materialMapper).insert(captor.capture());
+        assertNull(captor.getValue().getCategoryId());
+    }
+
+    private static WmsMaterialCategoryGroup group(String groupNumber, String categoryId) {
+        return new WmsMaterialCategoryGroup()
+                .setGroupNumber(groupNumber)
+                .setCategoryId(categoryId)
+                .setDeletedAt(0L);
     }
 
     private static WmsMaterialCategory category(String id, String erpGroupNumber) {

@@ -74,6 +74,9 @@ public class WmsMaterialCategoryServiceImpl extends ServiceImpl<WmsMaterialCateg
         if (checkCodeExists(category.getCategoryCode(), null)) {
             throw new RuntimeException("编码已存在，请重新输入");
         }
+        if (checkNameExists(category.getCategoryName(), category.getCategoryType(), null)) {
+            throw new RuntimeException(duplicateNameMessage(category.getCategoryName()));
+        }
         if (oConvertUtils.isEmpty(category.getParentId())) {
             category.setParentId(WmsConstants.ROOT_PID_VALUE);
         }
@@ -93,8 +96,35 @@ public class WmsMaterialCategoryServiceImpl extends ServiceImpl<WmsMaterialCateg
         if (checkCodeExists(category.getCategoryCode(), category.getId())) {
             throw new RuntimeException("编码已存在，请重新输入");
         }
+        // 只在「名称/类型被改动」时查重：同步侧回写 erp_group_number 也走本方法，
+        // 名称没变就不该被历史重复数据挡住（未跑合并脚本的库仍可能有同名分类）。
+        if (nameOrTypeChanged(category)
+                && checkNameExists(category.getCategoryName(), category.getCategoryType(), category.getId())) {
+            throw new RuntimeException(duplicateNameMessage(category.getCategoryName()));
+        }
         WmsUtils.fillUpdate(category);
         this.updateById(category);
+    }
+
+    /** 名称或类型是否与库内当前值不同；查不到当前行时按「已改动」处理（保守）。 */
+    private boolean nameOrTypeChanged(WmsMaterialCategory category) {
+        if (oConvertUtils.isEmpty(category.getId())) {
+            return true;
+        }
+        WmsMaterialCategory current = this.getById(category.getId());
+        if (current == null) {
+            return true;
+        }
+        return !nullToEmpty(current.getCategoryName()).equals(nullToEmpty(category.getCategoryName()))
+                || !nullToEmpty(current.getCategoryType()).equals(nullToEmpty(category.getCategoryType()));
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static String duplicateNameMessage(String categoryName) {
+        return "已存在同名同类型的分类「" + nullToEmpty(categoryName) + "」，请直接使用该分类或调整名称";
     }
 
     @Override
@@ -141,6 +171,24 @@ public class WmsMaterialCategoryServiceImpl extends ServiceImpl<WmsMaterialCateg
         }
         QueryWrapper<WmsMaterialCategory> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("category_code", code);
+        if (oConvertUtils.isNotEmpty(id)) {
+            queryWrapper.ne("id", id);
+        }
+        return this.count(queryWrapper) > 0;
+    }
+
+    @Override
+    public boolean checkNameExists(String categoryName, String categoryType, String id) {
+        if (oConvertUtils.isEmpty(categoryName)) {
+            return false;
+        }
+        QueryWrapper<WmsMaterialCategory> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("category_name", categoryName);
+        if (oConvertUtils.isEmpty(categoryType)) {
+            queryWrapper.and(w -> w.isNull("category_type").or().eq("category_type", ""));
+        } else {
+            queryWrapper.eq("category_type", categoryType);
+        }
         if (oConvertUtils.isNotEmpty(id)) {
             queryWrapper.ne("id", id);
         }

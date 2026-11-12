@@ -15,6 +15,7 @@ import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.ImportExcelUtil;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.wms.audit.WmsAudit;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.service.IWmsMaterialService;
@@ -71,6 +72,8 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
      * 物料-从金蝶同步（BD_MATERIAL → wms_material，恒等映射；自动化优先 P0）
      */
     @AutoLog(value = "物料-从金蝶同步", operateType = 2)
+    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_MASTER_DATA, action = WmsConstants.AUDIT_ACTION_SYNC_IN,
+            bizNoSpEL = "'" + WmsConstants.AUDIT_BIZ_NO_MASTER_DATA_SYNC + "'")
     @Operation(summary = "物料-从金蝶同步")
     @PostMapping(value = "/sync-from-kingdee")
     @RequiresPermissions("wms:material:add")
@@ -100,19 +103,19 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
         wmsMaterial.setCategoryCode(null);
         // 查询窗口模糊匹配（2026-11-02）：QueryGenerator 对 String 拼的是等值，
         // 这里把文本字段置空后手写 like，让「任意连续子串」都能命中。
-        String materialCodeKeyword = wmsMaterial.getMaterialCode();
-        String materialNameKeyword = wmsMaterial.getMaterialName();
+        // 兼容历史调用方的 QueryGenerator 约定（值两侧带 * 表示 LIKE）：这里手写 like，
+        // 星号会被当字面量 → 任何关键词恒 0 行（2026-11-12 审计发现出库弹窗仍在这么传）。
+        String materialCodeKeyword = stripLikeWildcards(wmsMaterial.getMaterialCode());
+        String materialNameKeyword = stripLikeWildcards(wmsMaterial.getMaterialName());
         wmsMaterial.setMaterialCode(null);
         wmsMaterial.setMaterialName(null);
         QueryWrapper<WmsMaterial> queryWrapper = QueryGenerator.initQueryWrapper(wmsMaterial, req.getParameterMap());
-        queryWrapper.like(oConvertUtils.isNotEmpty(materialCodeKeyword), "material_code",
-                materialCodeKeyword == null ? null : materialCodeKeyword.trim());
-        queryWrapper.like(oConvertUtils.isNotEmpty(materialNameKeyword), "material_name",
-                materialNameKeyword == null ? null : materialNameKeyword.trim());
+        queryWrapper.like(oConvertUtils.isNotEmpty(materialCodeKeyword), "material_code", materialCodeKeyword);
+        queryWrapper.like(oConvertUtils.isNotEmpty(materialNameKeyword), "material_name", materialNameKeyword);
                 // 全局关键词（2026-11-02）：一次跨字段模糊，与单字段框是 AND 关系。
         // OR 必须包在 and(...) 里，否则会与其它条件串成 xxx AND a OR b，优先级错误。
-        if (oConvertUtils.isNotEmpty(keyword)) {
-            final String kw = keyword.trim();
+        final String kw = stripLikeWildcards(keyword);
+        if (oConvertUtils.isNotEmpty(kw)) {
             queryWrapper.and(w -> w.like("material_code", kw)
                     .or().like("material_name", kw)
                     .or().like("kingdee_code", kw)
@@ -408,5 +411,17 @@ public class WmsMaterialController extends JeecgController<WmsMaterial, IWmsMate
         material.setCreateBy(org.jeecg.modules.wms.util.WmsUtils.currentUsername());
         material.setUpdateBy(material.getCreateBy());
         service.save(material);
+    }
+
+    /**
+     * 去掉首尾的 {@code *}：JeecgBoot 的 QueryGenerator 用「两侧带 * 表示 LIKE」，
+     * 本控制器的列表查询是手写 {@code like}，不剥星号会把 {@code *接头*} 当字面量匹配。
+     * 保留中间星号（那是真正的通配意图，MyBatis-Plus 的 like 会转成 % 中的一部分）。
+     */
+    static String stripLikeWildcards(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.trim().replaceAll("^\\*+|\\*+$", "").trim();
     }
 }

@@ -11,7 +11,7 @@ import org.jeecg.modules.wms.dto.WmsStocktakeCreateDTO;
 import org.jeecg.modules.wms.entity.WmsStocktakeDetail;
 import org.jeecg.modules.wms.entity.WmsStocktakeOrder;
 import org.jeecg.modules.wms.service.IWmsStocktakeService;
-import org.jeecg.modules.wms.service.impl.WmsStocktakeErpWriterImpl;
+import org.jeecg.modules.wms.sync.IWmsStocktakeErpWriter;
 import org.jeecg.modules.wms.sync.WmsOrderSyncResult;
 import org.jeecg.modules.wms.util.WmsUtils;
 import org.jeecg.modules.wms.vo.WmsStocktakeDetailVO;
@@ -44,7 +44,7 @@ public class WmsStocktakeController {
     private IWmsStocktakeService stocktakeService;
 
     @Autowired
-    private WmsStocktakeErpWriterImpl stocktakeErpWriter;
+    private IWmsStocktakeErpWriter stocktakeErpWriter;
 
     @Operation(summary = "盘点-分页列表（按类型过滤，两个子菜单复用）")
     @GetMapping(value = "/list")

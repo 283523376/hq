@@ -21,6 +21,10 @@ import re
 import sys
 from pathlib import Path
 
+# GBK 控制台下输出 ✅/⚠ 等字符会抛 UnicodeEncodeError（QA M10），强制 stdout 用 UTF-8
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 REPO = Path(__file__).resolve().parent.parent
 CONSTANTS = REPO / "jeecg-boot/jeecg-boot-module/jeecg-boot-module-wms/src/main/java/org/jeecg/modules/wms/constant/WmsConstants.java"
 VIEWS = REPO / "jeecgboot-vue3/src/views/wms"

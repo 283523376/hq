@@ -52,6 +52,17 @@ public interface IWmsMaterialCategoryService extends JeecgService<WmsMaterialCat
     boolean checkCodeExists(String code, String id);
 
     /**
+     * 判断「同名同类型」的分类是否已存在（2026-11-11 分类合并口径：
+     * 合并键 = {@code category_name + IFNULL(category_type,'')}）。
+     *
+     * <p>不建唯一索引：分类是逻辑删除（{@code deleted_at} 时间戳），无法用唯一键表达
+     * 「未删除的行里名称唯一」，只能应用层校验。
+     *
+     * @param id 编辑时传入自身 id，用于排除自己
+     */
+    boolean checkNameExists(String categoryName, String categoryType, String id);
+
+    /**
      * 按分类编码取分类ID。
      */
     String queryIdByCode(String categoryCode);

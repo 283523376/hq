@@ -102,6 +102,15 @@ public class WmsMasterDataSyncJob implements Job {
         } catch (Exception e) {
             log.error("主数据同步-仓库失败：{}", e.getMessage(), e);
         }
+        // 物料分组 → 分类（2026-11-12 R2）：合并后一个分类对应多个金蝶分组，映射表只能靠这条
+        // 路径补齐；它按「映射表 → 分组编码 → 同名同类型复用」命中，不会像合并前那样一组建一条分类。
+        // 必须排在「分类」之前：先保证映射/分类存在，再回写代表分组。
+        try {
+            WmsKingdeeStockSyncResultVO vo = categorySyncService.syncMaterialGroups();
+            log.info("主数据同步-物料分组：{}", vo.getMessage());
+        } catch (Exception e) {
+            log.error("主数据同步-物料分组失败：{}", e.getMessage(), e);
+        }
         try {
             WmsKingdeeStockSyncResultVO vo = categorySyncService.syncCategory();
             log.info("主数据同步-分类：{}", vo.getMessage());

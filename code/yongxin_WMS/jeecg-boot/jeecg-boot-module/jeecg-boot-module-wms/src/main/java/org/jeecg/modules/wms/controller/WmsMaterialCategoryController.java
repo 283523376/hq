@@ -49,6 +49,8 @@ public class WmsMaterialCategoryController extends JeecgController<WmsMaterialCa
     private IWmsKingdeeCategorySyncService kingdeeCategorySyncService;
 
     @AutoLog(value = "物料分类-金蝶分组同步", operateType = 2)
+    @WmsAudit(bizType = WmsConstants.AUDIT_BIZ_MASTER_DATA, action = WmsConstants.AUDIT_ACTION_SYNC_IN,
+            bizNoSpEL = "'" + WmsConstants.AUDIT_BIZ_NO_MASTER_DATA_SYNC + "'")
     @Operation(summary = "物料分类-从金蝶同步分组映射（未配置映射时仅空转）")
     @PostMapping(value = "/sync-kingdee")
     @RequiresPermissions("wms:materialCategory:edit")

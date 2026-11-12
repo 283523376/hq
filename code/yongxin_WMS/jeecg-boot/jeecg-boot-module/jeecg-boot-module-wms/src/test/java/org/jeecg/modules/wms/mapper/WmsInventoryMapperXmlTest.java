@@ -42,4 +42,56 @@ class WmsInventoryMapperXmlTest {
         assertTrue(statement.contains("quantity = #{qty}"),
                 "盘点是整行覆盖：quantity 直接写成实盘值，不是增减");
     }
+
+    private String statement(String id, String tag) throws Exception {
+        String xml = mapperXml();
+        int start = xml.indexOf("<update id=\"" + id + "\">");
+        assertTrue(start > 0, tag + " 语句应存在");
+        return xml.substring(start, xml.indexOf("</update>", start));
+    }
+
+    /** D2：锁定必须带「可用量足够」条件——条件被删，并发分配会超发且把 locked_qty 加成负数。 */
+    @Test
+    void lockInventory_requiresSufficientAvailable() throws Exception {
+        String s = statement("lockInventory", "lockInventory");
+        assertTrue(s.contains("quantity - locked_qty &gt;= #{qty}"),
+                "lockInventory 必须带 quantity - locked_qty >= qty 条件，0 行=不足，由调用方回滚");
+    }
+
+    /** D2：确认出库必须同时校验锁定量与总量——少一个都会把别人的锁一起扣掉或扣成负数。 */
+    @Test
+    void deductLocked_requiresBothLockAndQuantity() throws Exception {
+        String s = statement("deductLocked", "deductLocked");
+        assertTrue(s.contains("locked_qty &gt;= #{qty}") && s.contains("quantity &gt;= #{qty}"),
+                "deductLocked 必须同时带 locked_qty >= qty 与 quantity >= qty 两个条件");
+    }
+
+    /** D2：释放锁定只准释放自己锁的量——条件被删，取消时会抹掉其它出库单的锁定。 */
+    @Test
+    void releaseLocked_neverOverReleases() throws Exception {
+        String s = statement("releaseLocked", "releaseLocked");
+        assertTrue(s.contains("locked_qty &gt;= #{qty}"),
+                "releaseLocked 必须带 locked_qty >= qty 条件，防止释放别人的锁");
+    }
+
+    /** D2：直接扣减（报废）不允许扣成负数。 */
+    @Test
+    void deductQuantity_neverGoesNegative() throws Exception {
+        String s = statement("deductQuantity", "deductQuantity");
+        assertTrue(s.contains("quantity &gt;= #{qty}"),
+                "deductQuantity 必须带 quantity >= qty 条件，0 行由调用方回滚");
+    }
+
+    /** D1：入库聚合必须是累加语义，且所有权两列必须显式在列清单里。 */
+    @Test
+    void upsertInventory_accumulatesAndCarriesOwnership() throws Exception {
+        String xml = mapperXml();
+        int start = xml.indexOf("<insert id=\"upsertInventory\"");
+        assertTrue(start > 0, "upsertInventory 语句应存在");
+        String s = xml.substring(start, xml.indexOf("</insert>", start));
+        assertTrue(s.contains("quantity = quantity + VALUES(quantity)"),
+                "入库必须累加（ON DUPLICATE KEY quantity = quantity + VALUES(quantity)），覆盖会丢账");
+        assertTrue(s.contains("ownership_type") && s.contains("consignor_id"),
+                "列清单必须显式含 ownership_type/consignor_id，漏写受托货会落默认 OWNED 并入自有行");
+    }
 }

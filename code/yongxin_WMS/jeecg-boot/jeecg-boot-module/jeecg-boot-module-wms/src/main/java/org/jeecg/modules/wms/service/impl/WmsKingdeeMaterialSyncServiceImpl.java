@@ -6,6 +6,8 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.wms.constant.WmsConstants;
 import org.jeecg.modules.wms.entity.WmsMaterial;
 import org.jeecg.modules.wms.entity.WmsMaterialCategory;
+import org.jeecg.modules.wms.entity.WmsMaterialCategoryGroup;
+import org.jeecg.modules.wms.mapper.WmsMaterialCategoryGroupMapper;
 import org.jeecg.modules.wms.mapper.WmsMaterialCategoryMapper;
 import org.jeecg.modules.wms.mapper.WmsMaterialMapper;
 import org.jeecg.modules.wms.service.IWmsKingdeeMaterialSyncService;
@@ -23,8 +25,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * @Description: 物料主数据同步（金蝶 BD_MATERIAL → wms_material，恒等映射）。
@@ -82,6 +86,16 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
     @Autowired(required = false)
     private WmsMaterialCategoryMapper materialCategoryMapper;
 
+    /**
+     * 可选依赖（同上）：分类合并后的权威映射「分组 → 分类」。
+     *
+     * <p>2026-11-11 分类合并后，多个金蝶分组指向同一分类，关系只存在于
+     * {@code wms_material_category_group}；分类行上的 {@code erp_group_number} 只剩"代表分组"。
+     * 为 null（单测裸构造）时退回旧字段，行为与合并前一致。
+     */
+    @Autowired(required = false)
+    private WmsMaterialCategoryGroupMapper categoryGroupMapper;
+
     public WmsKingdeeMaterialSyncServiceImpl(WmsKingdeeFormClient formClient,
                                              WmsKingdeeProperties properties,
                                              IWmsKingdeeAuthService kingdeeAuthService,
@@ -120,7 +134,7 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
         vo.setMessage(String.format("扫描金蝶物料 %d 行：新建 %d，更新 %d",
                 vo.getFetched(), vo.getCreated(), vo.getRenamed()));
         syncLogService.logSync(WmsConstants.SYNC_LOG_DIRECTION_ERP_TO_WMS, SYNC_OBJECT_TYPE,
-                FORM_ID, WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, vo.getFetched(),
+                FORM_ID, WmsConstants.SYNC_LOG_TARGET_KINGDEE, true, 0,
                 null, vo.getMessage(), null, System.currentTimeMillis() - start);
         return vo;
     }
@@ -231,6 +245,14 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
     /**
      * 加载「金蝶分组编码 → WMS 分类 id」。未注入 mapper 或查询失败时返回空映射：
      * 分类挂不上不能阻断物料主数据同步。
+     *
+     * <p>数据源顺序（2026-11-11 分类合并起）：
+     * <ol>
+     *   <li>{@code wms_material_category_group}——合并后的权威来源，多个分组可指向同一分类；</li>
+     *   <li>分类行上的 {@code erp_group_number}——兼容映射表没覆盖到的历史分组。</li>
+     * </ol>
+     * 先写映射表、再 {@code putIfAbsent} 回退，保证映射表优先级高于旧字段。
+     * 指向已逻辑删除分类的映射跳过（分类删除后物料不应再挂上去）。
      */
     private Map<String, String> loadCategoryIdByGroup() {
         Map<String, String> mapping = new HashMap<>();
@@ -238,10 +260,28 @@ public class WmsKingdeeMaterialSyncServiceImpl implements IWmsKingdeeMaterialSyn
             return mapping;
         }
         try {
+            // 不能加 .select(...)：单测里 Lambda 列名解析需要 MyBatis-Plus 的 lambda 缓存，
+            // 无 Spring 上下文时会抛「can not find lambda cache」，整段映射被吞成空。
             List<WmsMaterialCategory> categories = materialCategoryMapper.selectList(
-                    new LambdaQueryWrapper<WmsMaterialCategory>()
-                            .isNotNull(WmsMaterialCategory::getErpGroupNumber)
-                            .ne(WmsMaterialCategory::getErpGroupNumber, ""));
+                    new LambdaQueryWrapper<WmsMaterialCategory>());
+            Set<String> aliveCategoryIds = new HashSet<>();
+            for (WmsMaterialCategory category : categories) {
+                if (oConvertUtils.isNotEmpty(category.getId())) {
+                    aliveCategoryIds.add(category.getId());
+                }
+            }
+
+            if (categoryGroupMapper != null) {
+                List<WmsMaterialCategoryGroup> groups = categoryGroupMapper.selectList(
+                        new LambdaQueryWrapper<WmsMaterialCategoryGroup>());
+                for (WmsMaterialCategoryGroup group : groups) {
+                    if (oConvertUtils.isNotEmpty(group.getGroupNumber())
+                            && aliveCategoryIds.contains(group.getCategoryId())) {
+                        mapping.putIfAbsent(group.getGroupNumber(), group.getCategoryId());
+                    }
+                }
+            }
+
             for (WmsMaterialCategory category : categories) {
                 if (oConvertUtils.isNotEmpty(category.getErpGroupNumber())
                         && oConvertUtils.isNotEmpty(category.getId())) {

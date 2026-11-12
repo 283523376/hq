@@ -45,6 +45,7 @@ class WmsMasterDataSyncJobTest {
 
         verify(warehouseSyncService, never()).syncStock();
         verify(categorySyncService, never()).syncCategory();
+        verify(categorySyncService, never()).syncMaterialGroups();
     }
 
     @Test
@@ -58,6 +59,7 @@ class WmsMasterDataSyncJobTest {
 
         verify(warehouseSyncService, never()).syncStock();
         verify(categorySyncService, never()).syncCategory();
+        verify(categorySyncService, never()).syncMaterialGroups();
     }
 
     @Test
@@ -69,6 +71,7 @@ class WmsMasterDataSyncJobTest {
 
         verify(warehouseSyncService, never()).syncStock();
         verify(categorySyncService, never()).syncCategory();
+        verify(categorySyncService, never()).syncMaterialGroups();
     }
 
     @Test
@@ -78,10 +81,47 @@ class WmsMasterDataSyncJobTest {
         when(authService.isConfigured()).thenReturn(true);
         when(warehouseSyncService.syncStock()).thenReturn(new WmsKingdeeStockSyncResultVO());
         when(categorySyncService.syncCategory()).thenReturn(new WmsKingdeeStockSyncResultVO());
+        when(categorySyncService.syncMaterialGroups()).thenReturn(new WmsKingdeeStockSyncResultVO());
 
         job.syncForTest();
 
         verify(warehouseSyncService).syncStock();
+        verify(categorySyncService).syncMaterialGroups();
+        verify(categorySyncService).syncCategory();
+    }
+
+    /** QA M4：分组同步必须排在分类（代表分组回写）之前——先建映射再回写，顺序不能被调换。 */
+    @Test
+    void shouldSyncMaterialGroupsBeforeCategory() {
+        properties.getMasterData().setEnabled(true);
+        properties.setEnabled(true);
+        when(authService.isConfigured()).thenReturn(true);
+        when(warehouseSyncService.syncStock()).thenReturn(new WmsKingdeeStockSyncResultVO());
+        when(categorySyncService.syncMaterialGroups()).thenReturn(new WmsKingdeeStockSyncResultVO());
+        when(categorySyncService.syncCategory()).thenReturn(new WmsKingdeeStockSyncResultVO());
+
+        job.syncForTest();
+
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(categorySyncService);
+        inOrder.verify(categorySyncService).syncMaterialGroups();
+        inOrder.verify(categorySyncService).syncCategory();
+    }
+
+    /**
+     * 2026-11-12 R2：物料分组同步必须随任务跑（否则合并后新分组不会补分类/映射），
+     * 且它失败不能拖垮其余同步。
+     */
+    @Test
+    void shouldKeepOtherSyncsRunningWhenMaterialGroupsFails() {
+        properties.getMasterData().setEnabled(true);
+        properties.setEnabled(true);
+        when(authService.isConfigured()).thenReturn(true);
+        when(categorySyncService.syncMaterialGroups()).thenThrow(new RuntimeException("分组同步失败"));
+        when(categorySyncService.syncCategory()).thenReturn(new WmsKingdeeStockSyncResultVO());
+
+        assertDoesNotThrow(() -> job.syncForTest());
+
+        verify(categorySyncService).syncMaterialGroups();
         verify(categorySyncService).syncCategory();
     }
 

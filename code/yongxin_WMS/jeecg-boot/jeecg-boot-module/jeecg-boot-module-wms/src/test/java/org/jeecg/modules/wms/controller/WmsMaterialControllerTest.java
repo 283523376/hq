@@ -165,6 +165,46 @@ class WmsMaterialControllerTest {
     }
 
     /**
+     * 2026-11-12 审计：出库新建弹窗按 QueryGenerator 约定传 {@code *接头*}，
+     * 而本接口是手写 like，星号被当字面量 → 任何关键词恒 0 行。
+     * 控制器必须剥掉首尾星号再拼条件。
+     */
+    @Test
+    void queryPageList_shouldStripQueryGeneratorWildcards() {
+        IWmsMaterialService service = mock(IWmsMaterialService.class);
+        Page<WmsMaterial> page = new Page<>(1, 10);
+        page.setRecords(Collections.emptyList());
+        page.setTotal(0);
+        doReturn(page).when(service).page(any(Page.class), any(Wrapper.class));
+
+        WmsMaterial probe = new WmsMaterial().setMaterialName("*接头*");
+
+        Result<IPage<WmsMaterial>> result = controller(service)
+                .queryPageList(probe, "*接头*", 1, 10, null, new MockHttpServletRequest());
+
+        assertEquals(200, result.getCode());
+        ArgumentCaptor<Wrapper> captor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(service).page(any(Page.class), captor.capture());
+        QueryWrapper<WmsMaterial> wrapper = (QueryWrapper<WmsMaterial>) captor.getValue();
+        wrapper.getSqlSegment();
+        assertFalse(wrapper.getParamNameValuePairs().containsValue("*接头*"),
+                "星号不得原样进入 SQL 参数（否则按字面量匹配，恒 0 行）");
+        // MyBatis-Plus 的 like 会在值两侧补 %，参数里出现的是 %接头%
+        assertTrue(wrapper.getParamNameValuePairs().containsValue("%接头%"),
+                "剥掉首尾星号后应只剩关键词本身，实际参数：" + wrapper.getParamNameValuePairs());
+    }
+
+    /** 星号剥离的边界：null 原样返回；只剥首尾，中间星号保留为通配意图。 */
+    @Test
+    void stripLikeWildcards_shouldOnlyTrimLeadingAndTrailingStars() {
+        assertNull(WmsMaterialController.stripLikeWildcards(null));
+        assertEquals("接头", WmsMaterialController.stripLikeWildcards("*接头*"));
+        assertEquals("接头", WmsMaterialController.stripLikeWildcards("  **接头**  "));
+        assertEquals("接*头", WmsMaterialController.stripLikeWildcards("*接*头*"));
+        assertEquals("", WmsMaterialController.stripLikeWildcards("***"));
+    }
+
+    /**
      * 按分类类型过滤（2026-11-05）：到货登记的物料下拉只要原材料。
      *
      * <p>分类类型挂在 wms_material_category 上，物料表只有 category_id，所以用子查询；

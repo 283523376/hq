@@ -1,4 +1,5 @@
 import { defHttp } from '/@/utils/http/axios';
+import { SYNC_TIMEOUT_MS } from './category.api';
 
 enum Api {
   list = '/wms/material/list',
@@ -16,9 +17,12 @@ enum Api {
   syncFromKingdee = '/wms/material/sync-from-kingdee',
 }
 
-/** 从金蝶同步物料主数据（BD_MATERIAL → wms_material，恒等映射）；同步类接口不弹默认绿条 */
+/**
+ * 从金蝶同步物料主数据（BD_MATERIAL → wms_material，恒等映射）；同步类接口不弹默认绿条。
+ * 超时复用 category.api 的共享常量：一次拉 4.6 万物料约 30s，默认 10s 会直接报超时。
+ */
 export const syncMaterialFromKingdee = () =>
-  defHttp.post({ url: Api.syncFromKingdee }, { successMessageMode: 'none' });
+  defHttp.post({ url: Api.syncFromKingdee, timeout: SYNC_TIMEOUT_MS }, { successMessageMode: 'none' });
 
 /** 删除预检：物料当前恒可删；未来库存表接入后这里会给出禁止原因 */
 export const checkMaterialDelete = (params: { id: string }) => defHttp.get({ url: Api.checkDelete, params });
@@ -36,8 +40,8 @@ export const list = (params?) => defHttp.get({ url: Api.list, params });
 export const checkMaterialCode = (params) => defHttp.get({ url: Api.checkCode, params }, { isTransformResponse: false });
 
 export const saveOrUpdateMaterial = (params, isUpdate) => {
-  let url = isUpdate ? Api.edit : Api.add;
-  return defHttp.post({ url: url, params });
+  const url = isUpdate ? Api.edit : Api.add;
+  return defHttp.post({ url, params });
 };
 
 export const disableMaterial = (params) => defHttp.post({ url: Api.disable, params }, { joinParamsToUrl: true });

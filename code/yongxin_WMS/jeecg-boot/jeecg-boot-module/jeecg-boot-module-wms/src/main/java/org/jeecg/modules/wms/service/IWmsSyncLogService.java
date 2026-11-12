@@ -27,6 +27,12 @@ public interface IWmsSyncLogService extends JeecgService<WmsSyncLog> {
      * @param errorMessage   失败原因（可空）
      * @param costMs         耗时毫秒
      */
+    /**
+     * @param retryCount 连续失败次数。**只在失败行有意义**——失败行由实现按
+     *                   「同单近 7 天失败次数 + 1」重算，本参数被忽略；成功行应传
+     *                   {@code 0}，不要塞扫描行数之类的其它语义（2026-11-12 QA M6：
+     *                   曾把 vo.getFetched() 传进来，46839 污染了成功行的 retry_count）
+     */
     void logSync(String direction, String objectType, String objectNo, String target,
                  boolean success, int retryCount,
                  String requestPayload, String responsePayload,

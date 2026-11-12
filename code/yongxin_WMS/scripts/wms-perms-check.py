@@ -46,7 +46,11 @@ WMS_ADMIN_ROLE_ID = "191000000000009001"
 DEACTIVATED_PREFIXES = ("wms:inbound:", "wms:order:",
                         # 2026-11-10 RK-001 V2.6：改刀料与段差棒同口径直入半成品立库，
                         # 不再生成改制单 → 改制单菜单/按钮逻辑删除（V3.9.5_58），代码保留可回滚
-                        "wms:conversion:")
+                        "wms:conversion:",
+                        # 2026-11-12 正式 QA P3：检验域（验收/检验单）随 2026-10-19 范围收窄停用，
+                        # wms:inspection:do 权限行已随菜单逻辑删除（del_flag=1），接口 fail-closed
+                        # 属预期；恢复检验域时同步删除此豁免
+                        "wms:inspection:")
 
 ANNOTATION = re.compile(r'@RequiresPermissions\(([^)]*)\)')
 QUOTED = re.compile(r'"([\w.:-]+)"')

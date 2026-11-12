@@ -88,8 +88,8 @@ export const closeOutbound = (id: string, params) =>
 export const listMaterialOptions = (keyword?: string, pageSize = 50) => {
   const params: any = { pageNo: 1, pageSize };
   if (keyword && keyword.trim()) {
-    // QueryGenerator 约定：值两侧带 * 表示 LIKE
-    params.materialName = `*${keyword.trim()}*`;
+    // 物料列表接口是手写 like，发裸值；星号会被当字面量（2026-11-12 审计修复）
+    params.materialName = keyword.trim();
   }
   return defHttp.get({ url: '/wms/material/list', params });
 };

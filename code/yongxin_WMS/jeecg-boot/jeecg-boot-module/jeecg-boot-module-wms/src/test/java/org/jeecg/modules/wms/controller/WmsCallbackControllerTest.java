@@ -119,6 +119,15 @@ class WmsCallbackControllerTest {
         assertEquals(1, response.get("code"));
     }
 
+    /** D8：containerLocation 与 taskFeedback 共用同一令牌校验，错令牌一律拒绝。 */
+    @Test
+    void containerLocation_badToken_isRejected() {
+        Map<String, Object> response = rmsController.containerLocation(
+                "wrong", new org.jeecg.modules.wms.dto.WmsContainerLocationDTO());
+        assertEquals(1, response.get("code"));
+        verify(productionService, never()).onContainerLocation(anyString(), anyString());
+    }
+
     @Test
     void wcsFinished_claimsAndSyncs() {
         when(productionService.findByTaskNo("T1")).thenReturn(record());

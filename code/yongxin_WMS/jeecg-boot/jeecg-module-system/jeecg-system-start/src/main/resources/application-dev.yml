@@ -531,8 +531,9 @@ wms:
         work-order-org-number: "${KINGDEE_WORK_ORDER_ORG:101}"
         # ---- 主数据同步 ----
         master-data:
-          # 仅控制「定时任务是否跑」，手工同步接口不受此开关限制
-          enabled: false
+          # 仅控制「定时任务是否跑」，手工同步接口不受此开关限制。
+          # 2026-11-12 起可用环境变量开启（合并后分组同步需要定时跑，否则新分组不会补分类/映射）
+          enabled: "${KINGDEE_ERP_MASTER_DATA_ENABLED:false}"
           org-id: "101"
           # 仓库编码与金蝶 1:1（用户 2026-10-28 决策），不再维护「金蝶仓 → WMS 仓」映射：
           # WMS 的 warehouse_code 直接等于 BD_STOCK.FNumber，按编码 upsert 即可。
